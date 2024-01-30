@@ -1,7 +1,7 @@
 <img src="https://i.imgur.com/GfJb3sQ.jpg" align="right" width="150px" />
 
 
-# xProperties (Version: 0.5 Pre-Alpha)
+# xProperties (Version: 0.1 Pre-Alpha)
 
 [             ![Feedback](https://img.shields.io/badge/feedback-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties)
@@ -51,6 +51,9 @@ struct common
 * **Single header**
 * **No allocations**
 * **No external dependencies**
+* **No macros**
+* **No exceptions for maximun speed**
+* **No extra/external compilation step needed** 
 * **Minimalistic API**
 * **Op-In properties**
 * **Flexible configuration**
@@ -60,9 +63,11 @@ struct common
 * **Very easy to extend (Easy to add new types, and add extra data per type, or new type of lists)**
 * **Supports base class interface for OOP**
 * **Handle any kind of inheritance**
-* **No exceptions for maximun speed**
 * **Works on all major compilers**
 * **Examples for all the features and [Documentation](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)**
-* **Editor example using [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
-* **Unlike other property systems, no extra/external compilation needed.** 
 
+# TODO:
+* **Add support for `std::variant`**
+* **Add support for unions**
+* **Compound properties**
+* **Editor example using [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
