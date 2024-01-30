@@ -20,7 +20,7 @@
 Simple yet powerful reflection system / property system. This project is meant for students and professionals alike to have 
 a default goto code that solves the very annoying issue of C++ properties. The code should be able to be inserted in game engines 
 and applications without a problem. If you wish please read the
-[Documentation](). 
+[Documentation](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md). 
 
 Any feedback is welcome. Please follow us and help support the project.
 
@@ -36,12 +36,10 @@ struct common
 
     consteval auto Properties()             
     {
-        using namespace xproperty;
-        return obj
-        < "Common", common
-        , obj_member<"m_ValueHoldingVar", &common::m_ValueHoldingVar>
-        , obj_member<"m_ReadOnlyValue",   &common::m_ReadOnlyValue >
-        , obj_member<"setValues",         &common::setValues>
+        return obj< "Common", common
+        , xproperty::obj_member<"m_ValueHoldingVar", &common::m_ValueHoldingVar>
+        , xproperty::obj_member<"m_ReadOnlyValue",   &common::m_ReadOnlyValue >
+        , xproperty::obj_member<"setValues",         &common::setValues>
         > ::get();
     }
 };
@@ -51,16 +49,17 @@ struct common
 * **MIT license**
 * **C++20**
 * **Single header**
+* **No allocations**
 * **No external dependencies**
 * **Minimalistic API**
+* **Op-In properties**
+* **Flexible configuration**
 * **Data and Function base properties**
 * **Allows the user to support any container such `std::array` and `std::vector` or anything else**
 * **Support C-arrays, raw pointers, and the user can add support for std::share_ptr or any other C++ type of pointer**
 * **Very easy to extend (Easy to add new types, and add extra data per type, or new type of lists)**
 * **Supports base class interface for OOP**
 * **Handle any kind of inheritance**
-* **Op-In properties**
-* **No allocations**
 * **No exceptions for maximun speed**
 * **Works on all major compilers**
 * **Examples for all the features and [Documentation](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)**
