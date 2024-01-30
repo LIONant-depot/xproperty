@@ -61,13 +61,16 @@ R"(
         }
     }
 
-    inline void Generate( std::vector<example_group>& ExampleGroup )
+    inline void Generate( std::string_view DstFile, std::string_view SrcFile, std::vector<example_group>& ExampleGroup )
     {
+        assert(!SrcFile.empty());
+        assert(!DstFile.empty());
+
         // Read the source file
         std::string Documentation;
         {
             std::ifstream inFile;
-            inFile.open("../../source/examples/example_properties.h"); 
+            inFile.open(SrcFile.data());
 
             std::stringstream strStream;
             strStream << inFile.rdbuf(); 
@@ -75,7 +78,7 @@ R"(
         }
 
         // Insert all the outputs
-        for( auto i = 0u; i< ExampleGroup[0].m_Examples.size(); ++i )
+        if (!ExampleGroup.empty()) for( auto i = 0u; i< ExampleGroup[0].m_Examples.size(); ++i )
         {
             std::string Title = ExampleGroup[0].m_Examples[i].m_Title;
 
@@ -98,12 +101,15 @@ R"(
 
         // Convenient code replace with markdown
         ReplaceStr(Documentation, "cpp */", "```cpp");
+        ReplaceStr(Documentation, "/* cpp", "```");
         ReplaceStr(Documentation, "/*", "");
+        ReplaceStr(Documentation, "*/", "");
+        ReplaceStr(Documentation, "------------------------------------------------------------------------------", "" );
 
         // Save the file documentation
         {
             std::ofstream outFile;
-            outFile.open("../../documentation/Documentation.md");
+            outFile.open(DstFile.data());
             outFile << Documentation;
         }
     }

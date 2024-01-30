@@ -18,6 +18,9 @@
     <None Include="..\..\documentation\Documentation.md">
       <Filter>Documentation</Filter>
     </None>
+    <None Include="..\..\documentation\MyProperty.md">
+      <Filter>Documentation</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\source\examples\example_printing.h">

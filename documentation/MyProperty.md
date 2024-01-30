@@ -1,7 +1,7 @@
-/*
-------------------------------------------------------------------------------
+
+
 # WHAT IS THIS FILE FOR?
-------------------------------------------------------------------------------
+
 There are libraries that are used by including a header file. xproperty does not
 work like that, stead you have to define your own custom header file and then
 include xproperty there. The reason for this is that xproperty needs to be
@@ -10,13 +10,13 @@ much easier to do it this way. In other the only place that will include xproper
 is your config header file (this one), all your other header and sources will include
 this file.
 
-------------------------------------------------------------------------------
+
 # CORE INCLUDES
-------------------------------------------------------------------------------
+
 Add here all your header files required to configure your own xproperty.
 Note that xproperty itself doesn't require any header files.
 
-cpp */
+```cpp
 #pragma once
 #include<string>
 #include<vector>
@@ -24,16 +24,16 @@ cpp */
 #include<memory>
 #include<array>
 
-/* cpp
-------------------------------------------------------------------------------
+```
+
 # USER PRE-CONFIGURATION
-------------------------------------------------------------------------------
+
 configure the memory requirements for the xproperty library.
 The library itself does not allocate any memory, but it does require to know
 some edge cases. We must specify our worse case memory usage for our basic types
 as well as for the iterator. Note that it requires to be put in the **xproperty::settings**
 namespace.
-cpp */
+```cpp
 namespace xproperty::settings
 {
     // For our basic property types we need to know our worse alignment.
@@ -84,28 +84,28 @@ namespace xproperty::settings
     >;
 }
 
-/* cpp
-------------------------------------------------------------------------------
+```
+
 # ADDING THE ACTUAL LIBRARY
-------------------------------------------------------------------------------
+
 Now that we have defined our memory requirements we can Include the actual library
-cpp */
+```cpp
 
 #include "..\xproperty.h"
 
-/* cpp
-------------------------------------------------------------------------------
+```
+
 # USER POST-CONFIGURATION
-------------------------------------------------------------------------------
+
 We add here the rest of the configuration for the xproperty library. Note that
 the rest of the configuration needs to be inside the **xproperty::settings** namespace.
 
 ## CONTEXT
-------------------------------------------------------------------------------
+
 We could add here some context for our properties. This is useful if you
 have a xproperty that requires some global context to be able to work.
 Typical example is a resource handle. You can add here a resource manager.
-cpp */
+```cpp
 namespace xproperty::settings
 {
     struct context
@@ -114,14 +114,14 @@ namespace xproperty::settings
     };
 }
 
-/* cpp
+```
 
 ## ATOMIC TYPES
-------------------------------------------------------------------------------
+
 Atomic types are all the data types that the property system is going to deal with.
 Some of the types typically include thing like ints, floats, strings, etc...
 But you would not put things like classes and such.
-cpp */
+```cpp
 namespace xproperty::settings
 {
     // Note the pattern here. We use the **var_defaults** template to define that
@@ -208,13 +208,13 @@ namespace xproperty::settings
     };
 #endif
 }
-/* cpp
+```
 
 ## SUPPORTING C-POINTERS TYPES
-------------------------------------------------------------------------------
+
 We can support C-Pointers. In this configuration we limit to
 maximum 2 levels of pointers (T* and T**). If you need more you can add them later.
-cpp */
+```cpp
 namespace xproperty::settings
 {
     template<typename T>
@@ -225,13 +225,13 @@ namespace xproperty::settings
     requires(std::is_function_v<T> == false)
     struct var_type<T**> : var_ref_defaults<"ppointer", T**> {};
 }
-/* cpp
+```
  
 ## SUPPORTING CPP POINTERS TYPES
-------------------------------------------------------------------------------
+
 We can support C++ Pointers. This is not limited to std library we could use
 are own concept of pointers such resource handles, etc...
-cpp */
+```cpp
 namespace xproperty::settings
 {
 #if __has_include(<memory>)
@@ -244,14 +244,14 @@ namespace xproperty::settings
     struct var_type<std::shared_ptr<T>> : var_ref_defaults<"shared_ptr", std::shared_ptr<T>> {};
 #endif
 }
-/* cpp
+```
 
 ## SUPPORTING CPP LISTS TYPES
-------------------------------------------------------------------------------
+
 We can support C++ List types as well. A list is a container that has a begin and end iterator.
 This includes things like std::span, std::vector, std::array, etc...
 
-cpp */
+```cpp
 namespace xproperty::settings
 {
 #if __has_include(<span>)
@@ -290,13 +290,13 @@ namespace xproperty::settings
     };
 #endif
 }
-/* cpp
+```
 
 ## SUPPORTING C LISTS TYPES
-------------------------------------------------------------------------------
+
 We can support native C-List types as well. Such int a[1], int a[2][3], etc...
 We added up to 3D arrays,but you can add more if you need.
-cpp */
+```cpp
 namespace xproperty::settings
 {
     template< typename T, std::size_t N >
@@ -309,13 +309,13 @@ namespace xproperty::settings
     struct var_type<T[N1][N2][N3]> : var_list_native_defaults< "C-Array3D", N1, T[N1][N2][N3], T[N2][N3], std::size_t > {};
 }
 
-/* cpp
+```
 
 ## SUPPORTING ADVANCED CPP LISTS TYPES
-------------------------------------------------------------------------------
+
 We can also add more advance type of containers such (std::map)
 
-cpp */
+```cpp
 namespace xproperty::settings
 {
     template< typename T_KEY, typename T_VALUE_TYPE >
@@ -345,14 +345,14 @@ namespace xproperty::settings
     };
 }
 
-/* cpp
+```
 
 ## SUPPORTING CUSTOM LISTS TYPES
-------------------------------------------------------------------------------
+
 We add some random stupid custom list here that we build from scratch to serve as an example
 on how to do containers that work with properties.
 
-cpp */
+```cpp
 namespace xproperty::settings
 {
     template< typename T>
@@ -444,14 +444,14 @@ namespace xproperty::settings
         }
     };
 }
-/* cpp
-------------------------------------------------------------------------------
+```
+
 # CUSTOM USER DATA PER PROPERTY
-------------------------------------------------------------------------------
+
 We can create custom data for our properties. This is useful for instance if you
 wish to add help for each property so that in an editor you can display it for the user.
 
-cpp */
+```cpp
 namespace xproperty::settings
 {
     struct member_help_t : xproperty::member_user_data<"help">
@@ -473,14 +473,14 @@ namespace xproperty
             : member_help_t{ .m_pHelp = HELP.m_Value } {}
     };
 }
-/* cpp
-------------------------------------------------------------------------------
+```
+
 # USEFUL FUNCTIONS
-------------------------------------------------------------------------------
+
 We can always add helper functions to help us with the xproperty library.
 This is application dependent. The ones here are for our example application.
 
-cpp */
+```cpp
 namespace xproperty::settings
 {
     //
@@ -572,6 +572,5 @@ namespace xproperty::settings
         return false; 
     }
 }
-/* cpp
+```
 ---
-*/

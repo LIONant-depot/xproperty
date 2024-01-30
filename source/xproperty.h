@@ -371,7 +371,7 @@ namespace xproperty
         // computes murmur hash
         // http://szelei.me/constexpr-murmurhash/
         //--------------------------------------------------------------------------------------------
-        constexpr uint32_t strguid(details::str_view key, uint32_t seed = 0x9747b28c) noexcept
+        constexpr uint32_t strguid(xproperty::details::str_view key, uint32_t seed = 0x9747b28c) noexcept
         {
             const uint32_t  c1 = 0xcc9e2d51;
             const uint32_t  c2 = 0x1b873593;

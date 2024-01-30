@@ -132,14 +132,38 @@ void ExecuteExamples(xproperty_doc::example_group& ExampleGroup)
 //--------------------------------------------------------------------------------------------
 int main()
 {
-    std::vector<xproperty_doc::example_group> Examples;
+    //
+    // Execute all the examples, and generate the documentation for them
+    //
+    if constexpr (true)
+    {
+        std::vector<xproperty_doc::example_group> Examples;
 
-    // Execute all the examples
-    if constexpr (true) xproperty::example::printing::Example(Examples.emplace_back());
-    if constexpr (true) xproperty::example::sprop::Example(Examples.emplace_back());
+        if constexpr (true) xproperty::example::printing::Example(Examples.emplace_back());
+        if constexpr (true) xproperty::example::sprop::Example(Examples.emplace_back());
 
-    // Generate the documentation
-    if constexpr (true) xproperty_doc::Generate(Examples);
+        // Generate the documentation
+        if constexpr (true) xproperty_doc::Generate
+            ( "../../documentation/Documentation.md"
+            , "../../source/examples/example_properties.h"
+            , Examples
+            );
+    }
+
+    //
+    // Generate the config file Documentation
+    //
+    if constexpr (true)
+    {
+        // There are not examples here... but we still need the vector
+        std::vector<xproperty_doc::example_group> Examples;
+
+        xproperty_doc::Generate
+        ( "../../documentation/MyProperty.md"
+        , "../../source/examples/my_properties.h"
+        , Examples
+        );
+    }
 
     return 0;
 }

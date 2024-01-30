@@ -132,6 +132,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="..\..\documentation\Documentation.md" />
+    <None Include="..\..\documentation\MyProperty.md" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\source\examples\example_printing.h" />
