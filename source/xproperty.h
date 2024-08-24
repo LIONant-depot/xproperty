@@ -39,7 +39,7 @@ namespace xproperty
         
         namespace details
         {
-            template<bool, typename T, typename T_CLEAN >
+            template<bool IS_POINTER_V, typename T, typename T_CLEAN >
             struct remove_all_const;
 
             template<typename T, typename T_CLEAN >
@@ -54,6 +54,14 @@ namespace xproperty
             struct remove_all_const<true, T* const, T_CLEAN> : remove_all_const<true, T*, T_CLEAN>
             {
                 inline static constexpr bool value = true;
+            };
+
+            template<typename T, typename T_CLEAN, typename...T_ARGS >
+            struct remove_all_const<false, T(T_ARGS...)const, T_CLEAN>
+            {
+                using base = T(T_ARGS...);
+                using type = T_CLEAN;
+                inline static constexpr bool value = false;
             };
 
             template<typename T, typename T_CLEAN >
@@ -491,7 +499,7 @@ namespace xproperty
             using                        specializing_t = T;
             using                        type           = T;
 
-            inline static auto* getAtomic( type& MemberVar, context& ) noexcept { return &MemberVar; }
+            inline constexpr static auto* getAtomic( type& MemberVar, context& ) noexcept { return &MemberVar; }
         };
 
         namespace details
@@ -502,10 +510,17 @@ namespace xproperty
             template< typename T >
             consteval auto&& Resolve(T&& a)
             {
+                #ifdef __clang__
+                    #pragma clang diagnostic push
+                    #pragma clang diagnostic ignored "-Wreturn-stack-address"
+                #endif      
                 using st = specializing_t<T>;
                 static_assert(var_type<st>::is_list_v == false );
                 if constexpr (var_type<st>::is_pointer_v ) return Resolve(st{});
                 else                                       return st{};
+                #ifdef __clang__
+                    #pragma clang diagnostic pop
+                #endif
             }
 
             template< typename T >
@@ -645,7 +660,7 @@ namespace xproperty
             constexpr static void             setSize         (       type&           MemberVar,   const std::size_t        Size,                       context&   ) noexcept {}
             constexpr static void             IteratorToKey   ( const type&           MemberVar,         any_t&             Key, const begin_iterator& I, context& ) noexcept { Key.template set<atomic_key>(I - MemberVar.begin()); }
             constexpr static specializing_t*  IteratorToObject(       type&           MemberVar,         begin_iterator&    I,                          context&   ) noexcept { return const_cast<specializing_t*>(&(*I)); }
-            constexpr static specializing_t*  getObject       (       type&           MemberVar,   const any_t&             Key,                        context&   ) noexcept { return const_cast<specializing_t*>(&MemberVar[Key.get<atomic_key>()]); }
+            constexpr static specializing_t*  getObject       (       type&           MemberVar,   const any_t&             Key,                        context&   ) noexcept { return const_cast<specializing_t*>(&MemberVar[Key.template get<atomic_key>()]); }
             constexpr static void             DestroyBeginIterator  ( begin_iterator& I, context& ) noexcept { std::destroy_at(&I); }
             constexpr static void             DestroyEndIterator    ( end_iterator& I, context&   ) noexcept { std::destroy_at(&I); }
         };
@@ -1570,7 +1585,7 @@ namespace xproperty
                         , details::getListTable2< T >()
                           ...
                         };
-                    }(reinterpret_cast<tuple_dimensions*>(nullptr));
+                    }((tuple_dimensions*)0);
                 }
             };
 
@@ -1599,13 +1614,14 @@ namespace xproperty
                     if constexpr( std::is_same_v< enum_span_tuple, std::tuple<> > )
                     {
                         static_assert(std::tuple_size_v<enum_value_tuple> != 0, "You must have a list of items for your unregistered enumeration, (either member_enum_span, or member_enum_value)");
+
                         return []<typename... TS>( std::tuple<TS...>* ) consteval
                         {
                             return std::array
                                 { type::atomic::enum_item { TS::name_v.m_Value, TS::value_v }
                                   ...
                                 };
-                        }(reinterpret_cast<enum_value_tuple*>(nullptr));
+                        }((enum_value_tuple*)0);
                     }
                     else
                     {
@@ -1672,15 +1688,20 @@ namespace xproperty
         // Helper to enable and disable our different types
         //
         template< bool T_IS_VAR_V, bool T_IS_LIST_V, typename T_MEMBER_TYPE >
-        inline constexpr bool meets_requirements_v = []
+        inline constexpr bool meets_requirements_v = []() consteval
         {
             using tc = type::var_t<T_MEMBER_TYPE>;
             using at = type::var_t<typename tc::atomic_type>;
 
-            if constexpr ( T_IS_VAR_V )
+
+            if constexpr (T_IS_VAR_V)
+            {
                 return (std::is_enum_v<typename at::type> == true || at::guid_v != 0) && tc::is_list_v == T_IS_LIST_V;
+            }
             else
+            {
                 return (std::is_enum_v<typename at::type> == false && at::guid_v == 0) && tc::is_list_v == T_IS_LIST_V;
+            }
         }();
 
         //
@@ -2234,19 +2255,6 @@ namespace xproperty
                 };
             }
         };
-
-        struct object_auto_registration
-        {
-            const type::object&             m_ObjectInfo;
-            const object_auto_registration* m_pNext;
-            inline constinit static const object_auto_registration* m_pHead = nullptr;
-            constexpr object_auto_registration(const type::object& ObjInfo) noexcept
-                : m_ObjectInfo{ ObjInfo }
-                , m_pNext{ m_pHead }
-            {
-                m_pHead = this;
-            }
-        };
     }
 
     //
@@ -2394,29 +2402,33 @@ namespace xproperty
     };
 
     //
-    // OBJECT
+    // PROPERTY DEFINITIONS
     //
+    struct def_base
+    {
+        const type::object&                     m_ObjectInfo;
+        inline constinit static const def_base* m_pHead = nullptr;
+        const def_base*                         m_pNext;
+    };
+
     template
     < details::fixed_string     T_OBJECT_NAME_V
     , typename                  T_OBJECT_TYPE
     , typename...               T_ARGS
     >
-    struct obj
+    struct def : def_base
     {
         using meta_t    = meta::object< T_OBJECT_NAME_V, T_OBJECT_TYPE, T_ARGS...>;
+        inline static constexpr xproperty::type::object     register_v  = meta_t::getInfo();
 
-        inline static constexpr xproperty::type::object     register_v = meta_t::getInfo();
-        inline static const meta::object_auto_registration s_Entry
-        { []() constexpr ->auto& 
-             { // If it asserts it means someone has already registered it.
-               // Which means that someone is trying to register the same object multiple times
-               // could be because the variable defining the xproperty::obj is not inline?
-               if(xproperty::type::get_obj_info<T_OBJECT_TYPE> == nullptr) xproperty::type::get_obj_info<T_OBJECT_TYPE> = &register_v;
-               return register_v;
-             }()
-        };
-        
-        consteval static const type::object* get() noexcept { return &register_v; }
+        def() : def_base{ register_v }
+        {
+            m_pNext = m_pHead;
+            m_pHead = this;
+            xproperty::type::get_obj_info<T_OBJECT_TYPE> = &register_v;
+        }
+
+        consteval static const xproperty::type::object* get() noexcept { return &register_v; }
     };
 
     //

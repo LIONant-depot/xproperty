@@ -10,19 +10,24 @@ namespace internal
 {
     // https://blog.molecular-matters.com/2015/12/11/getting-the-type-of-a-template-argument-as-string-without-rtti/
 
-    inline constexpr unsigned int FRONT_SIZE = sizeof("internal::GetTypeNameHelper<") - 1u;
-    inline constexpr unsigned int BACK_SIZE = sizeof(">::GetTypeName") - 1u;
-
     template <typename T>
     struct GetTypeNameHelper
     {
         consteval static auto GetTypeName(void)
         {
-            constexpr auto size = sizeof(__FUNCTION__) - FRONT_SIZE - BACK_SIZE;
-            std::array<char, size> Data = {};
-            for (int i = 0; i < (size - 1); ++i) Data[i] = __FUNCTION__[i + FRONT_SIZE];
-            Data[size - 1] = '\0';
-            return Data;
+            #ifdef __clang__
+                constexpr auto p     = __PRETTY_FUNCTION__;
+            #else
+                constexpr auto p     = __FUNCTION__;
+            #endif  
+
+                constexpr auto front = [&]()consteval{ auto i = p + 10;        for(; *i != '<'; ++i){} return static_cast<std::size_t>(i - p)+1; }();
+                constexpr auto back  = [&]()consteval{ auto i = p + front + 1; for(; *i != '>'; ++i){} return static_cast<std::size_t>(i - p)+0; }();
+                constexpr auto size  = back - front + 1;
+
+                std::array<char, size> Data = {0};
+                for (int i = 0; i < (size - 1); ++i) Data[i] = p[i + front];
+                return Data;
         }
     };
 }

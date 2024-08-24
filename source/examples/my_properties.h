@@ -36,6 +36,7 @@ namespace.
 cpp */
 namespace xproperty::settings
 {
+/*
     // For our basic property types we need to know our worse alignment.
     // We can choose our alignment. This is useful if you are using SIMD instructions
     // or other types strange alignment types. So you have to choose your worse case scenario.
@@ -81,6 +82,42 @@ namespace xproperty::settings
         , std::uint64_t         // this is an integer iterator for C arrays for instance
         , std::array<char, 4>   // you could set a minimum size
         >
+    >;
+
+    */
+
+    // Here are a bunch of useful tools to help us configure xproperty. 
+    namespace details
+    {
+        // For our basic property types we need to know our worse alignment.
+        // We can choose our alignment. This is useful if you are using SIMD instructions
+        // or other types strange alignment types. So you have to choose your worse case scenario.
+        constexpr auto force_minimum_case_alignment = 16;
+
+        // This is the structure which is align and as big as our worse alignment and worse size
+        template< typename...T >
+        struct alignas(force_minimum_case_alignment) atomic_type_worse_alignment_and_memory
+        {
+            alignas(std::max({ alignof(T)... })) std::uint8_t m_Data[std::max({ sizeof(T)... })];
+        };
+    }
+
+    // xproperty requires us to define this type. This type represents
+    // our universal basic data allocation which is the worst case scenario for both alignment and size.
+    // Note that no memory will in fact be allocated in the heap. 
+    using data_memory = details::atomic_type_worse_alignment_and_memory
+    <                   // Here we guess our worse properties data sizes
+      std::string       // std::string is typically 32 bytes on 32 bit and 64 bit builds
+    , std::size_t       // std::size_t is 4 bytes on 32 bit and 8 bytes on 64 bit
+    , std::uint64_t     // std::uint64_t is always 8 bytes
+    >;
+
+    // xproperty requires as to define this type. This is similar as above but this time for iterators.
+    using iterator_memory = details::atomic_type_worse_alignment_and_memory
+    < std::vector<data_memory>::iterator
+    , std::map<std::string, data_memory>::iterator
+    , std::uint64_t         // this is an integer iterator for C arrays for instance
+    , std::array<char, 4>   // you could set a minimum size
     >;
 }
 

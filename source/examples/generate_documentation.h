@@ -20,7 +20,7 @@ namespace xproperty_doc
 
         void output() const
         {
-            printf(m_Data.data());
+            printf("%s",m_Data.data());
         }
 
         constexpr std::string_view getStringView() const
@@ -28,9 +28,9 @@ namespace xproperty_doc
             return { m_Data.data(), static_cast<std::size_t>(m_Index-1) };
         }
 
-        std::string       m_Title;
+        std::string       m_Title {};
         int               m_Index = 0;
-        std::vector<char> m_Data;
+        std::vector<char> m_Data {};
     };
 
     // collapsible_string_v
@@ -46,8 +46,8 @@ R"(
 
     struct example_group
     {
-        std::string             m_GroupName;
-        std::vector<memfile>    m_Examples;
+        std::string             m_GroupName {};
+        std::vector<memfile>    m_Examples  {};
     };
 
     // Search and replace strings

@@ -16,15 +16,15 @@ namespace xproperty::sprop
     protected:
         struct node
         {
-            const char*     m_pName;
-            std::size_t     m_iCurPath;
+            const char*     m_pName         {};
+            std::size_t     m_iCurPath      {};
         };
 
-        xproperty::settings::context*             m_pContext         {};
-        sprop::container*                        m_pPropContainer   {};
-        std::size_t                              m_iCurrentPath     {0};
-        std::vector<node>                        m_PathStack        {};
-        std::array<char, 256>                    m_CurrentPath;
+        xproperty::settings::context*           m_pContext         {};
+        sprop::container*                       m_pPropContainer   {nullptr};
+        std::size_t                             m_iCurrentPath     {0};
+        std::vector<node>                       m_PathStack        {};
+        std::array<char, 256>                   m_CurrentPath;
 
         //----------------------------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ namespace xproperty::sprop
             const char* const pFmt = m_iCurrentPath ? "/%s" : "%s";
 
             m_PathStack.emplace_back( pName, m_iCurrentPath );
-            m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], 256, pFmt, pName);
+            m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], m_CurrentPath.size()-m_iCurrentPath, pFmt, pName);
             
             assert( m_iCurrentPath < m_CurrentPath.size() );
         }
@@ -83,7 +83,7 @@ namespace xproperty::sprop
                 // We will write the size for each dimension as a xproperty
                 xproperty::any Value;
                 Value.set<std::size_t>(Count);
-                m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], 235, "[]");
+                m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], m_CurrentPath.size() - m_iCurrentPath, "[]");
                 m_pPropContainer->m_Properties.emplace_back(m_CurrentPath.data(), std::move(Value));
                 m_iCurrentPath -= 2;
             }
@@ -109,10 +109,10 @@ namespace xproperty::sprop
                     }
 
                     // we need to key into the path
-                    m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], 235, "[");
-                    m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], 235, "%c:", xproperty::settings::GUIDToCType(Key.getTypeGuid()));
+                    m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], m_CurrentPath.size() - m_iCurrentPath, "[");
+                    m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], m_CurrentPath.size() - m_iCurrentPath, "%c:", xproperty::settings::GUIDToCType(Key.getTypeGuid()));
                     m_iCurrentPath += xproperty::settings::AnyToString({ &m_CurrentPath[m_iCurrentPath], m_CurrentPath.size() - m_iCurrentPath }, Key );
-                    m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], 235, "]");
+                    m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], m_CurrentPath.size() - m_iCurrentPath, "]");
                 }
 
                 if (iDimension < (List.m_Table.size() - 1))
