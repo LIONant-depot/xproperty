@@ -1376,6 +1376,9 @@ namespace xproperty
             template< typename T_CLASS, typename T_MEMBER_TYPE, auto T_LAMBDA_V >
             struct cast_scope
             {
+                // This is put here because there is a bug in visual studio... 
+                inline constexpr static auto callback_v = T_LAMBDA_V;
+
                 constexpr static std::tuple<void*, const xproperty::type::object*> Cast( void* pClass, settings::context& C )
                 {
                     // make sure we have not refs...
@@ -1390,7 +1393,7 @@ namespace xproperty
                         }
                         else
                         {
-                            T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass, C);
+                            T_MEMBER_TYPE* pA = details::get_member<callback_v, T_CLASS>::get(pClass, C);
                             if (pA) return type::var_t<t>::getAtomic(const_cast<t&>(*pA), C);
                         }
                         return nullptr;
@@ -1480,8 +1483,8 @@ namespace xproperty
                 {
                     using t                 = type::var_t<T_MEMBER_TYPE>;
                     using type              = typename t::type;
-                    using specializing_t    = typename t::specializing_t;
-                    using atomic_type       = typename t::atomic_type;
+//                    using specializing_t    = typename t::specializing_t;
+//                    using atomic_type       = typename t::atomic_type;
                     using begin_iterator_t  = typename t::begin_iterator;
                     using end_iterator_t    = typename t::end_iterator;
 
@@ -2152,7 +2155,7 @@ namespace xproperty
             {
                 using t = typename T::type;
                 return 
-                { type::members::props{ details::cast_scope< T_OBJECT_TYPE, t, +[](T_OBJECT_TYPE& C) constexpr ->t& {return C; } >::Cast }
+                { type::members::props{ details::cast_scope< T_OBJECT_TYPE, t, +[](T_OBJECT_TYPE& C) constexpr noexcept ->t& {return C; } >::Cast }
                 , T::is_const_v
                 };
             }
