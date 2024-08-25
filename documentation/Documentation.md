@@ -29,20 +29,23 @@ struct my_object1
     void setValues()         { m_Var = 20; }
     void CheckValues() const { assert(m_Var == 20); }
 
-    using prop_def = xproperty::def
-    // String name of the class and the class type
-    < "My Object 1", my_object1
+    // Create the propery definition for this object
+    // We can use this helpful macro if we like...
+    XPROPERTY_DEF
+    ( "My Object 1", my_object1     // String name of the object name and the actual type
 
     // member variables. Note that first is the name of the
     // variable and the second is a pointer to the variable
-    , xproperty::obj_member<"var", &my_object1::m_Var>
+    , xproperty::obj_member<"var",          &my_object1::m_Var>
 
     // member functions are also supported
-    , xproperty::obj_member<"setValues", &my_object1::setValues>
-    , xproperty::obj_member<"CheckValues", &my_object1::CheckValues>
-    >;
+    , xproperty::obj_member<"setValues",    &my_object1::setValues>
+    , xproperty::obj_member<"CheckValues",  &my_object1::CheckValues>
+    )
 };
-namespace { inline const my_object1::prop_def MyObject1Props; }
+// Once we have create the definition of our properties we need to register them
+// again we can use another helpful macro for this (Note that both macros must be used together)
+XPROPERTY_REG(my_object1)
 
 
  ```
@@ -68,8 +71,9 @@ My Object 1/var = 20
 
 ## <a name="Example0.2"></a> Example 2 - opt in, resolving friendship issues
 
-You may encounter friendship issues when trying to access private members of your class.
-To avoid this you can also do this.
+Sometime we don't want to use macros because it may not help us debug things clearly.
+This is how we will use just playing C++.
+Note that friendship issues for variables are not a problem for properties.
 ```cpp
 class my_object2
 {
@@ -82,19 +86,33 @@ protected:
 
     int m_Var = 0;
 
-public: 
-
     // This function can have any name you want
     // But should follow the same pattern
-    // consteval is optional but recommended
-    using prop_def = xproperty::def
-    < "My Object 2", my_object2 
-    , xproperty::obj_member<"var",         &my_object2::m_Var>
-    , xproperty::obj_member<"setValues",   &my_object2::setValues>
-    , xproperty::obj_member<"CheckValues", &my_object2::CheckValues>
-    >;
+    // The main job of this function is to give us the 
+    // property definition type
+    public: static auto PropertiesDefinition() 
+    {
+        // note that this function should never be called anyways.
+        // we only care about the return type
+        assert(false);
+
+        // We could add some name space here to help us with our 
+        // property definitions to make it less verbose...
+        using namespace xproperty; 
+
+        // here we are going to define the return type and just return one object of it
+        // note that this code should never execute...
+        return xproperty::def 
+        < "My Object 2", my_object2 
+        , obj_member<"var",         &my_object2::m_Var>
+        , obj_member<"setValues",   &my_object2::setValues>
+        , obj_member<"CheckValues", &my_object2::CheckValues>
+        >{};
+    }
 };
-namespace { inline const my_object2::prop_def MyObject2Props; }
+// We use this namespace to hide our global variable that we use for the actual registration
+// NOTE: No one should have to accessing this variable directly!
+namespace my_object2_props { inline const decltype(my_object2::PropertiesDefinition()) v{}; }
 
  ```
 
@@ -119,8 +137,9 @@ My Object 2/var = 20
 
 ## <a name="Example0.3"></a> Example 3 - opt in, resolving friendship issues when no access to the base class
 
-There may be times that you may not have access to the source code of the class, plus there
-may be friend-ship issues. Then you can try the following solution:
+There may be times that you may not have access to the source code of the class
+that you wish to create properties for, or there may some friend-ship issues. 
+Generating a fake object that derives from the original is a possible solution to both.
 ```cpp
 
 class my_object3
@@ -135,20 +154,17 @@ protected:
 
 // We will never instantiate this class
 // can also be named anything you want
-class my_object_3_fake_friend : my_object3
-{
-    // Create a static variable that holds the properties
-    // The variable does not need to be accessible and can be
-    // named anything you want. Make sure is: inline static constexpr.
-public:
-    using prop_def = xproperty::def
-    < "My Object 3", my_object3
-    , xproperty::obj_member<"var",           &my_object_3_fake_friend::m_Var>
-    , xproperty::obj_member<"setValues",     &my_object_3_fake_friend::setValues>
-    , xproperty::obj_member<"CheckValues",   &my_object_3_fake_friend::CheckValues>
-    >;
+// and can be a class or a struct...
+class my_object_3_fake_friend : public my_object3
+{    
+    XPROPERTY_DEF
+    ( "My Object 3", my_object3  // Note that we need to specify the original type
+    , obj_member<"var",           &my_object_3_fake_friend::m_Var>
+    , obj_member<"setValues",     &my_object_3_fake_friend::setValues>
+    , obj_member<"CheckValues",   &my_object_3_fake_friend::CheckValues>
+    )
 };
-namespace { inline const my_object_3_fake_friend::prop_def MyObject3Props; }
+XPROPERTY_REG(my_object_3_fake_friend)
 
  ```
 
@@ -199,24 +215,24 @@ struct derived1 : my_object1, my_object2
         my_object2::CheckValues();
     }
 
-    using prop_def = xproperty::def
-    < "Derived1", derived1
+    XPROPERTY_DEF
+    ( "Derived1", derived1
 
     // Note that we are adding the base class here
-    //   We could add as many bases as we want...
-    //   However usually matches the object itself.
-    , xproperty::obj_base<my_object1>
-    , xproperty::obj_base<my_object2>
+    // We could add as many bases as we want...
+    // However usually matches the object itself.
+    , obj_base<my_object1>
+    , obj_base<my_object2>
 
     // Only need to add our own member variables
-    , xproperty::obj_member<"var2",        &derived1::m_Var2>
+    , obj_member<"var2",        &derived1::m_Var2>
 
     // And/Or member functions
-    , xproperty::obj_member<"setValues",   &derived1::setValues>
-    , xproperty::obj_member<"CheckValues", &derived1::CheckValues>
-    >;
+    , obj_member<"setValues",   &derived1::setValues>
+    , obj_member<"CheckValues", &derived1::CheckValues>
+    )
 };
-namespace { inline const derived1::prop_def MyDerived1Props; }
+XPROPERTY_REG(derived1)
 
  ```
 
@@ -255,7 +271,8 @@ Derived1/var2 = 20
 In C++ we have the concept of base object with virtual functions. This means that we
 should support only having a base class and still recognizance the entire hierarchy. This is
 done in cpp with virtual functions. We can also support that but your base class must include
-the 'xproperty::base' in your base class.
+the 'xproperty::base' in your base class. This will indicate that we are going to be using 
+virtual functions. Also you need to override the 'getProperties' function.
 
 ```cpp
 struct base1 : xproperty::base
@@ -272,33 +289,21 @@ struct base1 : xproperty::base
         assert(m_Var == 20);
     }
 
-    // Make sure that property definitions remain public
-public:
-
-    using prop_def = xproperty::def
-    < "Base1", base1
-    // We do not need to add this here since we are the base class
-    // , obj_base<xproperty::base>                                                      
-    , xproperty::obj_member<"var",         &base1::m_Var>
-    , xproperty::obj_member<"setValues",   &base1::setValues>
-    , xproperty::obj_member<"CheckValues", &base1::CheckValues>
-    >;
-
-    // Here we will override the xproperty::base virtual function
-    // This function will be called by the system to get the properties
-    // For virtual function we need to spell out the return type... 
-    // We must also define the body outside the class
-    virtual const xproperty::type::object* getProperties() const noexcept override;
+    // Since we are dealing with virtual properties we must specidy the right macro;
+    // Stead of using 'DEF' we will use 'VDEF' at the end of the macro name.
+    // This will generate the require virtual functions to make the system work correctly
+    XPROPERTY_VDEF
+    ( "Base1", base1
+    // We do not need to add: obj_base<xproperty::base>
+    // because xproperty::base has no properties at all...
+    , obj_member<"var",         &base1::m_Var>
+    , obj_member<"setValues",   &base1::setValues>
+    , obj_member<"CheckValues", &base1::CheckValues>
+    )
 };
-
-namespace base1_ { inline const base1::prop_def MyBase1Props; }
-
-// We need to define the body outside the class so that we can get access
-// to our registration instance
-const xproperty::type::object* base1::getProperties() const noexcept
-{
-    return base1_::MyBase1Props.get();
-}
+// NOTE: Since we are dealing with a virtual properties we need to change the name of the 
+// registration macro. This one has the 'VREG' stead of the 'REG' at the end.
+XPROPERTY_VREG(base1)
 
 
  End of the definition of base1
@@ -321,30 +326,20 @@ struct derived2 : base1
         base1::CheckValues();
     }
 
-    // Here we will override the xproperty::base virtual function
-    // Make sure it remains public
-public:
+    // This class still part of the virtual property hirarchy so we must use the 'VDEF' macro
+    XPROPERTY_VDEF
+    ( "Derived2", derived2
 
-    using prop_def = xproperty::def
-    < "Derived2", derived2
+    // NOTR: that we are adding the base class here
+    // since base1 does have properties that we need to know about
+    , obj_base<base1>
 
-    // Note that we are adding the base class here
-    , xproperty::obj_base<base1>
-
-    , xproperty::obj_member<"var2",        &derived2::m_Var2>
-    , xproperty::obj_member<"setValues",   &derived2::setValues>
-    , xproperty::obj_member<"CheckValues", &derived2::CheckValues>
-    >;
-
-    const xproperty::type::object* getProperties() const noexcept override;
+    , obj_member<"var2",        &derived2::m_Var2>
+    , obj_member<"setValues",   &derived2::setValues>
+    , obj_member<"CheckValues", &derived2::CheckValues>
+    )
 };
-
-namespace derived2_{ inline const derived2::prop_def MyDerived2Props; }
-
-const xproperty::type::object* derived2::getProperties() const noexcept
-{
-    return derived2_::MyDerived2Props.get();
-}
+XPROPERTY_VREG(derived2)
 
 
  ```
@@ -414,67 +409,27 @@ struct common_types
         m_ReadOnlyProps.CheckValues();
     }
 
-public:
-    // Define the properties
-    using prop_def = xproperty::def
-    < "CommonTypes", common_types
-    , xproperty::obj_member<"m_ValueHoldingVar",       &common_types::m_ValueHoldingVar>
-    , xproperty::obj_member<"m_PropertyHoldingVar",    &common_types::m_PropertyHoldingVar >
+    XPROPERTY_DEF
+    ( "CommonTypes", common_types
+    , obj_member<"m_ValueHoldingVar",       &common_types::m_ValueHoldingVar>
+    , obj_member<"m_PropertyHoldingVar",    &common_types::m_PropertyHoldingVar >
 
     // Properties that are const will be automatically be read-only
-    , xproperty::obj_member<"m_ReadOnlyValue",         &common_types::m_ReadOnlyValue >
-    , xproperty::obj_member<"m_ReadOnlyProps",         &common_types::m_ReadOnlyProps >
+    , obj_member<"m_ReadOnlyValue",         &common_types::m_ReadOnlyValue >
+    , obj_member<"m_ReadOnlyProps",         &common_types::m_ReadOnlyProps >
 
     // However we can also force the issue if we want
-    , xproperty::obj_member_ro<"ForceReadOnlyVar",     &common_types::m_ValueHoldingVar>
-    , xproperty::obj_member_ro<"ForceReadOnlyProps",   &common_types::m_PropertyHoldingVar>
+    , obj_member_ro<"ForceReadOnlyVar",     &common_types::m_ValueHoldingVar>
+    , obj_member_ro<"ForceReadOnlyProps",   &common_types::m_PropertyHoldingVar>
 
     // We can also add member functions
-    , xproperty::obj_member<"setValues",               &common_types::setValues>
-    , xproperty::obj_member<"CheckValues",             &common_types::CheckValues>
-    >;
+    , obj_member<"setValues",               &common_types::setValues>
+    , obj_member<"CheckValues",             &common_types::CheckValues>
+    );
 };
-namespace { inline const common_types::prop_def CommonTypesProps; }
+XPROPERTY_REG(common_types)
 
- ```
-
-<details><summary><i><b>Printing Output </b>(Click to open) </i></summary>
-
-~~~
-OBJECT[ CommonTypes ]
-    MEMBER_VARS[ m_ValueHoldingVar ] = ( type: s32, value: 40 )
-    MEMBER_PROPS[ m_PropertyHoldingVar ] = OBJECT[ Base1 ]
-        MEMBER_VARS[ var ] = ( type: s32, value: 20 )
-        MEMBER_FUNCTION[ setValues ]
-        MEMBER_FUNCTION[ CheckValues ]
-    MEMBER_VARS[ m_ReadOnlyValue ] = ( type: const s32, value: 100 )
-    MEMBER_PROPS[ m_ReadOnlyProps ] = ( Const ) OBJECT[ Base1 ]
-        MEMBER_VARS[ var ] = ( type: const s32, value: 20 )
-        MEMBER_FUNCTION[ setValues ]
-        MEMBER_FUNCTION[ CheckValues ]
-    MEMBER_VARS[ ForceReadOnlyVar ] = ( type: const s32, value: 40 )
-    MEMBER_PROPS[ ForceReadOnlyProps ] = ( Const ) OBJECT[ Base1 ]
-        MEMBER_VARS[ var ] = ( type: const s32, value: 20 )
-        MEMBER_FUNCTION[ setValues ]
-        MEMBER_FUNCTION[ CheckValues ]
-    MEMBER_FUNCTION[ setValues ]
-    MEMBER_FUNCTION[ CheckValues ]
-~~~
-</details>
-
-
-<details><summary><i><b>SProps Output </b>(Click to open) </i></summary>
-
-~~~
-CommonTypes/m_ValueHoldingVar = 40
-CommonTypes/m_PropertyHoldingVar/Base1/var = 20
-CommonTypes/m_ReadOnlyValue = ERROR: Fail to set a constant xproperty! CommonTypes/m_ReadOnlyValue Location 28
-CommonTypes/m_ReadOnlyProps/Base1/var = ERROR: Fail to set a constant xproperty! CommonTypes/m_ReadOnlyProps/Base1/var Location 28
-CommonTypes/ForceReadOnlyVar = ERROR: Fail to set a constant xproperty! CommonTypes/ForceReadOnlyVar Location 29
-CommonTypes/ForceReadOnlyProps/Base1/var = ERROR: Fail to set a constant xproperty! CommonTypes/ForceReadOnlyProps/Base1/var Location 31
-~~~
-</details>
-
+ [common_types]]
 <br>
 
 # Enums
@@ -523,8 +478,6 @@ struct enums_unregistered
         assert(m_EnumC == example3::C3);
     }
     
-public:
-
     // We can also create a list of items for unregistered enums and
     // pass this to the xproperty. This is useful when you have multiple
     // variables in a class that use the same enum. That way you don't
@@ -536,37 +489,37 @@ public:
     , xproperty::settings::enum_item{ "B2",  example2::B2 }
     };
 
-    using prop_def = xproperty::def
-    < "Enum Unregistered", enums_unregistered
+    XPROPERTY_DEF
+    ( "Enum Unregistered", enums_unregistered
 
     // This is the first way to handle unregistered enums.
     // It is simple and direct and solves the most common use case.
-    , xproperty::obj_member<"m_EnumA", &enums_unregistered::m_EnumA
-                            , xproperty::member_enum_value<"A1", A1>
-                            , xproperty::member_enum_value<"A2", A2>
-                            , xproperty::member_enum_value<"A3", A3>
-                            >
+    , obj_member<"m_EnumA", &enums_unregistered::m_EnumA
+                          , member_enum_value<"A1", A1>
+                          , member_enum_value<"A2", A2>
+                          , member_enum_value<"A3", A3>
+                          >
 
     // This is the second way to handle unregistered enums
     // we use the previous constexpr static array and pass it
     // to the xproperty. Note that you can not mix both methods!!!
-    , xproperty::obj_member<"m_EnumB", &enums_unregistered::m_EnumB
-                            , xproperty::member_enum_span<enum_b_list_v>
-                            >
+    , obj_member<"m_EnumB", &enums_unregistered::m_EnumB
+                          , member_enum_span<enum_b_list_v>
+                          >
 
     // This is another enum..l for fun... 
-    , xproperty::obj_member<"m_EnumC", &enums_unregistered::m_EnumC
-                            , xproperty::member_enum_value<"C1", example3::C1>
-                            , xproperty::member_enum_value<"C2", example3::C2>
-                            , xproperty::member_enum_value<"C3", example3::C3>
-                            >
+    , obj_member<"m_EnumC", &enums_unregistered::m_EnumC
+                          , member_enum_value<"C1", example3::C1>
+                          , member_enum_value<"C2", example3::C2>
+                          , member_enum_value<"C3", example3::C3>
+                          >
 
     // We can also add member functions
-    , xproperty::obj_member<"setValues",   &enums_unregistered::setValues>
-    , xproperty::obj_member<"CheckValues", &enums_unregistered::CheckValues>
-    >;
+    , obj_member<"setValues",   &enums_unregistered::setValues>
+    , obj_member<"CheckValues", &enums_unregistered::CheckValues>
+    );
 };
-namespace { inline const enums_unregistered::prop_def EnumsUnregisteredProps; }
+XPROPERTY_REG(enums_unregistered)
 
  ```
 
@@ -681,32 +634,31 @@ struct enums_registered
         assert(m_CValue02 == UNREG_V2);
     }
 
-public:
-    using prop_def = xproperty::def
-    < "Enum Registered", enums_registered
+    XPROPERTY_DEF
+    ( "Enum Registered", enums_registered
 
     // These are the registered enums as you can see there is
     // no need to add the enum values here... 
-    , xproperty::obj_member<"m_Value01", &enums_registered::m_Value01 >
-    , xproperty::obj_member<"m_CValue",  &enums_registered::m_CValue01 >
+    , obj_member<"m_Value01", &enums_registered::m_Value01 >
+    , obj_member<"m_CValue",  &enums_registered::m_CValue01 >
 
     // Unregistered enums
-    , xproperty::obj_member<"m_Value02", &enums_registered::m_Value02
-                                       , xproperty::member_enum_span<unreg_enum_list_v>
-                                       >
+    , obj_member<"m_Value02", &enums_registered::m_Value02
+                            , member_enum_span<unreg_enum_list_v>
+                            >
 
     // Here we would need to repeat the enum again... but since 
     // it is a const and can only really have one value 
-    , xproperty::obj_member<"m_CValue", &enums_registered::m_CValue02
-                                      , xproperty::member_enum_span<unreg_enum_list_v>
-                                      >
+    , obj_member<"m_CValue", &enums_registered::m_CValue02
+                           , member_enum_span<unreg_enum_list_v>
+                           >
 
     // We can also add member functions
-    , xproperty::obj_member<"setValues",   &enums_registered::setValues>
-    , xproperty::obj_member<"CheckValues", &enums_registered::CheckValues>
-    >;
+    , obj_member<"setValues",   &enums_registered::setValues>
+    , obj_member<"CheckValues", &enums_registered::CheckValues>
+    )
 };
-namespace { inline const enums_registered::prop_def EnumsRegisteredProps; }
+XPROPERTY_REG(enums_registered)
 
  ```
 
@@ -794,54 +746,49 @@ struct pointer_and_reference_c_style_values
         assert(m_UnEnum == unenum_t::UNREG_V3);
         assert(m_pUnEnum == &m_UnEnum);
     }
-};
 
-namespace pointer_and_reference_c_style_values_
-{ 
-    // If we don't have issues with protection levels we can define the properties here
-    using prop_def = xproperty::def
-    < "Pointer and References C Style Values"
+    XPROPERTY_DEF
+    ( "Pointer and References C Style Values"
     , pointer_and_reference_c_style_values
-    , xproperty::obj_member<"m_Int",    &pointer_and_reference_c_style_values::m_Int >
+    , obj_member<"m_Int",    &pointer_and_reference_c_style_values::m_Int >
 
     // C-Pointer properties look the same
-    , xproperty::obj_member<"m_pInt",   &pointer_and_reference_c_style_values::m_pInt >
-    , xproperty::obj_member<"m_ppInt",  &pointer_and_reference_c_style_values::m_ppInt>
+    , obj_member<"m_pInt",   &pointer_and_reference_c_style_values::m_pInt >
+    , obj_member<"m_ppInt",  &pointer_and_reference_c_style_values::m_ppInt>
 
     // Notice the reference lambda here. We use the '+' operator to force 
     // the lambda into a function pointer. Inside the function is very simple.
     // Note that the constexpr is optional but recommended
-    , xproperty::obj_member<"m_IntRef", +[](pointer_and_reference_c_style_values& O)
-                                            constexpr ->auto& { return O.m_IntRef; } >
-    , xproperty::obj_member<"m_CpInt",  &pointer_and_reference_c_style_values::m_CpInt >
-    , xproperty::obj_member<"m_CppInt", &pointer_and_reference_c_style_values::m_CppInt >
-    , xproperty::obj_member<"m_CIntRef", +[]( pointer_and_reference_c_style_values& O)
-                                              constexpr ->auto& { return O.m_CIntRef; } >
-    , xproperty::obj_member<"m_CpCInt",  &pointer_and_reference_c_style_values::m_CpCInt >
-    , xproperty::obj_member<"m_CppCInt", &pointer_and_reference_c_style_values::m_CppCInt>
+    , obj_member<"m_IntRef", +[](pointer_and_reference_c_style_values& O)
+                             constexpr ->auto& { return O.m_IntRef; } >
+    , obj_member<"m_CpInt",  &pointer_and_reference_c_style_values::m_CpInt >
+    , obj_member<"m_CppInt", &pointer_and_reference_c_style_values::m_CppInt >
+    , obj_member<"m_CIntRef", +[]( pointer_and_reference_c_style_values& O)
+                              constexpr ->auto& { return O.m_CIntRef; } >
+    , obj_member<"m_CpCInt",  &pointer_and_reference_c_style_values::m_CpCInt >
+    , obj_member<"m_CppCInt", &pointer_and_reference_c_style_values::m_CppCInt>
 
-    , xproperty::obj_member<"m_Enum",  &pointer_and_reference_c_style_values::m_Enum >
-    , xproperty::obj_member<"m_pEnum", &pointer_and_reference_c_style_values::m_pEnum>
-    , xproperty::obj_member<"m_EnumRef", +[](pointer_and_reference_c_style_values& O)
-                                             constexpr ->auto& { return O.m_EnumRef; } >
-    , xproperty::obj_member<"m_CpEnum", &pointer_and_reference_c_style_values::m_CpEnum>
+    , obj_member<"m_Enum",  &pointer_and_reference_c_style_values::m_Enum >
+    , obj_member<"m_pEnum", &pointer_and_reference_c_style_values::m_pEnum>
+    , obj_member<"m_EnumRef", +[](pointer_and_reference_c_style_values& O)
+                              constexpr ->auto& { return O.m_EnumRef; } >
+    , obj_member<"m_CpEnum", &pointer_and_reference_c_style_values::m_CpEnum>
 
-    , xproperty::obj_member<"m_UnEnum", &pointer_and_reference_c_style_values::m_UnEnum
-                                        , xproperty::member_enum_span<enums_registered::unreg_enum_list_v>
+    , obj_member<"m_UnEnum", &pointer_and_reference_c_style_values::m_UnEnum
+                           , member_enum_span<enums_registered::unreg_enum_list_v>
+                           >
+    , obj_member<"m_pUnEnum", &pointer_and_reference_c_style_values::m_pUnEnum
+                            , member_enum_span<enums_registered::unreg_enum_list_v>
                             >
-    , xproperty::obj_member<"m_pUnEnum", &pointer_and_reference_c_style_values::m_pUnEnum
-                                        , xproperty::member_enum_span<enums_registered::unreg_enum_list_v>
-                            >
-    , xproperty::obj_member < "m_RefUnEnum", +[](pointer_and_reference_c_style_values& O)
-                                             constexpr ->auto& { return O.m_RefUnEnum; }
-                                            , xproperty::member_enum_span<enums_registered::unreg_enum_list_v>
+    , obj_member < "m_RefUnEnum", +[](pointer_and_reference_c_style_values& O)
+                                  constexpr ->auto& { return O.m_RefUnEnum; }
+                                , member_enum_span<enums_registered::unreg_enum_list_v>
                                 >
-    , xproperty::obj_member<"setValues",    &pointer_and_reference_c_style_values::setValues>
-    , xproperty::obj_member<"CheckValues",  &pointer_and_reference_c_style_values::CheckValues>
-    >;
-
-    inline const prop_def PropDefs; 
-}
+    , obj_member<"setValues",    &pointer_and_reference_c_style_values::setValues>
+    , obj_member<"CheckValues",  &pointer_and_reference_c_style_values::CheckValues>
+    )
+};
+XPROPERTY_REG(pointer_and_reference_c_style_values)
 
  ```
 
@@ -928,34 +875,31 @@ struct pointer_and_reference_c_style_props
         assert( m_CpOther  == &m_Other   );
         assert( m_CppOther == &m_CpOther );
     }
-};
 
-namespace pointer_and_reference_c_style_props_
-{ 
-    // We can also define the properties like this...
-    inline const xproperty::def
-    < "Pointer and References C Style Props"
+    XPROPERTY_DEF
+    ( "Pointer and References C Style Props"
     , pointer_and_reference_c_style_props
-    , xproperty::obj_member<"Other",    &pointer_and_reference_c_style_props::m_Other>
+    , obj_member<"Other",    &pointer_and_reference_c_style_props::m_Other>
 
     // Another reference... the pattern is the same as before
-    , xproperty::obj_member<"OtherRef", +[](pointer_and_reference_c_style_props& O)
-                                constexpr ->auto& { return O.m_OtherRef;} >
-    , xproperty::obj_member<"m_pOther", &pointer_and_reference_c_style_props::m_pOther>
-    , xproperty::obj_member<"m_ppOther",&pointer_and_reference_c_style_props::m_ppOther>
+    , obj_member<"OtherRef", +[](pointer_and_reference_c_style_props& O)
+                             constexpr ->auto& { return O.m_OtherRef;} >
+    , obj_member<"m_pOther", &pointer_and_reference_c_style_props::m_pOther>
+    , obj_member<"m_ppOther",&pointer_and_reference_c_style_props::m_ppOther>
 
     // Reference of a pointer... 
-    , xproperty::obj_member<"m_ppOtherRef", +[](pointer_and_reference_c_style_props& O )
-                                    constexpr ->auto& { return O.m_ppOtherRef; }>
-    , xproperty::obj_member<"m_COtherRef", +[](pointer_and_reference_c_style_props& O)
+    , obj_member<"m_ppOtherRef", +[](pointer_and_reference_c_style_props& O )
+                                 constexpr ->auto& { return O.m_ppOtherRef; }>
+    , obj_member<"m_COtherRef", +[](pointer_and_reference_c_style_props& O)
                                 constexpr ->auto& { return O.m_COtherRef; } >
-    , xproperty::obj_member<"m_CpOther", &pointer_and_reference_c_style_props::m_CpOther>
-    , xproperty::obj_member<"m_CppOther",&pointer_and_reference_c_style_props::m_CppOther>
+    , obj_member<"m_CpOther", &pointer_and_reference_c_style_props::m_CpOther>
+    , obj_member<"m_CppOther",&pointer_and_reference_c_style_props::m_CppOther>
 
-    , xproperty::obj_member<"setValues", &pointer_and_reference_c_style_props::setValues>
-    , xproperty::obj_member<"CheckValues", &pointer_and_reference_c_style_props::CheckValues>
-    > Props;
-}
+    , obj_member<"setValues", &pointer_and_reference_c_style_props::setValues>
+    , obj_member<"CheckValues", &pointer_and_reference_c_style_props::CheckValues>
+    )
+};
+XPROPERTY_REG(pointer_and_reference_c_style_props)
 
  ```
 
@@ -1072,41 +1016,39 @@ struct pointers_and_references_cpp_style
 
         assert(*m_upEnum == enum_t::VALID_VALUE_3);
     }
-};
 
-namespace pointers_and_references_cpp_style_
-{ 
-    inline const xproperty::def
-    < "Pointers and Reference C++ Style"
+    XPROPERTY_DEF
+    ( "Pointers and Reference C++ Style"
     , pointers_and_references_cpp_style
     // Unique/Share pointers are also supported
-    , xproperty::obj_member<"m_upInt", &pointers_and_references_cpp_style::m_upInt >
-    , xproperty::obj_member<"m_uupInt", &pointers_and_references_cpp_style::m_uupInt>
-    , xproperty::obj_member<"m_supInt", &pointers_and_references_cpp_style::m_supInt>
+    , obj_member<"m_upInt", &pointers_and_references_cpp_style::m_upInt >
+    , obj_member<"m_uupInt", &pointers_and_references_cpp_style::m_uupInt>
+    , obj_member<"m_supInt", &pointers_and_references_cpp_style::m_supInt>
 
-    , xproperty::obj_member<"m_upOther", &pointers_and_references_cpp_style::m_upOther>
-    , xproperty::obj_member<"m_uupOther", &pointers_and_references_cpp_style::m_uupOther>
+    , obj_member<"m_upOther", &pointers_and_references_cpp_style::m_upOther>
+    , obj_member<"m_uupOther", &pointers_and_references_cpp_style::m_uupOther>
 
     // Mixing unique and share pointers... 
-    , xproperty::obj_member<"m_supOther", &pointers_and_references_cpp_style::m_supOther>
-    , xproperty::obj_member < "m_RefupOther", +[](pointers_and_references_cpp_style& O)
-                                                constexpr ->auto& { return O.m_RefupOther; } >
-    , xproperty::obj_member<"m_CupOther", &pointers_and_references_cpp_style::m_CupOther>
-    , xproperty::obj_member<"m_CCupOther", &pointers_and_references_cpp_style::m_CCupOther>
+    , obj_member<"m_supOther", &pointers_and_references_cpp_style::m_supOther>
+    , obj_member < "m_RefupOther", +[](pointers_and_references_cpp_style& O)
+                                   constexpr ->auto& { return O.m_RefupOther; } >
+    , obj_member<"m_CupOther", &pointers_and_references_cpp_style::m_CupOther>
+    , obj_member<"m_CCupOther", &pointers_and_references_cpp_style::m_CCupOther>
 
-    , xproperty::obj_member<"m_upEnum", &pointers_and_references_cpp_style::m_upEnum>
-    , xproperty::obj_member<"m_uupEnum", &pointers_and_references_cpp_style::m_uupEnum>
-    , xproperty::obj_member<"m_UupEnum", &pointers_and_references_cpp_style::m_UupEnum
-                                         , xproperty::member_enum_span<enums_registered::unreg_enum_list_v> 
-                                         >
-    , xproperty::obj_member<"m_UuupEnum", &pointers_and_references_cpp_style::m_UuupEnum
-                                          , xproperty::member_enum_span<enums_registered::unreg_enum_list_v>
-                                            >
+    , obj_member<"m_upEnum", &pointers_and_references_cpp_style::m_upEnum>
+    , obj_member<"m_uupEnum", &pointers_and_references_cpp_style::m_uupEnum>
+    , obj_member<"m_UupEnum", &pointers_and_references_cpp_style::m_UupEnum
+                            , member_enum_span<enums_registered::unreg_enum_list_v> 
+                            >
+    , obj_member<"m_UuupEnum", &pointers_and_references_cpp_style::m_UuupEnum
+                             , member_enum_span<enums_registered::unreg_enum_list_v>
+                             >
 
-    , xproperty::obj_member<"setValues", &pointers_and_references_cpp_style::setValues>
-    , xproperty::obj_member<"CheckValues", &pointers_and_references_cpp_style::CheckValues>
-    > _;
-}
+    , obj_member<"setValues", &pointers_and_references_cpp_style::setValues>
+    , obj_member<"CheckValues", &pointers_and_references_cpp_style::CheckValues>
+    )
+};
+XPROPERTY_REG(pointers_and_references_cpp_style)
 
  ```
 
@@ -1265,33 +1207,32 @@ struct list_c_arrays
         for (auto& E : m_c3ListB) for (auto& E2 : E) for (auto& E3 : E2) 
             E3.CheckValues();
     }
+
+    XPROPERTY_DEF
+    ( "Lists - C Arrays", list_c_arrays
+    , obj_member<"m_c1ListAC",  &list_c_arrays::m_c1ListA >
+    , obj_member<"m_c2ListAC",  &list_c_arrays::m_c2ListA >
+    , obj_member<"m_c3ListAC",  &list_c_arrays::m_c3ListA >
+    , obj_member<"m_Refc1ListA", +[](list_c_arrays& O) constexpr
+                                 ->auto& { return O.m_Refc1ListA; } >
+    , obj_member<"m_Cc1ListA", &list_c_arrays::m_Cc1ListA >
+    , obj_member<"m_EnumList", &list_c_arrays::m_EnumList >
+    , obj_member<"m_UEnumList",&list_c_arrays::m_UEnumList
+                              , member_enum_span<enums_registered::unreg_enum_list_v>
+                              >
+
+    , obj_member<"m_c1ListBC",  &list_c_arrays::m_c1ListB >
+    , obj_member<"m_c2ListBC",  &list_c_arrays::m_c2ListB >
+    , obj_member<"m_c3ListBC",  &list_c_arrays::m_c3ListB >
+    , obj_member<"m_Cc1ListB", &list_c_arrays::m_Cc1ListB >
+    , obj_member<"m_Refc1ListB", +[](list_c_arrays& O) constexpr
+                                 ->auto& { return O.m_Refc1ListB; } >
+
+    , obj_member<"setValues",    &list_c_arrays::setValues >
+    , obj_member<"CheckValues",  &list_c_arrays::CheckValues >
+    )
 };
-
-namespace list_c_arrays_
-{ 
-    inline const xproperty::def
-    < "Lists - C Arrays", list_c_arrays
-    , xproperty::obj_member<"m_c1ListAC",  &list_c_arrays::m_c1ListA >
-    , xproperty::obj_member<"m_c2ListAC",  &list_c_arrays::m_c2ListA >
-    , xproperty::obj_member<"m_c3ListAC",  &list_c_arrays::m_c3ListA >
-    , xproperty::obj_member<"m_Refc1ListA", +[](list_c_arrays& O) constexpr
-                                            ->auto& { return O.m_Refc1ListA; } >
-    , xproperty::obj_member<"m_Cc1ListA", &list_c_arrays::m_Cc1ListA >
-    , xproperty::obj_member<"m_EnumList", &list_c_arrays::m_EnumList >
-    , xproperty::obj_member<"m_UEnumList",&list_c_arrays::m_UEnumList
-                                          , xproperty::member_enum_span<enums_registered::unreg_enum_list_v>>
-
-    , xproperty::obj_member<"m_c1ListBC",  &list_c_arrays::m_c1ListB >
-    , xproperty::obj_member<"m_c2ListBC",  &list_c_arrays::m_c2ListB >
-    , xproperty::obj_member<"m_c3ListBC",  &list_c_arrays::m_c3ListB >
-    , xproperty::obj_member<"m_Cc1ListB", &list_c_arrays::m_Cc1ListB >
-    , xproperty::obj_member<"m_Refc1ListB", +[](list_c_arrays& O) constexpr
-                                           ->auto& { return O.m_Refc1ListB; } >
-
-    , xproperty::obj_member<"setValues",    &list_c_arrays::setValues >
-    , xproperty::obj_member<"CheckValues",  &list_c_arrays::CheckValues >
-    > _;
-}
+XPROPERTY_REG(list_c_arrays)
 
  ```
 
@@ -1610,37 +1551,34 @@ struct lists_cpp
         for (auto i = 0u; i < m_UEnum.size(); ++i)
             assert(m_UEnum[i] == Ref.m_UEnum[i]);
     }
-};
 
-namespace lists_cpp_
-{
-    inline const xproperty::def
-    < "Lists C++", lists_cpp
-    , xproperty::obj_member<"m_vListA",    &lists_cpp::m_vListA >
-    , xproperty::obj_member<"m_vvListA",   &lists_cpp::m_vvListA >
-    , xproperty::obj_member<"m_vListARef", +[](lists_cpp& O) constexpr
+    XPROPERTY_DEF
+    ( "Lists C++", lists_cpp
+    , obj_member<"m_vListA",    &lists_cpp::m_vListA >
+    , obj_member<"m_vvListA",   &lists_cpp::m_vvListA >
+    , obj_member<"m_vListARef", +[](lists_cpp& O) constexpr
                                 ->auto& { return O.m_vListARef; } >
-    , xproperty::obj_member<"m_vListAup",  &lists_cpp::m_vListAup >
-    , xproperty::obj_member<"m_CvListA",   &lists_cpp::m_CvListA >
+    , obj_member<"m_vListAup",  &lists_cpp::m_vListAup >
+    , obj_member<"m_CvListA",   &lists_cpp::m_CvListA >
 
-    , xproperty::obj_member<"m_avListA",   &lists_cpp::m_avListA >
-    , xproperty::obj_member<"m_vListB",    &lists_cpp::m_vListB >
-    , xproperty::obj_member<"m_vvListB",   &lists_cpp::m_vvListB >
-    , xproperty::obj_member<"m_vListBRef", +[](lists_cpp& O) constexpr
+    , obj_member<"m_avListA",   &lists_cpp::m_avListA >
+    , obj_member<"m_vListB",    &lists_cpp::m_vListB >
+    , obj_member<"m_vvListB",   &lists_cpp::m_vvListB >
+    , obj_member<"m_vListBRef", +[](lists_cpp& O) constexpr
                                 ->auto& { return O.m_vListBRef; } >
-    , xproperty::obj_member<"m_vListBup",  &lists_cpp::m_vListBup >
-    , xproperty::obj_member<"m_avListB",   &lists_cpp::m_avListB >
-    , xproperty::obj_member<"m_CavListB",  &lists_cpp::m_CavListB >
-    , xproperty::obj_member<"m_CvListB",   &lists_cpp::m_CvListB >
+    , obj_member<"m_vListBup",  &lists_cpp::m_vListBup >
+    , obj_member<"m_avListB",   &lists_cpp::m_avListB >
+    , obj_member<"m_CavListB",  &lists_cpp::m_CavListB >
+    , obj_member<"m_CvListB",   &lists_cpp::m_CvListB >
 
-    , xproperty::obj_member<"m_Enum",     &lists_cpp::m_Enum >
-    , xproperty::obj_member<"m_UEnum",    &lists_cpp::m_UEnum
-                                          , xproperty::member_enum_span<enums_registered::unreg_enum_list_v>>
-
-    , xproperty::obj_member<"setValues",   &list_c_arrays::setValues >
-    , xproperty::obj_member<"CheckValues", &list_c_arrays::CheckValues >
-    > _;
-}
+    , obj_member<"m_Enum",     &lists_cpp::m_Enum >
+    , obj_member<"m_UEnum",    &lists_cpp::m_UEnum
+                ,               member_enum_span<enums_registered::unreg_enum_list_v>>
+    , obj_member<"setValues",   &list_c_arrays::setValues >
+    , obj_member<"CheckValues", &list_c_arrays::CheckValues >
+    );
+};
+XPROPERTY_REG(lists_cpp)
 
  ```
 
@@ -1955,20 +1893,17 @@ struct lists_advance
             assert(bFound);
         }
     }
+    XPROPERTY_DEF
+    ( "List Advance", lists_advance
+    , obj_member<"m_mListA", &lists_advance::m_mListA >
+    , obj_member<"m_mListB", &lists_advance::m_mListB >
+    , obj_member<"m_llListC", &lists_advance::m_llListC >
+
+    , obj_member<"setValues", &list_c_arrays::setValues >
+    , obj_member<"CheckValues", &list_c_arrays::CheckValues >
+    )
 };
-
-namespace lists_advance_
-{
-    inline const xproperty::def
-    < "List Advance", lists_advance
-    , xproperty::obj_member<"m_mListA", &lists_advance::m_mListA >
-    , xproperty::obj_member<"m_mListB", &lists_advance::m_mListB >
-    , xproperty::obj_member<"m_llListC", &lists_advance::m_llListC >
-
-    , xproperty::obj_member<"setValues", &list_c_arrays::setValues >
-    , xproperty::obj_member<"CheckValues", &list_c_arrays::CheckValues >
-    > _;
-}
+XPROPERTY_REG(lists_advance)
 
  ```
 
@@ -2083,15 +2018,9 @@ struct virtual_properties
         assert(m_Enum == enum_t::VALID_VALUE_2);
         assert(m_UEnum == unenum_t::UNREG_V2);
     }
-};
 
-namespace virtual_properties_
-{
-    using enum_t   = registered_enum::example;
-    using unenum_t = enums_registered::unreg;
-
-    inline const xproperty::def
-    < "Virtual Properties", virtual_properties
+    XPROPERTY_DEF 
+    ( "Virtual Properties", virtual_properties
     // This is the default lambda for xproperty that hold values
     // Notice the plus operator in front of the lambda
     // There is not need to return anything from the lambda for these types 
@@ -2216,10 +2145,11 @@ namespace virtual_properties_
             return &O.m_pOther;
         }>
 
-    , xproperty::obj_member<"setValues",   &list_c_arrays::setValues >
-    , xproperty::obj_member<"CheckValues", &list_c_arrays::CheckValues >
-    > _;
-}
+    , xproperty::obj_member<"setValues",   &virtual_properties::setValues >
+    , xproperty::obj_member<"CheckValues", &virtual_properties::CheckValues >
+    )
+};
+XPROPERTY_REG(virtual_properties)
 
  ```
 
@@ -2309,12 +2239,9 @@ struct user_data_object
     int m_Var = 0;
     void setValues() { m_Var = 20; }
     void CheckValues() const { assert(m_Var == 20); }
-};
 
-namespace user_data_object_
-{
-    inline const xproperty::def
-    < "Member User Data Object"
+    XPROPERTY_DEF
+    ( "Member User Data Object"
     , user_data_object
     , xproperty::obj_member<"var"
                 , &user_data_object::m_Var
@@ -2330,8 +2257,9 @@ namespace user_data_object_
                 , xproperty::member_help<"Check if the values have been"
                                 " set properly">
                 >
-    > _;
-}
+    )
+};
+XPROPERTY_REG(user_data_object)
 
  ```
 

@@ -2458,3 +2458,11 @@ namespace xproperty
     using begin_iterator = type::begin_iterator;
     using end_iterator   = type::end_iterator;
 }
+
+//
+// This is used to register the properties of the object
+//
+#define XPROPERTY_DEF( ... )  public: static auto PropertiesDefinition() { assert(false); using namespace xproperty; using namespace xproperty::settings; return xproperty::def<__VA_ARGS__ >(); }
+#define XPROPERTY_VDEF( ... ) public: static auto PropertiesDefinition() { assert(false); using namespace xproperty; using namespace xproperty::settings; return xproperty::def<__VA_ARGS__ >(); } const xproperty::type::object* getProperties() const noexcept override;
+#define XPROPERTY_REG( TYPE )  namespace TYPE##_props { inline const decltype(TYPE::PropertiesDefinition()) g_PropertyRegistration_v{}; }
+#define XPROPERTY_VREG( TYPE ) namespace TYPE##_props { inline const decltype(TYPE::PropertiesDefinition()) g_PropertyRegistration_v{}; } const xproperty::type::object* TYPE::getProperties() const noexcept { return TYPE##_props::g_PropertyRegistration_v.get();}
