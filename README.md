@@ -34,15 +34,14 @@ struct common
 
     void setValues() {/*...*/}
 
-    consteval auto Properties()             
-    {
-        return obj< "Common", common
-        , xproperty::obj_member<"m_ValueHoldingVar", &common::m_ValueHoldingVar>
-        , xproperty::obj_member<"m_ReadOnlyValue",   &common::m_ReadOnlyValue >
-        , xproperty::obj_member<"setValues",         &common::setValues>
-        > ::get();
-    }
+    XPROPERTY_DEF
+    ( "Common", common
+    , obj_member<"m_ValueHoldingVar", &common::m_ValueHoldingVar>
+    , obj_member<"m_ReadOnlyValue",   &common::m_ReadOnlyValue >
+    , obj_member<"setValues",         &common::setValues>
+    )
 };
+XPROPERTY_REG(common)
 ```
 
 # Features
