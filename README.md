@@ -50,7 +50,7 @@ XPROPERTY_REG(common)
 * **Single header**
 * **No allocations**
 * **No external dependencies**
-* **No macros**
+* **No macros overused** (4 of them used for convinience)
 * **No exceptions for maximun speed**
 * **No extra/external compilation step needed** 
 * **Minimalistic API**
