@@ -36,56 +36,6 @@ namespace.
 cpp */
 namespace xproperty::settings
 {
-/*
-    // For our basic property types we need to know our worse alignment.
-    // We can choose our alignment. This is useful if you are using SIMD instructions
-    // or other types strange alignment types. So you have to choose your worse case scenario.
-    constexpr auto worse_case_alignment = 16;
-
-    // Here are a bunch of useful tools to help us configure xproperty. 
-    namespace details
-    {
-        static_assert((worse_case_alignment&(worse_case_alignment -1)) == 0, "The alignment must be power of two");
-
-        // This is the structure which is align and as big as your worse alignment
-        struct universal_data
-        {
-            alignas(worse_case_alignment) std::uint8_t m_Data[worse_case_alignment];
-        };
-
-        // To determine your worse case data we can create a simple template.
-        // Note that the template should give you the worse case in multiple of your alignment.
-        template< typename...T>
-        inline constexpr std::size_t max_sizeof_v = (std::max({sizeof(T)...}) + (worse_case_alignment -1)) / worse_case_alignment;
-
-        // Useful template which help as create the max memory align as requested.
-        template< std::size_t ARRAY_SIZE_V >
-        using memory_t = std::array< details::universal_data, ARRAY_SIZE_V >;
-    }
-
-    // xproperty requires us to define this type. This type represents
-    // our universal basic data allocation which is the worst case scenario for both alignment and size.
-    // Note that no memory will in fact be allocated in the heap. 
-    using data_memory = details::memory_t
-    < details::max_sizeof_v // Here we guess our worse properties data sizes
-        < std::string       // std::string is typically 32 bytes on 32 bit and 64 bit builds
-        , std::size_t       // std::size_t is 4 bytes on 32 bit and 8 bytes on 64 bit
-        , std::uint64_t     // std::uint64_t is always 8 bytes
-        >
-    >;
-
-    // xproperty requires as to define this type. This is similar as above but this time for iterators.
-    using iterator_memory = details::memory_t
-    < details::max_sizeof_v
-        < std::vector<data_memory>::iterator
-        , std::map<std::string, data_memory>::iterator
-        , std::uint64_t         // this is an integer iterator for C arrays for instance
-        , std::array<char, 4>   // you could set a minimum size
-        >
-    >;
-
-    */
-
     // Here are a bunch of useful tools to help us configure xproperty. 
     namespace details
     {
