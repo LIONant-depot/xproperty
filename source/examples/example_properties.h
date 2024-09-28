@@ -319,7 +319,7 @@ struct common_types
 };
 XPROPERTY_REG(common_types)
 
-/* [common_types]]
+/* [[common_types]]
 <br>
 
 # Enums

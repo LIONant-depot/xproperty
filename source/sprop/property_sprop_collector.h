@@ -1,19 +1,50 @@
 #pragma once
 namespace xproperty::sprop
 {
+
+    // Please note that the CALLBACK should follow this signature
+    // [&]( const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members& Member, bool isConst ) { ... }
+    // * pPropertyName - is a view to the full property name including key for arrays and such
+    // * Value         - is the value of the property
+    // * Member        - is a convinient way to get the user data and whatever else you need
+    // * isConst       - is true if the property is const
     class collector
     {
     public:
 
         template<typename T>
-        collector( T& Object, sprop::container& PropContainer, xproperty::settings::context& context )
-            : m_pContext(&context)
-            , m_pPropContainer(&PropContainer)
+        collector( T& Object, sprop::container& PropContainer, xproperty::settings::context& context, bool bForEditors = false ) noexcept
+            : collector(Object, context, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members&, bool)
+                {
+                    PropContainer.m_Properties.emplace_back(pPropertyName, std::move(Value));
+                }, bForEditors ) {}
+
+        template<typename T, typename T_CALLBACK>
+        collector(T& Object, xproperty::settings::context& Context, T_CALLBACK&& CallBack, bool bForEditors = false ) noexcept
+            : collector( &Object, *xproperty::getObject(Object), Context, std::move(CallBack), bForEditors ){}
+
+        template<typename T_CALLBACK >
+        collector(const void* pObject, const xproperty::type::object& PropertyObj, xproperty::settings::context& context, T_CALLBACK&& CallBack, bool bForEditors = false ) noexcept
+            : m_pContext   (&context)
+            , m_bForEditors(bForEditors)
         {
-            DumpObject(&Object, *xproperty::getObject(Object), false);
+            PushPath(PropertyObj.m_pName);
+            if(false && m_bForEditors)
+            {
+                xproperty::type::members Member
+                { .m_GUID    = PropertyObj.m_GUID
+                , .m_pName   = PropertyObj.m_pName
+                , .m_Variant = xproperty::type::members::scope{}
+                , .m_bConst  = false
+                };
+                CallBack(m_CurrentPath.data(), xproperty::any(), Member, false);
+            }
+            DumpObject( std::move(CallBack), const_cast<void*>(pObject), PropertyObj, false);
+            PopPath();
         }
 
     protected:
+
         struct node
         {
             const char*     m_pName         {};
@@ -21,9 +52,9 @@ namespace xproperty::sprop
         };
 
         xproperty::settings::context*           m_pContext         {};
-        sprop::container*                       m_pPropContainer   {nullptr};
         std::size_t                             m_iCurrentPath     {0};
         std::vector<node>                       m_PathStack        {};
+        bool                                    m_bForEditors      {false};
         std::array<char, 256>                   m_CurrentPath;
 
         //----------------------------------------------------------------------------------------------
@@ -41,7 +72,7 @@ namespace xproperty::sprop
 
         //----------------------------------------------------------------------------------------------
 
-        void PopPath()
+        void PopPath( void )
         {
             m_iCurrentPath = m_PathStack.back().m_iCurPath;
             m_PathStack.pop_back();
@@ -49,8 +80,14 @@ namespace xproperty::sprop
 
         //----------------------------------------------------------------------------------------------
 
-        template< typename T >
-        inline void DumpAtomicTypes( void* pClass, const T& Info, const bool isConst )
+        template< typename T_CALLBACK, typename T >
+        inline void DumpAtomicTypes
+        ( T_CALLBACK&&                      CallBack
+        , void* const                       pClass
+        , const T&                          Info
+        , const xproperty::type::members&   Members
+        , const bool                        isConst 
+        )
         {
             if (Info.m_pWrite == nullptr) assert( isConst == true );
 
@@ -60,32 +97,45 @@ namespace xproperty::sprop
             // Read the actual value
             xproperty::any Value;
             Info.m_pRead(pClass, Value, Info.m_UnregisteredEnumSpan, *m_pContext);
-            m_pPropContainer->m_Properties.emplace_back(m_CurrentPath.data(), std::move(Value));
+
+            // Let the user know that we got properties
+            CallBack( m_CurrentPath.data(), std::move(Value), Members, isConst );
         }
 
         //----------------------------------------------------------------------------------------------
 
-        template< typename T >
+        template< typename T_CALLBACK, typename T >
         inline void ProcessList
-        ( const std::size_t             iDimension
-        , void* const                   pClass
-        , const T&                      List
-        , const bool                    isConst
+        ( T_CALLBACK&&                      CallBack
+        , const std::size_t                 iDimension
+        , void* const                       pClass
+        , const T&                          List
+        , const xproperty::type::members&   Members
+        , const bool                        isConst
         )
         {
             xproperty::begin_iterator        StartIterator(pClass, List.m_Table[iDimension], *m_pContext);
             const xproperty::end_iterator    EndIterator  (pClass, List.m_Table[iDimension], *m_pContext);
 
             // If a size is 0 we completely ignore this xproperty
-            if ( const auto Count = EndIterator.getSize(); Count == 0) return;
-            else
+ //           if ( const auto Count = EndIterator.getSize(); Count == 0) return;
+ //           else
             {
+                const auto Count = EndIterator.getSize();
+
                 // We will write the size for each dimension as a xproperty
                 xproperty::any Value;
                 Value.set<std::size_t>(Count);
                 m_iCurrentPath += sprintf_s(&m_CurrentPath[m_iCurrentPath], m_CurrentPath.size() - m_iCurrentPath, "[]");
-                m_pPropContainer->m_Properties.emplace_back(m_CurrentPath.data(), std::move(Value));
+
+                // Let the user know that we got properties
+                CallBack(m_CurrentPath.data(), std::move(Value), Members, isConst);
                 m_iCurrentPath -= 2;
+
+                const auto Count1 = StartIterator.getSize();
+
+                // If we have zero entries there is nothing else to do...
+                if( Count == 0 ) return;
             }
 
             auto iStringPop = m_iCurrentPath;
@@ -118,7 +168,7 @@ namespace xproperty::sprop
                 if (iDimension < (List.m_Table.size() - 1))
                 {
                     // Keep processing more dimensions
-                    ProcessList(iDimension + 1, pObject, List, isConst);
+                    ProcessList(CallBack, iDimension + 1, pObject, List, Members, isConst);
                 }
                 else
                 {
@@ -126,11 +176,11 @@ namespace xproperty::sprop
                     {
                         // Handle the printing of the object
                         auto [pInstance, pNewObject] = List.m_pCast(pObject, *m_pContext);
-                        if (pInstance) DumpObject(pInstance, *pNewObject, isConst);
+                        if (pInstance) DumpObject(CallBack, pInstance, *pNewObject, isConst);
                     }
                     else
                     {
-                        DumpAtomicTypes(pObject, List, isConst);
+                        DumpAtomicTypes(CallBack, pObject, List, Members, isConst);
                     }
                 }
 
@@ -146,10 +196,12 @@ namespace xproperty::sprop
         using list_props = const xproperty::type::members::list_props;
         using list_var   = const xproperty::type::members::list_var;
 
+        template< typename T_CALLBACK >
         inline void DumpScope
-        ( void* const                   pClass
-        , const scope* const            pScope
-        , const bool                    isConst 
+        ( T_CALLBACK&&                      CallBack
+        , void* const                       pClass
+        , const scope* const                pScope
+        , const bool                        isConst 
         )
         {
             for (auto& Member : pScope->m_Members)
@@ -159,12 +211,27 @@ namespace xproperty::sprop
                 PushPath(Member.m_pName);
                 std::visit( [&]<typename T>( T&& Arg ) constexpr
                 {
-                         if constexpr (std::is_same_v<T, scope&> )      {DumpScope( pClass, &Arg, bConst);}
-                    else if constexpr (std::is_same_v<T, var&>)         {DumpAtomicTypes( pClass, Arg, bConst);}
-                    else if constexpr (std::is_same_v<T, props&>)       {if(auto [pInstance, pObj] = Arg.m_pCast(pClass, *m_pContext); pInstance ) DumpObject( pInstance, *pObj, bConst);}
+                         if constexpr (std::is_same_v<T, scope&> )      
+                         {
+                             // Let the user know that we are dumping an object
+                             if (m_bForEditors) CallBack(m_CurrentPath.data(), xproperty::any(), Member, bConst);
+                             DumpScope(CallBack, pClass, &Arg, bConst);
+                         }
+                    else if constexpr (std::is_same_v<T, var&>)         {DumpAtomicTypes(CallBack, pClass, Arg, Member, bConst);}
+                    else if constexpr (std::is_same_v<T, props&>)       
+                    { 
+                        if(auto [pInstance, pObj] = Arg.m_pCast(pClass, *m_pContext); pInstance ) 
+                        {
+                            // Let the user know that we are dumping an object
+                            if (m_bForEditors) CallBack( m_CurrentPath.data(), xproperty::any(), Member, bConst );
+                            DumpObject(CallBack, pInstance, *pObj, bConst);
+                        }
+                    }
                     else if constexpr (std::is_same_v<T, func&>)        {} // Nothing to do for functions
-                    else if constexpr (std::is_same_v<T, list_props&> 
-                                    || std::is_same_v<T, list_var&>)    {ProcessList( 0, pClass, Arg, bConst);}
+                    else if constexpr (std::is_same_v<T, list_props&> || std::is_same_v<T, list_var&> ) 
+                    {
+                        ProcessList( CallBack, 0, pClass, Arg, Member, bConst );
+                    }
                     else static_assert( xproperty::always_false<T>::value, "Missing xproperty type" );
                 }, Member.m_Variant );
                 PopPath();
@@ -172,12 +239,11 @@ namespace xproperty::sprop
         }
 
         //----------------------------------------------------------------------------------------------
-
-        inline void DumpObject( void* pClass, const xproperty::type::object& Object, const bool isConst )
+        template< typename T_CALLBACK >
+        inline void DumpObject( T_CALLBACK&& CallBack, void* const pClass, const xproperty::type::object& Object, const bool isConst )
         {
             assert(pClass);
 
-            PushPath(Object.m_pName);
             for (auto& Base : Object.m_BaseList)
             {
                 const bool bConst      = isConst || Base.m_bConst;
@@ -186,10 +252,24 @@ namespace xproperty::sprop
                 // Unable to access some base? That should never happen... 
                 assert(pInstance);
 
-                DumpObject(pInstance, *pObj, bConst);
+                // If we are doing editor let the user know that we are dealing with a new scope
+                if (m_bForEditors)
+                {
+                    xproperty::type::members Member
+                    { .m_GUID    = pObj->m_GUID
+                    , .m_pName   = pObj->m_pName
+                    , .m_Variant = xproperty::type::members::scope{}
+                    , .m_bConst  = bConst
+                    };
+                    CallBack(pObj->m_pName, xproperty::any(), Member, bConst);
+                }
+
+                // Print all the members of the base class
+                PushPath(pObj->m_pName);
+                DumpObject(CallBack, pInstance, *pObj, bConst);
+                PopPath();
             }
-            DumpScope( pClass, &Object, isConst);
-            PopPath();
+            DumpScope(CallBack, pClass, &Object, isConst);
         }
     };
 }

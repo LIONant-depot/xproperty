@@ -429,7 +429,45 @@ struct common_types
 };
 XPROPERTY_REG(common_types)
 
- [common_types]]
+ ```
+
+<details><summary><i><b>Printing Output </b>(Click to open) </i></summary>
+
+~~~
+OBJECT[ CommonTypes ]
+    MEMBER_VARS[ m_ValueHoldingVar ] = ( type: s32, value: 40 )
+    MEMBER_PROPS[ m_PropertyHoldingVar ] = OBJECT[ Base1 ]
+        MEMBER_VARS[ var ] = ( type: s32, value: 20 )
+        MEMBER_FUNCTION[ setValues ]
+        MEMBER_FUNCTION[ CheckValues ]
+    MEMBER_VARS[ m_ReadOnlyValue ] = ( type: const s32, value: 100 )
+    MEMBER_PROPS[ m_ReadOnlyProps ] = ( Const ) OBJECT[ Base1 ]
+        MEMBER_VARS[ var ] = ( type: const s32, value: 20 )
+        MEMBER_FUNCTION[ setValues ]
+        MEMBER_FUNCTION[ CheckValues ]
+    MEMBER_VARS[ ForceReadOnlyVar ] = ( type: const s32, value: 40 )
+    MEMBER_PROPS[ ForceReadOnlyProps ] = ( Const ) OBJECT[ Base1 ]
+        MEMBER_VARS[ var ] = ( type: const s32, value: 20 )
+        MEMBER_FUNCTION[ setValues ]
+        MEMBER_FUNCTION[ CheckValues ]
+    MEMBER_FUNCTION[ setValues ]
+    MEMBER_FUNCTION[ CheckValues ]
+~~~
+</details>
+
+
+<details><summary><i><b>SProps Output </b>(Click to open) </i></summary>
+
+~~~
+CommonTypes/m_ValueHoldingVar = 40
+CommonTypes/m_PropertyHoldingVar/var = 20
+CommonTypes/m_ReadOnlyValue = ERROR: Fail to set a constant xproperty! CommonTypes/m_ReadOnlyValue Location 28
+CommonTypes/m_ReadOnlyProps/var = ERROR: Fail to set a constant xproperty! CommonTypes/m_ReadOnlyProps/var Location 28
+CommonTypes/ForceReadOnlyVar = ERROR: Fail to set a constant xproperty! CommonTypes/ForceReadOnlyVar Location 29
+CommonTypes/ForceReadOnlyProps/var = ERROR: Fail to set a constant xproperty! CommonTypes/ForceReadOnlyProps/var Location 31
+~~~
+</details>
+
 <br>
 
 # Enums
@@ -948,14 +986,14 @@ OBJECT[ Pointer and References C Style Props ]
 <details><summary><i><b>SProps Output </b>(Click to open) </i></summary>
 
 ~~~
-Pointer and References C Style Props/Other/Base1/var = 20
-Pointer and References C Style Props/OtherRef/Base1/var = 20
-Pointer and References C Style Props/m_pOther/Base1/var = 20
-Pointer and References C Style Props/m_ppOther/Base1/var = 20
-Pointer and References C Style Props/m_ppOtherRef/Base1/var = 20
-Pointer and References C Style Props/m_COtherRef/Base1/var = ERROR: Fail to set a constant xproperty! Pointer and References C Style Props/m_COtherRef/Base1/var Location 49
-Pointer and References C Style Props/m_CpOther/Base1/var = ERROR: Fail to set a constant xproperty! Pointer and References C Style Props/m_CpOther/Base1/var Location 47
-Pointer and References C Style Props/m_CppOther/Base1/var = ERROR: Fail to set a constant xproperty! Pointer and References C Style Props/m_CppOther/Base1/var Location 48
+Pointer and References C Style Props/Other/var = 20
+Pointer and References C Style Props/OtherRef/var = 20
+Pointer and References C Style Props/m_pOther/var = 20
+Pointer and References C Style Props/m_ppOther/var = 20
+Pointer and References C Style Props/m_ppOtherRef/var = 20
+Pointer and References C Style Props/m_COtherRef/var = ERROR: Fail to set a constant xproperty! Pointer and References C Style Props/m_COtherRef/var Location 49
+Pointer and References C Style Props/m_CpOther/var = ERROR: Fail to set a constant xproperty! Pointer and References C Style Props/m_CpOther/var Location 47
+Pointer and References C Style Props/m_CppOther/var = ERROR: Fail to set a constant xproperty! Pointer and References C Style Props/m_CppOther/var Location 48
 ~~~
 </details>
 
@@ -1099,12 +1137,12 @@ OBJECT[ Pointers and Reference C++ Style ]
 Pointers and Reference C++ Style/m_upInt = 64
 Pointers and Reference C++ Style/m_uupInt = 646
 Pointers and Reference C++ Style/m_supInt = 1646
-Pointers and Reference C++ Style/m_upOther/Base1/var = 20
-Pointers and Reference C++ Style/m_uupOther/Base1/var = 20
-Pointers and Reference C++ Style/m_supOther/Base1/var = 20
-Pointers and Reference C++ Style/m_RefupOther/Base1/var = 20
-Pointers and Reference C++ Style/m_CupOther/Base1/var = 20
-Pointers and Reference C++ Style/m_CCupOther/Base1/var = 20
+Pointers and Reference C++ Style/m_upOther/var = 20
+Pointers and Reference C++ Style/m_uupOther/var = 20
+Pointers and Reference C++ Style/m_supOther/var = 20
+Pointers and Reference C++ Style/m_RefupOther/var = 20
+Pointers and Reference C++ Style/m_CupOther/var = 20
+Pointers and Reference C++ Style/m_CCupOther/var = 20
 Pointers and Reference C++ Style/m_upEnum = VALID_VALUE_3
 Pointers and Reference C++ Style/m_uupEnum = VALID_VALUE_2
 Pointers and Reference C++ Style/m_UupEnum = V3
@@ -1397,27 +1435,27 @@ Lists - C Arrays/m_UEnumList[] = 2
 Lists - C Arrays/m_UEnumList[U:0] = V2
 Lists - C Arrays/m_UEnumList[U:1] = V3
 Lists - C Arrays/m_c1ListBC[] = 2
-Lists - C Arrays/m_c1ListBC[U:0]/Base1/var = 20
-Lists - C Arrays/m_c1ListBC[U:1]/Base1/var = 20
+Lists - C Arrays/m_c1ListBC[U:0]/var = 20
+Lists - C Arrays/m_c1ListBC[U:1]/var = 20
 Lists - C Arrays/m_c2ListBC[] = 2
 Lists - C Arrays/m_c2ListBC[U:0][] = 3
-Lists - C Arrays/m_c2ListBC[U:0][U:0]/Base1/var = 20
-Lists - C Arrays/m_c2ListBC[U:0][U:1]/Base1/var = 20
-Lists - C Arrays/m_c2ListBC[U:0][U:2]/Base1/var = 20
+Lists - C Arrays/m_c2ListBC[U:0][U:0]/var = 20
+Lists - C Arrays/m_c2ListBC[U:0][U:1]/var = 20
+Lists - C Arrays/m_c2ListBC[U:0][U:2]/var = 20
 Lists - C Arrays/m_c2ListBC[U:1][] = 3
-Lists - C Arrays/m_c2ListBC[U:1][U:0]/Base1/var = 20
-Lists - C Arrays/m_c2ListBC[U:1][U:1]/Base1/var = 20
-Lists - C Arrays/m_c2ListBC[U:1][U:2]/Base1/var = 20
+Lists - C Arrays/m_c2ListBC[U:1][U:0]/var = 20
+Lists - C Arrays/m_c2ListBC[U:1][U:1]/var = 20
+Lists - C Arrays/m_c2ListBC[U:1][U:2]/var = 20
 Lists - C Arrays/m_c3ListBC[] = 1
 Lists - C Arrays/m_c3ListBC[U:0][] = 1
 Lists - C Arrays/m_c3ListBC[U:0][U:0][] = 1
-Lists - C Arrays/m_c3ListBC[U:0][U:0][U:0]/Base1/var = 20
+Lists - C Arrays/m_c3ListBC[U:0][U:0][U:0]/var = 20
 Lists - C Arrays/m_Cc1ListB[] = ERROR: Fail to set a constant xproperty! Lists - C Arrays/m_Cc1ListB[] Location 29
-Lists - C Arrays/m_Cc1ListB[U:0]/Base1/var = ERROR: Fail to set a constant xproperty! Lists - C Arrays/m_Cc1ListB[U:0]/Base1/var Location 33
-Lists - C Arrays/m_Cc1ListB[U:1]/Base1/var = ERROR: Fail to set a constant xproperty! Lists - C Arrays/m_Cc1ListB[U:1]/Base1/var Location 33
+Lists - C Arrays/m_Cc1ListB[U:0]/var = ERROR: Fail to set a constant xproperty! Lists - C Arrays/m_Cc1ListB[U:0]/var Location 33
+Lists - C Arrays/m_Cc1ListB[U:1]/var = ERROR: Fail to set a constant xproperty! Lists - C Arrays/m_Cc1ListB[U:1]/var Location 33
 Lists - C Arrays/m_Refc1ListB[] = 2
-Lists - C Arrays/m_Refc1ListB[U:0]/Base1/var = 20
-Lists - C Arrays/m_Refc1ListB[U:1]/Base1/var = 20
+Lists - C Arrays/m_Refc1ListB[U:0]/var = 20
+Lists - C Arrays/m_Refc1ListB[U:1]/var = 20
 ~~~
 </details>
 
@@ -1750,41 +1788,41 @@ OBJECT[ Lists C++ ]
 
 ~~~
 Lists C++/m_vListA[] = 4
-Lists C++/m_vListA[U:0]/Base1/var = 20
-Lists C++/m_vListA[U:1]/Base1/var = 20
-Lists C++/m_vListA[U:2]/Base1/var = 20
-Lists C++/m_vListA[U:3]/Base1/var = 20
+Lists C++/m_vListA[U:0]/var = 20
+Lists C++/m_vListA[U:1]/var = 20
+Lists C++/m_vListA[U:2]/var = 20
+Lists C++/m_vListA[U:3]/var = 20
 Lists C++/m_vvListA[] = 3
 Lists C++/m_vvListA[U:0][] = 2
-Lists C++/m_vvListA[U:0][U:0]/Base1/var = 20
-Lists C++/m_vvListA[U:0][U:1]/Base1/var = 20
+Lists C++/m_vvListA[U:0][U:0]/var = 20
+Lists C++/m_vvListA[U:0][U:1]/var = 20
 Lists C++/m_vvListA[U:1][] = 2
-Lists C++/m_vvListA[U:1][U:0]/Base1/var = 20
-Lists C++/m_vvListA[U:1][U:1]/Base1/var = 20
+Lists C++/m_vvListA[U:1][U:0]/var = 20
+Lists C++/m_vvListA[U:1][U:1]/var = 20
 Lists C++/m_vvListA[U:2][] = 2
-Lists C++/m_vvListA[U:2][U:0]/Base1/var = 20
-Lists C++/m_vvListA[U:2][U:1]/Base1/var = 20
+Lists C++/m_vvListA[U:2][U:0]/var = 20
+Lists C++/m_vvListA[U:2][U:1]/var = 20
 Lists C++/m_vListARef[] = 4
-Lists C++/m_vListARef[U:0]/Base1/var = 20
-Lists C++/m_vListARef[U:1]/Base1/var = 20
-Lists C++/m_vListARef[U:2]/Base1/var = 20
-Lists C++/m_vListARef[U:3]/Base1/var = 20
+Lists C++/m_vListARef[U:0]/var = 20
+Lists C++/m_vListARef[U:1]/var = 20
+Lists C++/m_vListARef[U:2]/var = 20
+Lists C++/m_vListARef[U:3]/var = 20
 Lists C++/m_vListAup[] = 3
-Lists C++/m_vListAup[U:0]/Base1/var = 20
-Lists C++/m_vListAup[U:1]/Base1/var = 20
-Lists C++/m_vListAup[U:2]/Base1/var = 20
+Lists C++/m_vListAup[U:0]/var = 20
+Lists C++/m_vListAup[U:1]/var = 20
+Lists C++/m_vListAup[U:2]/var = 20
 Lists C++/m_CvListA[] = ERROR: Fail to set a constant xproperty! Lists C++/m_CvListA[] Location 21
-Lists C++/m_CvListA[U:0]/Base1/var = ERROR: Fail to set a constant xproperty! Lists C++/m_CvListA[U:0]/Base1/var Location 25
+Lists C++/m_CvListA[U:0]/var = ERROR: Fail to set a constant xproperty! Lists C++/m_CvListA[U:0]/var Location 25
 Lists C++/m_avListA[] = 3
 Lists C++/m_avListA[U:0][] = 2
-Lists C++/m_avListA[U:0][U:0]/Base1/var = 20
-Lists C++/m_avListA[U:0][U:1]/Base1/var = 20
+Lists C++/m_avListA[U:0][U:0]/var = 20
+Lists C++/m_avListA[U:0][U:1]/var = 20
 Lists C++/m_avListA[U:1][] = 2
-Lists C++/m_avListA[U:1][U:0]/Base1/var = 20
-Lists C++/m_avListA[U:1][U:1]/Base1/var = 20
+Lists C++/m_avListA[U:1][U:0]/var = 20
+Lists C++/m_avListA[U:1][U:1]/var = 20
 Lists C++/m_avListA[U:2][] = 2
-Lists C++/m_avListA[U:2][U:0]/Base1/var = 20
-Lists C++/m_avListA[U:2][U:1]/Base1/var = 20
+Lists C++/m_avListA[U:2][U:0]/var = 20
+Lists C++/m_avListA[U:2][U:1]/var = 20
 Lists C++/m_vListB[] = 4
 Lists C++/m_vListB[U:0] = 0.300000
 Lists C++/m_vListB[U:1] = 0.400000
@@ -1947,10 +1985,10 @@ OBJECT[ List Advance ]
 
 ~~~
 List Advance/m_mListA[] = 4
-List Advance/m_mListA[u:644542747]/Base1/var = 20
-List Advance/m_mListA[u:1178699091]/Base1/var = 20
-List Advance/m_mListA[u:1815887699]/Base1/var = 20
-List Advance/m_mListA[u:3604680160]/Base1/var = 20
+List Advance/m_mListA[u:644542747]/var = 20
+List Advance/m_mListA[u:1178699091]/var = 20
+List Advance/m_mListA[u:1815887699]/var = 20
+List Advance/m_mListA[u:3604680160]/var = 20
 List Advance/m_mListB[] = 3
 List Advance/m_mListB[s:A] = 1
 List Advance/m_mListB[s:B] = 2
@@ -2210,14 +2248,14 @@ Virtual Properties/m_CEnum = ERROR: Fail to set a constant xproperty! Virtual Pr
 Virtual Properties/m_ReadOnlyVirtualInt = ERROR: Fail to set a constant xproperty! Virtual Properties/m_ReadOnlyVirtualInt Location 40
 Virtual Properties/m_ForceVirtualInt = ERROR: Fail to set a constant xproperty! Virtual Properties/m_ForceVirtualInt Location 37
 Virtual Properties/m_VirtualInt3 = 20
-Virtual Properties/m_VirtualProps/Base1/var = 20
-Virtual Properties/m_ReadOnlyVirtualProps/Base1/var = ERROR: Fail to set a constant xproperty! Virtual Properties/m_ReadOnlyVirtualProps/Base1/var Location 42
-Virtual Properties/m_ForceReadOnlyVirtualProps/Base1/var = ERROR: Fail to set a constant xproperty! Virtual Properties/m_ForceReadOnlyVirtualProps/Base1/var Location 47
+Virtual Properties/m_VirtualProps/var = 20
+Virtual Properties/m_ReadOnlyVirtualProps/var = ERROR: Fail to set a constant xproperty! Virtual Properties/m_ReadOnlyVirtualProps/var Location 42
+Virtual Properties/m_ForceReadOnlyVirtualProps/var = ERROR: Fail to set a constant xproperty! Virtual Properties/m_ForceReadOnlyVirtualProps/var Location 47
 Virtual Properties/m_VirtualPropsList[] = 3
-Virtual Properties/m_VirtualPropsList[U:0]/Base1/var = 20
-Virtual Properties/m_VirtualPropsList[U:1]/Base1/var = 20
-Virtual Properties/m_VirtualPropsList[U:2]/Base1/var = 20
-Virtual Properties/m_VirtualPointer/Base1/var = 20
+Virtual Properties/m_VirtualPropsList[U:0]/var = 20
+Virtual Properties/m_VirtualPropsList[U:1]/var = 20
+Virtual Properties/m_VirtualPropsList[U:2]/var = 20
+Virtual Properties/m_VirtualPointer/var = 20
 ~~~
 </details>
 

@@ -1,4 +1,7 @@
+#ifndef XPROPERTY_H
+#define XPROPERTY_H
 #pragma once
+
 #include<array>
 #include<tuple>
 #include<ranges>
@@ -655,8 +658,16 @@ namespace xproperty
             constexpr static void             Read            ( const specializing_t& SpecTypeVar,       atomic_type&       Data,                       context& C ) noexcept { var_type<specializing_t>::Read ( SpecTypeVar, Data, C ); }
             constexpr static void             Start           (       type&           MemberVar,         begin_iterator&    I,                          context&   ) noexcept { new(&I)   begin_iterator{ MemberVar.begin() }; }
             constexpr static void             End             (       type&           MemberVar,         end_iterator&      End,                        context&   ) noexcept { new(&End) end_iterator  { MemberVar.end() };   }
-            constexpr static bool             Next            ( const type&           MemberVar,         begin_iterator&    I, const end_iterator& End, context&   ) noexcept { ++I; return I != End; }
-            constexpr static std::size_t      getSize         ( const type&           MemberVar,                                                        context&   ) noexcept { return MemberVar.size();}
+            constexpr static bool             Next            ( const type&           MemberVar,         begin_iterator&    I, const end_iterator& End, context&   ) noexcept 
+            { 
+                ++I; 
+                return I != End; 
+            }
+            constexpr static std::size_t      getSize         ( const type&           MemberVar,                                                        context&   ) noexcept 
+            { 
+                auto size = MemberVar.size();
+                return size;
+            }
             constexpr static void             setSize         (       type&           MemberVar,   const std::size_t        Size,                       context&   ) noexcept {}
             constexpr static void             IteratorToKey   ( const type&           MemberVar,         any_t&             Key, const begin_iterator& I, context& ) noexcept { Key.template set<atomic_key>(I - MemberVar.begin()); }
             constexpr static specializing_t*  IteratorToObject(       type&           MemberVar,         begin_iterator&    I,                          context&   ) noexcept { return const_cast<specializing_t*>(&(*I)); }
@@ -1139,7 +1150,7 @@ namespace xproperty
             {
                 using fn = void(void* pClass, void* pArgs) noexcept;
 
-                fn* const                                     m_pCallFunction;
+                fn* const                                      m_pCallFunction;
                 const std::span< const xproperty::basic_type>  m_ArgumentList;
 
                 template<typename T, typename...TARGS >
@@ -1866,7 +1877,7 @@ namespace xproperty
         requires meets_requirements_v< false, false, T_MEMBER_TYPE>
         struct member<T_NAME_V, T_MEMBER_TYPE T_CLASS::*, T_DATA, T_ARGS... >
         {
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 return member < T_NAME_V, T_MEMBER_TYPE& (*)(T_CLASS&), +[](T_CLASS& C) constexpr ->T_MEMBER_TYPE& {return C.*T_DATA; }, T_ARGS... >::getInfo();
             }
@@ -1884,7 +1895,7 @@ namespace xproperty
         {
             using user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
 
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 //
                 // Handle Vars and Refs that are properties... we just convert them to a scope
@@ -1910,7 +1921,7 @@ namespace xproperty
             inline static constexpr auto    array_v         = table_helper::GetArray();
             using                           user_data_t     = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
 
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 using t              = type::var_t<T_MEMBER_TYPE>;
 
@@ -1934,7 +1945,7 @@ namespace xproperty
         requires meets_requirements_v<false, true, T_MEMBER_TYPE>
         struct member<T_NAME_V, T_MEMBER_TYPE T_CLASS::*, T_DATA, T_ARGS... >
         {
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 return member < T_NAME_V, T_MEMBER_TYPE&(*)(T_CLASS&), +[](T_CLASS& C) constexpr ->T_MEMBER_TYPE& {return C.*T_DATA; }, T_ARGS... >::getInfo();
             }
@@ -1952,7 +1963,7 @@ namespace xproperty
 
             inline static constexpr auto array_v = table_helper::GetArray();
 
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 using t              = type::var_t<T_MEMBER_TYPE>;
 
@@ -1980,7 +1991,7 @@ namespace xproperty
             using                        user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
             inline static constexpr auto array_v     = table_helper::GetArray();
 
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 using           atomic_t        = typename type::var_t< T_MEMBER_TYPE >::atomic_type;
                 using           last_t          = typename table_helper::last_dimension;
@@ -2045,7 +2056,7 @@ namespace xproperty
         requires meets_requirements_v<true, true, T_MEMBER_TYPE>
         struct member<T_NAME_V, T_MEMBER_TYPE T_CLASS::*, T_MEMBER_PTR_V, T_ARGS... >
         {
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 return member< T_NAME_V, T_MEMBER_TYPE& (*)(T_CLASS&), +[](T_CLASS& C) constexpr ->T_MEMBER_TYPE& {return C.*T_MEMBER_PTR_V; }, T_ARGS... >::getInfo();
             };
@@ -2076,7 +2087,7 @@ namespace xproperty
                 }
             }();
 
-            static consteval xproperty::type::members getInfo(bool bConst=false)
+            static consteval xproperty::type::members getInfo(bool bConst=false) noexcept
             {
                 return
                 { .m_GUID    = xproperty::settings::strguid(T_NAME_V)
@@ -2104,7 +2115,7 @@ namespace xproperty
         template< xproperty::details::fixed_string T_NAME_V, typename T_CLASS, typename...T_FUNC_ARGS, typename T_RETURN, auto T_DATA, typename... T_ARGS  >
         struct member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...) const, T_DATA, T_ARGS...> : member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...), T_DATA, T_ARGS...>
         {
-            static consteval xproperty::type::members getInfo()
+            static consteval xproperty::type::members getInfo( void ) noexcept
             {
                 return member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...), T_DATA, T_ARGS...>::getInfo(true);
             }
@@ -2127,19 +2138,19 @@ namespace xproperty
             }();
             using user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
 
-            consteval static type::members::scope getInfoScope()
+            consteval static type::members::scope getInfoScope( void ) noexcept
             {
                 return{ .m_Members = members_v };
             }
 
-            consteval static type::members getInfo()
+            consteval static type::members getInfo( void ) noexcept
             {
                 return
-                { .m_GUID       = xproperty::settings::strguid(T_NAME_V)
-                , .m_pName      = name_v.m_Value
-                , .m_Variant    = getInfoScope()
-                , .m_bConst     = xproperty::details::tuple_has_tag_v< read_only_tag, std::tuple<T_ARGS...>>
-                , .m_pGetUserData = details::GetUserData<user_data_t>
+                { .m_GUID           = xproperty::settings::strguid(T_NAME_V)
+                , .m_pName          = name_v.m_Value
+                , .m_Variant        = getInfoScope()
+                , .m_bConst         = xproperty::details::tuple_has_tag_v< read_only_tag, std::tuple<T_ARGS...>>
+                , .m_pGetUserData   = details::GetUserData<user_data_t>
                 };
             }
         };
@@ -2151,7 +2162,7 @@ namespace xproperty
         struct bases< T_OBJECT_TYPE, std::tuple<T_ARGS...> >
         {
             template< typename T >
-            static consteval type::base getInfo( T* )
+            static consteval type::base getInfo( T* ) noexcept
             {
                 using t = typename T::type;
                 return 
@@ -2160,7 +2171,7 @@ namespace xproperty
                 };
             }
 
-            consteval static auto getArray()
+            consteval static auto getArray( void ) noexcept
             {
                 if constexpr ( sizeof...(T_ARGS) == 0 ) return std::span<type::base>{};
                 else
@@ -2246,7 +2257,7 @@ namespace xproperty
                 }
             }();
 
-            consteval static type::object getInfo()
+            consteval static type::object getInfo( void ) noexcept
             {
                 return
                 { { scope_t::getInfoScope() }
@@ -2462,7 +2473,11 @@ namespace xproperty
 //
 // This is used to register the properties of the object
 //
-#define XPROPERTY_DEF( ... )  public: static auto PropertiesDefinition() { assert(false); using namespace xproperty; using namespace xproperty::settings; return xproperty::def<__VA_ARGS__ >(); }
-#define XPROPERTY_VDEF( ... ) public: static auto PropertiesDefinition() { assert(false); using namespace xproperty; using namespace xproperty::settings; return xproperty::def<__VA_ARGS__ >(); } const xproperty::type::object* getProperties() const noexcept override;
-#define XPROPERTY_REG( TYPE )  namespace TYPE##_props { inline const decltype(TYPE::PropertiesDefinition()) g_PropertyRegistration_v{}; }
-#define XPROPERTY_VREG( TYPE ) namespace TYPE##_props { inline const decltype(TYPE::PropertiesDefinition()) g_PropertyRegistration_v{}; } const xproperty::type::object* TYPE::getProperties() const noexcept { return TYPE##_props::g_PropertyRegistration_v.get();}
+#define XPROPERTY_DEF( ... )  public: inline static auto PropertiesDefinition() { assert(false); using namespace xproperty; using namespace xproperty::settings; return xproperty::def<__VA_ARGS__ >(); }
+#define XPROPERTY_VDEF( ... ) public: inline static auto PropertiesDefinition() { assert(false); using namespace xproperty; using namespace xproperty::settings; return xproperty::def<__VA_ARGS__ >(); } inline const xproperty::type::object* getProperties() const noexcept override;
+#define XPROPERTY_REG2( NAMESPACE, TYPE )  namespace NAMESPACE { inline const decltype(TYPE::PropertiesDefinition()) g_PropertyRegistration_v{}; }
+#define XPROPERTY_REG( TYPE ) XPROPERTY_REG2(TYPE##_props, TYPE)
+#define XPROPERTY_VREG2( NAMESPACE, TYPE ) namespace NAMESPACE { inline const decltype(TYPE::PropertiesDefinition()) g_PropertyRegistration_v{}; } inline const xproperty::type::object* TYPE::getProperties() const noexcept { return NAMESPACE::g_PropertyRegistration_v.get();}
+#define XPROPERTY_VREG( TYPE ) XPROPERTY_VREG2(TYPE##_props, TYPE)
+
+#endif

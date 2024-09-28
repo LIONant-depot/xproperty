@@ -33,9 +33,6 @@
     <ClInclude Include="..\..\source\examples\example_properties.h">
       <Filter>Examples</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\source\examples\my_properties.h">
-      <Filter>Examples</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\source\xproperty.h">
       <Filter>Properties</Filter>
     </ClInclude>
@@ -52,6 +49,9 @@
       <Filter>Properties\sprop</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\examples\generate_documentation.h">
+      <Filter>Examples</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\examples\my_properties.h">
       <Filter>Examples</Filter>
     </ClInclude>
   </ItemGroup>

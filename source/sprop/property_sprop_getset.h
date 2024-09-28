@@ -9,7 +9,7 @@ namespace xproperty::sprop
     {
     protected:
 
-        using prop_t     = std::conditional_t<IS_SET_V, const container::prop, container::prop>;
+        using prop_t     = std::conditional_t< IS_SET_V, const container::prop, container::prop>;
         using inst_t     = std::conditional_t< IS_SET_V, void*, const void* >;
 
         using scope      = const xproperty::type::members::scope;
@@ -47,8 +47,8 @@ namespace xproperty::sprop
                     {
                         assert(isPath);
                         auto [pInstance, pObj] = Arg.m_pCast(pClass, m_Context);
-                        GUID = getNextGuid(isPath);
-                        return PropertyObject(pInstance, *pObj, GUID, isPath, false);
+                        //GUID = getNextGuid(isPath);
+                        return PropertyObject(pInstance, *pObj, pObj->m_GUID, isPath, false);
                     }
                     else if constexpr (std::is_same_v<T, list_props&>)
                     {
@@ -86,8 +86,8 @@ namespace xproperty::sprop
                         else
                         {
                             auto [pInstance, pObj] = Arg.m_pCast(pObject, m_Context);
-                            GUID = getNextGuid(isPath);
-                            return PropertyObject(pInstance, *pObj, GUID, isPath, false);
+                           // GUID = getNextGuid(isPath);
+                            return PropertyObject(pInstance, *pObj, pObj->m_GUID, isPath, false);
                         }
                         return true;
                     }
@@ -302,10 +302,10 @@ namespace xproperty::sprop
     protected:
 
         prop_t&                         m_Property;
-        xproperty::settings::context&    m_Context;
+        xproperty::settings::context&   m_Context;
         std::string&                    m_Error;
         std::uint32_t                   m_iPath     {0};
-        std::array<xproperty::any, 8>    m_Keys      {};
+        std::array<xproperty::any, 8>   m_Keys      {};
         int                             m_KeyCount  {0};
         bool                            m_isSize   {false};
 
@@ -328,14 +328,34 @@ namespace xproperty::sprop
             }
         }
 
+        io_property(std::string& Error, void* pObject, const xproperty::type::object& PropObject, prop_t& Property, xproperty::settings::context& Context)
+            : m_Property    { Property }
+            , m_Context     { Context }
+            , m_Error       { Error }
+        {
+            assert(Error.empty());
+
+            bool isPath;
+            auto GUID = getNextGuid(isPath);
+
+            if( false == PropertyObject(pObject, PropObject, GUID, isPath, false ) )
+            {
+                if(m_Error.empty()) m_Error = std::format("ERROR: Could not find the xproperty {}", m_Property.m_Path);
+            }
+        }
+
         constexpr operator bool() const { return m_Error.empty(); }
     };
 
     template<typename T>
-    void setProperty(std::string& Error, T& Object, const container::prop& Property, xproperty::settings::context& Context)
+    void setProperty(std::string& Error, T& Object, const container::prop& Property, xproperty::settings::context& Context) noexcept
     {
         io_property<true>(Error, Object, Property, Context);
     }
 
-
+    inline
+    void setProperty(std::string& Error, void* pObject, const xproperty::type::object& PropObject, const container::prop& Property, xproperty::settings::context& Context) noexcept
+    {
+        io_property<true>(Error, pObject, PropObject, Property, Context);
+    }
 }
