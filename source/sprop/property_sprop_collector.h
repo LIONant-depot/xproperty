@@ -132,8 +132,6 @@ namespace xproperty::sprop
                 CallBack(m_CurrentPath.data(), std::move(Value), Members, isConst);
                 m_iCurrentPath -= 2;
 
-                const auto Count1 = StartIterator.getSize();
-
                 // If we have zero entries there is nothing else to do...
                 if( Count == 0 ) return;
             }
