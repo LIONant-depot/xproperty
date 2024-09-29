@@ -252,6 +252,9 @@ namespace xproperty::sprop
                 // Unable to access some base? That should never happen... 
                 assert(pInstance);
 
+                // Push the name
+                PushPath(pObj->m_pName);
+
                 // If we are doing editor let the user know that we are dealing with a new scope
                 if (m_bForEditors)
                 {
@@ -261,11 +264,10 @@ namespace xproperty::sprop
                     , .m_Variant = xproperty::type::members::scope{}
                     , .m_bConst  = bConst
                     };
-                    CallBack(pObj->m_pName, xproperty::any(), Member, bConst);
+                    CallBack(m_CurrentPath.data(), xproperty::any(), Member, bConst);
                 }
 
                 // Print all the members of the base class
-                PushPath(pObj->m_pName);
                 DumpObject(CallBack, pInstance, *pObj, bConst);
                 PopPath();
             }

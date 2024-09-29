@@ -1183,7 +1183,8 @@ namespace xproperty
             template<typename T_USER_DATA_TYPE>
             constexpr const T_USER_DATA_TYPE* getUserData() const noexcept
             {
-                return static_cast<const T_USER_DATA_TYPE*>(m_pGetUserData(T_USER_DATA_TYPE::type_guid_v));
+                if(m_pGetUserData) return static_cast<const T_USER_DATA_TYPE*>(m_pGetUserData(T_USER_DATA_TYPE::type_guid_v));
+                return nullptr;
             }
 
             const std::uint32_t     m_GUID; 
