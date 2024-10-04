@@ -1032,6 +1032,13 @@ namespace xproperty
                 if (Any.m_pType) m_pType->m_pCopyConstruct(m_Data, Any.m_Data);
             }
 
+            template< typename T, typename = xproperty::settings::var_type<T>::type >
+            any(const T& Data)
+            {
+                m_pType = &atomic_v<T>;
+                m_pType->m_pCopyConstruct(m_Data, reinterpret_cast<const settings::data_memory&>(Data) );
+            }
+
             any& operator = (const any& Any)
             {
                 if(m_pType) m_pType->m_pDestruct(m_Data);
@@ -1205,6 +1212,7 @@ namespace xproperty
 
             const char* const                           m_pName;
             std::uint32_t                               m_GUID;
+            std::uint32_t                               m_GroupGUID;
             fn_destroy_instance* const                  m_pDestroyInstance;
             const std::span<const member_constructor>   m_Constructors;
             const std::span<const base>                 m_BaseList;
@@ -1277,6 +1285,7 @@ namespace xproperty
         struct obj_member_tag;
         struct obj_base_tag;
         struct obj_constructor_tag;
+        struct obj_group_tag;
         struct member_overwrites_tag;
         struct member_help_tag;
         struct read_only_tag;
@@ -2233,10 +2242,27 @@ namespace xproperty
             }
         };
 
+        namespace details
+        {
+            template< typename T>
+            consteval std::uint32_t getGroupGuid()
+            {
+                return std::tuple_element_t<0, T>::guid_v;
+            }
+
+            template<>
+            consteval std::uint32_t getGroupGuid<std::tuple<>>()
+            {
+                return 0;
+            }
+        }
+
+
         template< xproperty::details::fixed_string T_NAME_V, typename T_OBJECT_TYPE, typename...T_ARGS >
         struct object
         {
             using                        members                 = xproperty::details::filter_by_tag_t< meta::obj_member_tag, T_ARGS... >;
+            using                        group_t                 = xproperty::details::filter_by_tag_t< meta::obj_group_tag, T_ARGS... >;
             using                        scope_t                 = meta::scope< T_NAME_V, members >;
             using                        obj_bases               = xproperty::details::filter_by_tag_t< meta::obj_base_tag, T_ARGS... >;
             inline constexpr static auto obj_bases_list_v        = bases<T_OBJECT_TYPE, obj_bases>::getArray();
@@ -2258,12 +2284,15 @@ namespace xproperty
                 }
             }();
 
+            
+
             consteval static type::object getInfo( void ) noexcept
             {
                 return
                 { { scope_t::getInfoScope() }
                 , scope_t::name_v
                 , xproperty::settings::strguid(scope_t::name_v)
+                , details::getGroupGuid< group_t>()
                 , [](void* p) constexpr noexcept { delete static_cast<T_OBJECT_TYPE*>(p); }
                 , constructor_list_v
                 , obj_bases_list_v
@@ -2310,6 +2339,17 @@ namespace xproperty
 
     template< details::fixed_string T_NAME_V, auto T_DATA, typename...T_ARGS >
     struct obj_member_ro : obj_member< T_NAME_V, T_DATA, xproperty::tag< meta::read_only_tag >, T_ARGS...>{};
+
+    // Add object to a group that we may want to handle in a special way...
+    // This can be very handy for things like editors and other tools
+    template< details::fixed_string T_NAME_V >
+    struct obj_group : tag<meta::obj_group_tag>
+    {
+        constexpr static auto guid_v = xproperty::settings::strguid(T_NAME_V);
+        constexpr static auto name_v = T_NAME_V.m_Value;
+        std::uint32_t m_GUID  = guid_v;
+        const char*   m_pName = name_v;
+    };
 
     //
     // Overrides the default read, or write, or both of the xproperty member variable with a custom version by the user.

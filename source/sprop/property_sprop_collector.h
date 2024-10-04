@@ -174,6 +174,7 @@ namespace xproperty::sprop
                     {
                         // Handle the printing of the object
                         auto [pInstance, pNewObject] = List.m_pCast(pObject, *m_pContext);
+                        if (m_bForEditors) CallBack(m_CurrentPath.data(), xproperty::any(pNewObject->m_GroupGUID), Members, isConst);
                         if (pInstance) DumpObject(CallBack, pInstance, *pNewObject, isConst);
                     }
                     else
@@ -221,7 +222,7 @@ namespace xproperty::sprop
                         if(auto [pInstance, pObj] = Arg.m_pCast(pClass, *m_pContext); pInstance ) 
                         {
                             // Let the user know that we are dumping an object
-                            if (m_bForEditors) CallBack( m_CurrentPath.data(), xproperty::any(), Member, bConst );
+                            if (m_bForEditors) CallBack( m_CurrentPath.data(), xproperty::any(pObj->m_GroupGUID), Member, bConst );
                             DumpObject(CallBack, pInstance, *pObj, bConst);
                         }
                     }
