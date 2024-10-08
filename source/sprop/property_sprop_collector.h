@@ -174,7 +174,7 @@ namespace xproperty::sprop
                     {
                         // Handle the printing of the object
                         auto [pInstance, pNewObject] = List.m_pCast(pObject, *m_pContext);
-                        if (m_bForEditors) CallBack(m_CurrentPath.data(), xproperty::any(pNewObject->m_GroupGUID), Members, isConst);
+                       // if (m_bForEditors) CallBack(m_CurrentPath.data(), xproperty::any(pNewObject->m_GroupGUID), Members, isConst);
                         if (pInstance) DumpObject(CallBack, pInstance, *pNewObject, isConst);
                     }
                     else
