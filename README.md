@@ -49,6 +49,7 @@ XPROPERTY_REG(common)
 * **C++20**
 * **Single header**
 * **No allocations**
+* **Most things happens at compile time**
 * **No external dependencies**
 * **No macros overused** (4 of them used for convinience)
 * **No exceptions for maximun speed**
