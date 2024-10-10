@@ -392,13 +392,19 @@ struct common_types
     // Holds properties but since it is const you can not change these values
     const base1 m_ReadOnlyProps     = []{ base1 a; a.setValues(); return a; }();
 
+
+    std::string m_StringValue       = {};
+
     void setValues()
     {
         // We just set the value of this xproperty
         m_ValueHoldingVar = 40;
 
         // We set the values of the properties of this object
-        m_PropertyHoldingVar.setValues();   
+        m_PropertyHoldingVar.setValues();
+
+        // set the value to the string
+        m_StringValue = "Hello World";
     }
 
     void CheckValues() const
@@ -407,12 +413,14 @@ struct common_types
         m_PropertyHoldingVar.CheckValues();
         assert(m_ReadOnlyValue == 100);
         m_ReadOnlyProps.CheckValues();
+        assert(m_StringValue == "Hello World");
     }
 
     XPROPERTY_DEF
     ( "CommonTypes", common_types
     , obj_member<"m_ValueHoldingVar",       &common_types::m_ValueHoldingVar>
     , obj_member<"m_PropertyHoldingVar",    &common_types::m_PropertyHoldingVar >
+    , obj_member<"m_StringValue",           &common_types::m_StringValue >
 
     // Properties that are const will be automatically be read-only
     , obj_member<"m_ReadOnlyValue",         &common_types::m_ReadOnlyValue >
@@ -440,6 +448,7 @@ OBJECT[ CommonTypes ]
         MEMBER_VARS[ var ] = ( type: s32, value: 20 )
         MEMBER_FUNCTION[ setValues ]
         MEMBER_FUNCTION[ CheckValues ]
+    MEMBER_VARS[ m_StringValue ] = ( type: string, value: Hello World )
     MEMBER_VARS[ m_ReadOnlyValue ] = ( type: const s32, value: 100 )
     MEMBER_PROPS[ m_ReadOnlyProps ] = ( Const ) OBJECT[ Base1 ]
         MEMBER_VARS[ var ] = ( type: const s32, value: 20 )
@@ -461,6 +470,7 @@ OBJECT[ CommonTypes ]
 ~~~
 CommonTypes/m_ValueHoldingVar = 40
 CommonTypes/m_PropertyHoldingVar/var = 20
+CommonTypes/m_StringValue = "Hello World"
 CommonTypes/m_ReadOnlyValue = ERROR: Fail to set a constant xproperty! CommonTypes/m_ReadOnlyValue Location 28
 CommonTypes/m_ReadOnlyProps/var = ERROR: Fail to set a constant xproperty! CommonTypes/m_ReadOnlyProps/var Location 28
 CommonTypes/ForceReadOnlyVar = ERROR: Fail to set a constant xproperty! CommonTypes/ForceReadOnlyVar Location 29
