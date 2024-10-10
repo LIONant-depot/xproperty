@@ -1,5 +1,5 @@
 #pragma once
-#include "../sprop/property_sprop.h"
+#include "../../sprop/property_sprop.h"
 
 namespace xproperty::example::sprop
 {

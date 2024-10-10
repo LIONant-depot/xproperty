@@ -194,11 +194,11 @@
     <None Include="..\..\README.md" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\source\examples\example_printing.h" />
-    <ClInclude Include="..\..\source\examples\example_sprop.h" />
-    <ClInclude Include="..\..\source\examples\example_properties.h" />
-    <ClInclude Include="..\..\source\examples\generate_documentation.h" />
-    <ClInclude Include="..\..\source\examples\my_properties.h" />
+    <ClInclude Include="..\..\source\examples\create_documentation\example_printing.h" />
+    <ClInclude Include="..\..\source\examples\create_documentation\example_properties.h" />
+    <ClInclude Include="..\..\source\examples\create_documentation\example_sprop.h" />
+    <ClInclude Include="..\..\source\examples\create_documentation\generate_documentation.h" />
+    <ClInclude Include="..\..\source\examples\create_documentation\my_properties.h" />
     <ClInclude Include="..\..\source\xproperty.h" />
     <ClInclude Include="..\..\source\sprop\property_sprop.h" />
     <ClInclude Include="..\..\source\sprop\property_sprop_collector.h" />
@@ -206,7 +206,7 @@
     <ClInclude Include="..\..\source\sprop\property_sprop_getset.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\source\examples\main.cpp" />
+    <ClCompile Include="..\..\source\examples\create_documentation\main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

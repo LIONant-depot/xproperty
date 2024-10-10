@@ -1,3 +1,6 @@
+#ifndef MY_PROPERTIES_H
+#define MY_PROPERTIES_H
+
 /*
 ------------------------------------------------------------------------------
 # WHAT IS THIS FILE FOR?
@@ -78,7 +81,8 @@ namespace xproperty::settings
 Now that we have defined our memory requirements we can Include the actual library
 cpp */
 
-#include "..\xproperty.h"
+#include "..\..\dependencies\xproperty\source\xproperty.h"
+#include "..\..\dependencies\xproperty\source\sprop\property_sprop_container.h"
 
 /* cpp
 ------------------------------------------------------------------------------
@@ -194,7 +198,15 @@ namespace xproperty::settings
         constexpr static inline char ctype_v = 's';
     };
 #endif
+
 }
+
+namespace xproperty::settings
+{
+    using vector3_group = obj_group<"Vector3">;
+    using vector2_group = obj_group<"Vector2">;
+}
+
 /* cpp
 
 ## SUPPORTING C-POINTERS TYPES
@@ -491,9 +503,10 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::uint8_t>::guid_v:    return sprintf_s( String.data(), String.size(), "%u",   Value.get<std::uint8_t>());  
         case xproperty::settings::var_type<float>::guid_v:           return sprintf_s( String.data(), String.size(), "%f",   Value.get<float>());         
         case xproperty::settings::var_type<double>::guid_v:          return sprintf_s( String.data(), String.size(), "%f",   Value.get<double>());        
-        case xproperty::settings::var_type<std::string>::guid_v:     return sprintf_s( String.data(), String.size(), "%s", Value.get<std::string>().c_str()); 
+        case xproperty::settings::var_type<std::string>::guid_v:     return sprintf_s( String.data(), String.size(), "%s",   Value.get<std::string>().c_str()); 
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   return sprintf_s( String.data(), String.size(), "%llu", Value.get<std::uint64_t>());
-        case xproperty::settings::var_type<std::int64_t>::guid_v:    return sprintf_s( String.data(), String.size(), "%lld", Value.get<std::int64_t>()); 
+        case xproperty::settings::var_type<std::int64_t>::guid_v:    return sprintf_s( String.data(), String.size(), "%lld", Value.get<std::int64_t>());
+        case xproperty::settings::var_type<bool>::guid_v:            return sprintf_s( String.data(), String.size(), "%s",   Value.get<bool>() ? "true" : "false");
         default: assert(false); break;
         }
         return 0;
@@ -514,6 +527,7 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::string>::ctype_v:     return xproperty::settings::var_type<std::string>::guid_v; 
         case xproperty::settings::var_type<std::uint64_t>::ctype_v:   return xproperty::settings::var_type<std::uint64_t>::guid_v;
         case xproperty::settings::var_type<std::int64_t>::ctype_v:    return xproperty::settings::var_type<std::int64_t>::guid_v;
+        case xproperty::settings::var_type<bool>::ctype_v:            return xproperty::settings::var_type<bool>::guid_v;
         default: assert(false); break;
         }
         return 0;
@@ -534,6 +548,7 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::string>::guid_v:     return xproperty::settings::var_type<std::string>::ctype_v;
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   return xproperty::settings::var_type<std::uint64_t>::ctype_v;
         case xproperty::settings::var_type<std::int64_t>::guid_v:    return xproperty::settings::var_type<std::int64_t>::ctype_v;
+        case xproperty::settings::var_type<bool>::guid_v:            return xproperty::settings::var_type<bool>::ctype_v;
         default: assert(false); break;
         }
         return 0;
@@ -554,11 +569,190 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::string>::guid_v:     Value.set<std::string>     (String.data());  return true;
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   Value.set<std::uint64_t>   (static_cast<std::uint64_t>(std::stoull(String.data())));  return true;
         case xproperty::settings::var_type<std::int64_t>::guid_v:    Value.set<std::int64_t>    (static_cast<std::int64_t>(std::stoll(String.data())));  return true;
+        case xproperty::settings::var_type<bool>::guid_v:            Value.set<bool>            ((String[0]=='t' || String[0]=='1' || String[0]=='T')?true:false);  return true;
         default: assert(false); break;
         }
         return false; 
     }
 }
+
 /* cpp
----
-*/
+------------------------------------------------------------------------------
+# ADD SUPPORT FOR UI/EDITOR FOR PROPERTIES
+------------------------------------------------------------------------------
+cpp */
+
+namespace xproperty::flags
+{
+    struct type
+    {
+        bool m_isShowReadOnly : 1
+            , m_isDontSave    : 1
+            , m_isDontShow    : 1
+            , m_isScope       : 1
+            ;
+    };
+}
+
+namespace xproperty::ui::details
+{
+    struct member_ui_base;
+}
+
+namespace xproperty::settings
+{
+    struct member_ui_t : xproperty::member_user_data<"UI">
+    {
+        const xproperty::ui::details::member_ui_base* m_pUIBase;
+    };
+}
+
+namespace xproperty
+{
+    template< typename T>
+    struct member_ui;
+
+    namespace ui::undo
+    {
+        struct cmd;
+    }
+
+    namespace ui::details
+    {
+        struct member_ui_base
+        {
+            void*           m_pDrawFn;
+            std::uint32_t   m_TypeGUID;
+        };
+
+        struct style
+        {
+            struct scroll_bar;
+            struct drag_bar;
+            struct enumeration;
+            struct defaulted;
+            struct button;
+        };
+
+        template< typename T_TYPE, typename T_STYLE>
+        struct draw
+        {
+            static void Render(ui::undo::cmd& Cmd, const T_TYPE& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
+        };
+
+        template<typename T, xproperty::details::fixed_string T_FORMAT_MAIN>
+        struct member_ui_numbers : ui::details::member_ui_base
+        {
+            inline static constexpr auto type_guid_v = xproperty::settings::var_type<T>::guid_v;
+
+            member_ui_numbers() = delete;
+
+            struct data : member_ui_base
+            {
+                T               m_Min;
+                T               m_Max;
+                const char*     m_pFormat;
+                float           m_Speed;
+            };
+
+            template< T                                 T_MIN       = std::numeric_limits<T>::lowest()
+                    , T                                 T_MAX       = std::numeric_limits<T>::max()
+                    , xproperty::details::fixed_string  T_FORMAT    = T_FORMAT_MAIN
+                    >
+            struct scroll_bar : settings::member_ui_t
+            {
+                inline static constexpr data data_v
+                { {.m_pDrawFn = &ui::details::draw<T, ui::details::style::scroll_bar>::Render, .m_TypeGUID = type_guid_v }
+                , T_MIN
+                , T_MAX
+                , T_FORMAT
+                , 0
+                };
+                constexpr scroll_bar() : settings::member_ui_t{ .m_pUIBase = &data_v }{}
+            };
+
+            template< float                             T_SPEED     = 0.5f
+                    , T                                 T_MIN       = std::numeric_limits<T>::lowest()
+                    , T                                 T_MAX       = std::numeric_limits<T>::max()
+                    , xproperty::details::fixed_string  T_FORMAT    = T_FORMAT_MAIN
+                    >
+            struct drag_bar : settings::member_ui_t
+            {
+                inline static constexpr data data_v
+                { { .m_pDrawFn = &ui::details::draw< T, ui::details::style::drag_bar>::Render, .m_TypeGUID = type_guid_v }
+                , T_MIN
+                , T_MAX
+                , T_FORMAT
+                , T_SPEED
+                };
+                constexpr drag_bar() : settings::member_ui_t{ .m_pUIBase  = &data_v }{}
+            };
+
+            using defaults = drag_bar<>;
+        };
+
+    }
+
+    template<> struct member_ui<std::int64_t>   : ui::details::member_ui_numbers<std::int64_t,  "%d">   {};
+    template<> struct member_ui<std::uint64_t>  : ui::details::member_ui_numbers<std::uint64_t, "%d">   {};
+    template<> struct member_ui<std::int32_t>   : ui::details::member_ui_numbers<std::int32_t,  "%d">   {};
+    template<> struct member_ui<std::uint32_t>  : ui::details::member_ui_numbers<std::uint32_t, "%d">   {};
+    template<> struct member_ui<std::int16_t>   : ui::details::member_ui_numbers<std::int16_t,  "%d">   {};
+    template<> struct member_ui<std::uint16_t>  : ui::details::member_ui_numbers<std::uint16_t, "%d">   {};
+    template<> struct member_ui<std::int8_t>    : ui::details::member_ui_numbers<std::int8_t,   "%d">   {};
+    template<> struct member_ui<std::uint8_t>   : ui::details::member_ui_numbers<std::uint8_t,  "%d">   {};
+    template<> struct member_ui<char>           : ui::details::member_ui_numbers<int8_t,        "%d">   {};
+    template<> struct member_ui<float>          : ui::details::member_ui_numbers<float,         "%.3f"> {};
+    template<> struct member_ui<double>         : ui::details::member_ui_numbers<double,        "%.3f"> {};
+
+    template<> struct member_ui<std::string>
+    {
+        member_ui() = delete;
+
+        using data = ui::details::member_ui_base;
+
+        inline static constexpr auto type_guid_v = xproperty::settings::var_type<std::string>::guid_v;
+
+        template< typename T = ui::details::style::defaulted >
+        struct button : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::button>::Render, .m_TypeGUID = type_guid_v };
+
+            constexpr button() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
+        };
+
+        struct defaults : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v };
+
+            constexpr defaults() : settings::member_ui_t{.m_pUIBase  = &data_v} {}
+        };
+    };
+
+    template<> struct member_ui<bool>
+    {
+        member_ui() = delete;
+
+        using data = ui::details::member_ui_base;
+        inline static constexpr auto type_guid_v = xproperty::settings::var_type<bool>::guid_v;
+
+        struct defaults : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { .m_pDrawFn = &ui::details::draw<bool, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v };
+
+            constexpr defaults() : settings::member_ui_t{ .m_pUIBase = &data_v }
+            {
+                static_assert(type_guid_v == data_v.m_TypeGUID, "What the hells..." );
+
+            }
+        };
+    };
+}
+
+/////////////////////////////////////////////////////////////////
+// DONE
+/////////////////////////////////////////////////////////////////
+#endif

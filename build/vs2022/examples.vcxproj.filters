@@ -4,14 +4,14 @@
     <Filter Include="Documentation">
       <UniqueIdentifier>{7dc7009e-8e82-4d47-ac47-e2416b7c8d4a}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Examples">
-      <UniqueIdentifier>{15a4a0f6-5a5a-4a43-a997-97954d179777}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Properties">
       <UniqueIdentifier>{cf1ab646-4822-40cf-985c-b371a0774cdd}</UniqueIdentifier>
     </Filter>
     <Filter Include="Properties\sprop">
       <UniqueIdentifier>{91734608-4be2-4ef9-87fa-4494b2d6710d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="CreateDocumentationExample">
+      <UniqueIdentifier>{15a4a0f6-5a5a-4a43-a997-97954d179777}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -24,15 +24,6 @@
     <None Include="..\..\README.md" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\source\examples\example_printing.h">
-      <Filter>Examples</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\source\examples\example_sprop.h">
-      <Filter>Examples</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\source\examples\example_properties.h">
-      <Filter>Examples</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\source\xproperty.h">
       <Filter>Properties</Filter>
     </ClInclude>
@@ -48,16 +39,25 @@
     <ClInclude Include="..\..\source\sprop\property_sprop_getset.h">
       <Filter>Properties\sprop</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\source\examples\generate_documentation.h">
-      <Filter>Examples</Filter>
+    <ClInclude Include="..\..\source\examples\create_documentation\example_printing.h">
+      <Filter>CreateDocumentationExample</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\source\examples\my_properties.h">
-      <Filter>Examples</Filter>
+    <ClInclude Include="..\..\source\examples\create_documentation\example_properties.h">
+      <Filter>CreateDocumentationExample</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\examples\create_documentation\example_sprop.h">
+      <Filter>CreateDocumentationExample</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\examples\create_documentation\generate_documentation.h">
+      <Filter>CreateDocumentationExample</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\examples\create_documentation\my_properties.h">
+      <Filter>CreateDocumentationExample</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\source\examples\main.cpp">
-      <Filter>Examples</Filter>
+    <ClCompile Include="..\..\source\examples\create_documentation\main.cpp">
+      <Filter>CreateDocumentationExample</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
