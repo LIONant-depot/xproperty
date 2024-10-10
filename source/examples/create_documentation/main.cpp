@@ -150,7 +150,7 @@ int main()
         // Generate the documentation
         if constexpr (true) xproperty_doc::Generate
             ( "../../documentation/Documentation.md"
-            , "../../source/examples/example_properties.h"
+            , "../../source/examples/create_documentation/example_properties.h"
             , Examples
             );
     }
@@ -165,7 +165,7 @@ int main()
 
         xproperty_doc::Generate
         ( "../../documentation/MyProperty.md"
-        , "../../source/examples/my_properties.h"
+        , "../../source/examples/create_documentation/my_properties.h"
         , Examples
         );
     }

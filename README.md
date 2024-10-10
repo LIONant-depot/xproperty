@@ -64,9 +64,11 @@ XPROPERTY_REG(common)
 * **Handle any kind of inheritance**
 * **Works on all major compilers**
 * **Examples for all the features and [Documentation](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)**
+* **Property Inspector Example for [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
+
+![Inspector](Documentation/ImguiPropertyInspector.png)
 
 # TODO:
 * **Add support for `std::variant`**
 * **Add support for unions**
 * **Compound properties**
-* **Editor example using [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
