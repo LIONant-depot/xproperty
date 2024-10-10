@@ -66,7 +66,8 @@ XPROPERTY_REG(common)
 * **Examples for all the features and [Documentation](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)**
 * **Property Inspector Example for [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
 
-![Inspector](ImguiPropertyInspector.png)
+<img src="Documentation/ImguiPropertyInspector.png" />
+
 
 # TODO:
 * **Add support for `std::variant`**
