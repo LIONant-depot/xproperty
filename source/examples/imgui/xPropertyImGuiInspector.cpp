@@ -10,12 +10,14 @@
 namespace xproperty::ui::details
 {
     //-----------------------------------------------------------------------------------
+
+    static float ReadOnlyWidth = -1;
     template< typename T>
-    bool ReadOnly( const char* pFmt, T Value, float Width = -1 )
+    bool ReadOnly( const char* pFmt, T Value )
     {
         std::array<char, 128> Buff;
         snprintf( Buff.data(), Buff.size(), pFmt, Value );
-        ImGui::Button( Buff.data(), ImVec2(Width, 0) );
+        ImGui::Button( Buff.data(), ImVec2(ReadOnlyWidth, 0) );
         return false;
     }
 
@@ -43,7 +45,7 @@ namespace xproperty::ui::details
 
     //-----------------------------------------------------------------------------------
     template< auto T_IMGUID_DATA_TYPE_V, typename T >
-    static void SlideRenderNumbers( undo::cmd& Cmd, const T& Value, const member_ui_base& IB, xproperty::flags::type Flags ) noexcept
+    static void SlideRenderNumbers( undo::cmd& Cmd, const T& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<T>::data&>(IB);
 
@@ -515,7 +517,7 @@ namespace xproperty::ui::details
                 {
                     ImGui::PushItemWidth(Width);
                     Color = ImU32(0x440000ff); 
-                    ImGui::Text("X:");
+                    ImGui::Text("%s:", Entry.m_pName);
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
                 }
@@ -526,12 +528,18 @@ namespace xproperty::ui::details
 
                     Color = ImU32(0x4400ff00);
 
-                    ImGui::Text("Y:");
+                    ImGui::Text("%s:", Entry.m_pName);
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
                 }
 
                 ImGui::PushID(Entry.m_GUID);
+
+                ReadOnlyWidth = Width;
+                onRender(Cmd, Value, Entry, Flags);
+                ReadOnlyWidth = -1;
+
+                /*
                 float V = Value.get<float>();
                 if (Flags.m_isShowReadOnly) ui::details::ReadOnly(I.m_pFormat, V, Width);
                 else
@@ -545,8 +553,10 @@ namespace xproperty::ui::details
                     }
                     if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit()) Cmd.m_isEditing = false;
                 }
+                */
 
                 ImGui::PopID();
+
                 if(iElement == 1 ) ImGui::PopItemWidth();
                 ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + Width, pos.y + Height), Color);
             }
