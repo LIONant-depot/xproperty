@@ -584,14 +584,27 @@ cpp */
 
 namespace xproperty::flags
 {
-    struct type
+    union type
     {
-        bool m_isShowReadOnly : 1
-            , m_isDontSave    : 1
-            , m_isDontShow    : 1
-            , m_isScope       : 1
-            ;
+        std::uint8_t  m_Value;
+
+        struct
+        {
+            bool  m_bShowReadOnly : 1       // Tells the UI to show this property/ies as read only
+                , m_bDontSave     : 1       // Tells the serializer not to save this property/ies
+                , m_bDontShow     : 1       // Tells the UI not to show this property/ies
+                , m_bScope        : 1       // This one used not used in internal to the inspector only...
+                ;
+        };
     };
+    static_assert(sizeof(type)==1);
+
+    enum _flags : std::uint8_t
+    { SHOW_READONLY = (1<<0)
+    , DONT_SAVE     = (1<<1)
+    , DONT_SHOW     = (1<<2)
+    };
+
 }
 
 namespace xproperty::ui::details
@@ -605,12 +618,49 @@ namespace xproperty::settings
     {
         const xproperty::ui::details::member_ui_base* m_pUIBase;
     };
+
+    struct member_flags_t : xproperty::member_user_data<"Flags">
+    {
+        xproperty::flags::type m_Flags;
+    };
+
+    struct member_dynamic_flags_t : xproperty::member_user_data<"Dynamic Flags">
+    {
+        using callback = xproperty::flags::type(const void*, settings::context& ) noexcept;
+        callback* m_pCallback;
+    };
+
 }
 
 namespace xproperty
 {
     template< typename T>
     struct member_ui;
+
+    template< xproperty::flags::_flags...T_V>
+    struct member_flags : settings::member_flags_t
+    {
+        constexpr member_flags() noexcept
+            : settings::member_flags_t{ .m_Flags = xproperty::flags::type{ .m_Value = ( T_V | ...) }  } {}
+    };
+
+    template< auto T_CALLBACK_V >
+    struct member_dynamic_flags : settings::member_dynamic_flags_t
+    {
+        using fn_t = xproperty::details::function_traits<decltype(T_CALLBACK_V)>;
+        static_assert(std::tuple_size_v<typename fn_t::args> <= 2);
+        static_assert(std::is_same_v<typename fn_t::return_type, xproperty::flags::type>);
+
+        using arg1 = std::tuple_element_t<0, typename fn_t::args>;
+        static_assert( std::is_reference_v<arg1>);
+        using arg1_t = std::remove_reference_t<arg1>;
+
+        constexpr member_dynamic_flags() noexcept
+            : settings::member_dynamic_flags_t{ .m_pCallback = []( const void* pObj, settings::context& C) constexpr noexcept  -> xproperty::flags::type
+                { if constexpr (std::tuple_size_v<typename fn_t::args> == 1) return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj));
+                  else                                                       return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj), C);
+                } } {}
+    };
 
     namespace ui::undo
     {

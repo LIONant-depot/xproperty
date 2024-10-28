@@ -28,7 +28,7 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<T>::data&>(IB);
 
-        if (Flags.m_isShowReadOnly) ui::details::ReadOnly(I.m_pFormat, Value);
+        if (Flags.m_bShowReadOnly) ui::details::ReadOnly(I.m_pFormat, Value);
         else
         {
             T V = Value;
@@ -49,7 +49,7 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<T>::data&>(IB);
 
-        if ( Flags.m_isShowReadOnly ) ui::details::ReadOnly( I.m_pFormat, Value );
+        if ( Flags.m_bShowReadOnly ) ui::details::ReadOnly( I.m_pFormat, Value );
         else
         {
             T V = Value;
@@ -207,7 +207,7 @@ namespace xproperty::ui::details
 
         bool V = Value;
 
-        if ( Flags.m_isShowReadOnly )
+        if ( Flags.m_bShowReadOnly )
         {
             ImGui::Checkbox("##value", &V);
             V = Value;
@@ -236,7 +236,7 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
-        if ( Flags.m_isShowReadOnly ) ImGui::InputText( "##value", (char*)Value.c_str(), Value.length(), ImGuiInputTextFlags_ReadOnly );
+        if ( Flags.m_bShowReadOnly ) ImGui::InputText( "##value", (char*)Value.c_str(), Value.length(), ImGuiInputTextFlags_ReadOnly );
         else
         {
             std::array<char, 256> buff;
@@ -260,7 +260,7 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
-        if ( Flags.m_isShowReadOnly ) ImGui::Button( Value.c_str(), ImVec2(-1,16) );
+        if ( Flags.m_bShowReadOnly ) ImGui::Button( Value.c_str(), ImVec2(-1,16) );
         else
         {
             Cmd.m_isChange = ImGui::Button( Value.c_str(), ImVec2(-1,16) );
@@ -325,7 +325,7 @@ namespace xproperty::ui::details
         //
         // Handle the UI part...
         //
-        if (Flags.m_isShowReadOnly) 
+        if (Flags.m_bShowReadOnly) 
         {
             ImGui::InputText("##value", (char*)AnyValue.m_pType->m_RegisteredEnumSpan[current_item].m_pName, std::strlen(AnyValue.m_pType->m_RegisteredEnumSpan[current_item].m_pName), ImGuiInputTextFlags_ReadOnly);
         }
@@ -664,19 +664,33 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
             C->m_List.clear();
             int                    iDimensions = -1;
             int                    myDimension = -1;
-            xproperty::sprop::collector( C->m_Base.second, *C->m_Base.first, m_Context, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members& Member, bool isConst)
+            xproperty::sprop::collector( C->m_Base.second, *C->m_Base.first, m_Context, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members& Member, bool isConst, const void* pInstance )
             {
                 std::uint32_t          GUID        = Member.m_GUID;
                 std::uint32_t          GroupGUID   = 0;
 
-                xproperty::flags::type Flags;
-                Flags.m_isShowReadOnly = isConst;
-                Flags.m_isDontSave     = false;
-                Flags.m_isDontShow     = false;
-                Flags.m_isScope        =    std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
+                // Handle the flags
+                xproperty::flags::type Flags = [&]
+                {
+                    if(auto* pDynamicFlags = Member.getUserData<xproperty::settings::member_dynamic_flags_t>(); pDynamicFlags)
+                    {
+                        return pDynamicFlags->m_pCallback(pInstance, m_Context);
+                    }
+                    else if (auto* pStaticFlags = Member.getUserData<xproperty::settings::member_flags_t>(); pStaticFlags )
+                    {
+                        return pStaticFlags->m_Flags;
+                    }
+                    else
+                    {
+                        return xproperty::flags::type{.m_Value = 0};
+                    }
+                }();
+
+                Flags.m_bShowReadOnly |= isConst;
+                Flags.m_bScope         =    std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
                                          || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant);
 
-                if(Flags.m_isScope || std::holds_alternative<xproperty::type::members::var>(Member.m_Variant) )
+                if(Flags.m_bScope || std::holds_alternative<xproperty::type::members::var>(Member.m_Variant) )
                 {
                     iDimensions = -1;
                     myDimension = -1;
@@ -693,21 +707,15 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                 }
 
                 // Check if we are dealing with atomic types and the size field...
-                /*
-                if ( Flags.m_isScope == false
-                    && ( std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant)
-                         || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant))
-                    && Value.m_pType->m_GUID == xproperty::settings::var_type<std::size_t>::guid_v )
-                    */
                 if ( std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant)
                      || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant) )
                 {
                     auto i = std::strlen(pPropertyName);
                     if( (pPropertyName[i-1] == ']') && (pPropertyName[i - 2] == '[') )
                     {
-                        Flags.m_isScope = true;
+                        Flags.m_bScope = true;
 
-                        std::visit([&](auto& List )
+                        std::visit([&]( auto& List ) constexpr
                         {
                             if constexpr (std::is_same_v<decltype(List), const xproperty::type::members::list_props&> ||
                                           std::is_same_v<decltype(List), const xproperty::type::members::list_var&>  )
@@ -748,7 +756,7 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                     , Member.m_pName
                     , Member.m_GUID
                     , GroupGUID
-                    , Flags.m_isScope ? nullptr : &Member
+                    , Flags.m_bScope ? nullptr : &Member
                     , iDimensions
                     , myDimension
                     , Flags
@@ -821,18 +829,19 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         int             m_MyDimension;
         bool            m_isOpen          : 1
                         , m_isAtomicArray : 1
-                        , m_isReadOnly    : 1;
+                        , m_isReadOnly    : 1
+                        , m_isHidden      : 1;
     };
 
     int                         iDepth   = -1;
     std::array<element,32>      Tree;
-    auto                        PushTree = [&]( std::uint32_t UID, const char* pName, std::size_t iStart, std::size_t iEnd, int myDimension, bool isReadOnly, bool bArray = false, bool bAtomic = false )
+    auto                        PushTree = [&]( std::uint32_t UID, const char* pName, std::size_t iStart, std::size_t iEnd, int myDimension, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
     {
         bool Open = iDepth<0? true : Tree[ iDepth ].m_isOpen;
         if( Open )
         {
             if ( iDepth >0 && Tree[iDepth-1].m_OpenAll ) ImGui::SetNextItemOpen( Tree[iDepth-1].m_OpenAll > 0 );
-            Open = ImGui::TreeNodeEx( pName, ImGuiTreeNodeFlags_DefaultOpen | ( ( iDepth == -1 ) ? ImGuiTreeNodeFlags_Framed : 0 ) );
+            Open = ImGui::TreeNodeEx( pName, (bArray?0:ImGuiTreeNodeFlags_DefaultOpen) | ( ( iDepth == -1 ) ? ImGuiTreeNodeFlags_Framed : 0 ) );
         }
         auto& L = Tree[ ++iDepth ];
 
@@ -845,6 +854,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         L.m_isAtomicArray   = bAtomic;
         L.m_isReadOnly      = isReadOnly || ((iDepth>0)?Tree[ iDepth -1 ].m_isReadOnly : false);
         L.m_MyDimension     = myDimension;
+        L.m_isHidden        = isHidden;
 
         return Open;
     };
@@ -875,7 +885,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImGui::AlignTextToFramePadding();
 
         // If the main tree is Close then forget about it
-        PushTree( C.m_Base.first->m_GUID, C.m_Base.first->m_pName, iStart, iEnd, -1, false );
+        PushTree( C.m_Base.first->m_GUID, C.m_Base.first->m_pName, iStart, iEnd, -1, false, false );
 
         ImGui::NextColumn();
         ImGui::AlignTextToFramePadding();
@@ -906,7 +916,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if (E.m_Property.m_Path.size() < iStart || E.m_Property.m_Path.size() < iEnd) return false;
 
             // Handle multidimensional arrays...
-            if (E.m_Flags.m_isScope 
+            if (E.m_Flags.m_bScope 
              && E.m_Dimensions > 1 
              && Tree[iDepth].m_iArray >= 0 
              && Tree[iDepth].m_MyDimension >= E.m_MyDimension
@@ -919,6 +929,17 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
         if( Tree[iDepth].m_isOpen == false && bSameLevel )
             continue;
+
+        //
+        // If the user ask us to hide this property we will do so
+        //
+
+        // A scope is hidden...
+        if( Tree[iDepth].m_isHidden && bSameLevel )
+            continue;
+
+        // A property is hidden...
+        if (E.m_Flags.m_bDontShow) continue;
 
         //
         // Do we need to pop scopes?
@@ -952,12 +973,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if( E.m_GroupGUID == xproperty::settings::vector2_group::guid_v )
             {
                 // This guy is not longer a scope...
-                E.m_Flags.m_isScope = false;
+                E.m_Flags.m_bScope = false;
             }
         }
 
         // Create a new tree
-        if( E.m_Flags.m_isScope ) 
+        if( E.m_Flags.m_bScope ) 
         {
             // Is an array?
             if( E.m_Property.m_Path.back() == ']' )
@@ -966,7 +987,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 {
                     std::array<char, 128> Name;
                     snprintf(Name.data(), Name.size(), "%s[%dd] ", E.m_pName, E.m_Dimensions );
-                    PushTree( E.m_GUID, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_isShowReadOnly, true, C.m_List[iE+1]->m_Property.m_Path.back() == ']' );
+                    PushTree( E.m_GUID, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, false, true, C.m_List[iE+1]->m_Property.m_Path.back() == ']' );
                     iStart = iEnd + 1;
                     iEnd   = E.m_Property.m_Path.size() - 2;
                 }
@@ -983,12 +1004,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     }
 
                     stroffset += snprintf(&Name.data()[stroffset], Name.size() - stroffset, "[%dd]", E.m_Dimensions - E.m_MyDimension);
-                    PushTree(E.m_GUID, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_isShowReadOnly, true, C.m_List[iE + 1]->m_Property.m_Path.back() == ']');
+                    PushTree(E.m_GUID, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, false, true, C.m_List[iE + 1]->m_Property.m_Path.back() == ']');
                 }
             }
             else
             {
-                PushTree( E.m_GUID, E.m_pName, iStart, iEnd, E.m_MyDimension, E.m_Flags.m_isShowReadOnly );
+                PushTree( E.m_GUID, E.m_pName, iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow );
                 iStart = iEnd + 1;
                 iEnd   = E.m_Property.m_Path.size();
             }
@@ -1013,7 +1034,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
                     auto CRC = xproperty::settings::strguid( { &E.m_Property.m_Path.c_str()[ iStart ], static_cast<std::uint32_t>( NewEnd - iStart + 1 ) } );
 
-                    PushTree(CRC, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_isShowReadOnly );
+                    PushTree(CRC, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow);
                     iEnd = NewEnd;
 
                     bRenderBlankRight = true;
@@ -1028,7 +1049,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             }
         }
 
-        if ( E.m_Flags.m_isShowReadOnly || Tree[iDepth].m_isReadOnly )
+        if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
         {
             ImColor     CC = ImVec4(0.7f, 0.7f, 1.0f, 0.35f);
             ImGui::GetWindowDrawList()->AddRectFilled(lpos, ImVec2(lpos.x + CRA.x, lpos.y + ImGui::GetFrameHeight()), CC);
@@ -1050,7 +1071,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImVec2 rpos = ImGui::GetCursorScreenPos();
         CRA = ImGui::GetContentRegionAvail();
 
-        if( E.m_Flags.m_isScope || bRenderBlankRight )
+        if( E.m_Flags.m_bScope || bRenderBlankRight )
         {
             if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex );
 
@@ -1069,7 +1090,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 HelpMarker( "Closes/Collapses all entries in the list" );
             }
 
-            if (E.m_Flags.m_isShowReadOnly || Tree[iDepth].m_isReadOnly)
+            if (E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly)
             {
                 ImColor     CC = ImVec4(0.7f, 0.7f, 1.0f, 0.35f);
                 ImGui::GetWindowDrawList()->AddRectFilled(rpos, ImVec2(rpos.x + CRA.x, rpos.y + ImGui::GetFrameHeight()), CC);
@@ -1089,9 +1110,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 }
             }
 
-            if ( E.m_Flags.m_isShowReadOnly || Tree[iDepth].m_isReadOnly )
+            if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
             {
-                E.m_Flags.m_isShowReadOnly = true;
+                E.m_Flags.m_bShowReadOnly = true;
 
                 ImGuiStyle* style = &ImGui::GetStyle();
                 ImColor     CC    = ImVec4( 0.7f, 0.7f, 1.0f, 0.35f );

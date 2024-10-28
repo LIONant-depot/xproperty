@@ -160,10 +160,37 @@ public:
             < "Background"
             , obj_member<"RenderLeft",      &settings::m_bRenderLeftBackground, member_help<"Disable the rendering of the background on the left"> >
             , obj_member<"RenderRight",     &settings::m_bRenderRightBackground, member_help<"Disable the rendering of the background on the right"> >
-            , obj_member<"Depth",           &settings::m_bRenderBackgroundDepth, member_help<"Disable the rendering of multiple color background"> >
-            , obj_member<"ColorVScalar1",   &settings::m_ColorVScalar1, member_ui<float>::scroll_bar<0.0f, 2.0f>, member_help<"Changes the Luminosity of one of the alternate colors for the background"> >
-            , obj_member<"ColorVScalar2",   &settings::m_ColorVScalar2, member_ui<float>::scroll_bar<0.0f, 2.0f>, member_help<"Changes the Luminosity of one of the alternate colors for the background"> >
-            , obj_member<"ColorSScalar",    &settings::m_ColorSScalar,  member_ui<float>::scroll_bar<0.0f, 10.0f>, member_help<"Changes the Saturation for all the colors in the background"> >
+            , obj_member<"Depth",           &settings::m_bRenderBackgroundDepth
+                                                , member_dynamic_flags<+[]( const settings& S )
+                                                {
+                                                    if (S.m_bRenderLeftBackground == false && S.m_bRenderRightBackground == false) return xproperty::flags::type{ .m_Value = xproperty::flags::DONT_SHOW };
+                                                    return xproperty::flags::type{ .m_Value = 0 };
+                                                }>
+                                                , member_help<"Disable the rendering of multiple color background"> >
+            , obj_member<"ColorVScalar1",   &settings::m_ColorVScalar1
+                                                , member_ui<float>::scroll_bar<0.0f, 2.0f>
+                                                , member_dynamic_flags<+[]( const settings& S )
+                                                {
+                                                    if (S.m_bRenderLeftBackground == false && S.m_bRenderRightBackground == false) return xproperty::flags::type{ .m_Value = xproperty::flags::DONT_SHOW };
+                                                    return xproperty::flags::type{ .m_Value = 0 };
+                                                }>
+                                                , member_help<"Changes the Luminosity of one of the alternate colors for the background"> >
+            , obj_member<"ColorVScalar2",   &settings::m_ColorVScalar2
+                                                , member_ui<float>::scroll_bar<0.0f, 2.0f>
+                                                , member_dynamic_flags<+[]( const settings& S )
+                                                {
+                                                    if (S.m_bRenderLeftBackground == false && S.m_bRenderRightBackground == false) return xproperty::flags::type{ .m_Value = xproperty::flags::DONT_SHOW };
+                                                    return xproperty::flags::type{ .m_Value = 0 };
+                                                }>
+                                                , member_help<"Changes the Luminosity of one of the alternate colors for the background"> >
+            , obj_member<"ColorSScalar",    &settings::m_ColorSScalar
+                                                , member_ui<float>::scroll_bar<0.0f, 10.0f>
+                                                , member_dynamic_flags<+[]( const settings& S )
+                                                {
+                                                    if (S.m_bRenderLeftBackground == false && S.m_bRenderRightBackground == false) return xproperty::flags::type{ .m_Value = xproperty::flags::DONT_SHOW };
+                                                    return xproperty::flags::type{ .m_Value = 0 };
+                                                }>
+                                                , member_help<"Changes the Saturation for all the colors in the background"> >
             >
         , obj_scope
             < "Help Popup"
