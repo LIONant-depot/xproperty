@@ -1,7 +1,7 @@
 <img src="https://i.imgur.com/GfJb3sQ.jpg" align="right" width="150px" />
 
 
-# xProperties (Version: 0.3.0.1 Pre-Alpha)
+# xProperties (Version: 0.4.0.1 Pre-Alpha)
 
 [             ![Feedback](https://img.shields.io/badge/feedback-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties)
