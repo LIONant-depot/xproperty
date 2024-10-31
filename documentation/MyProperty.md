@@ -48,7 +48,7 @@ namespace xproperty::settings
         template< typename...T >
         struct alignas(force_minimum_case_alignment) atomic_type_worse_alignment_and_memory
         {
-            alignas(std::max({ alignof(T)... })) std::uint8_t m_Data[std::max({ sizeof(T)... })];
+            alignas(std::max({ alignof(T)... })) std::uint8_t m_Data[std::max( {sizeof(T)...} )];
         };
     }
 

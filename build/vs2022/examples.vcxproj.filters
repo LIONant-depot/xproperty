@@ -22,6 +22,7 @@
       <Filter>Documentation</Filter>
     </None>
     <None Include="..\..\README.md" />
+    <None Include="..\..\.gitignore" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\source\xproperty.h">
@@ -59,5 +60,8 @@
     <ClCompile Include="..\..\source\examples\create_documentation\main.cpp">
       <Filter>CreateDocumentationExample</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\LICENSE.txt" />
   </ItemGroup>
 </Project>

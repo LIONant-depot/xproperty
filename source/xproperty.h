@@ -474,7 +474,7 @@ namespace xproperty
                 inline constexpr static std::span<const enum_item> enum_list_v = {};
                 inline constexpr static auto                       guid_v      = 1u;
 
-                static_assert(sizeof(type) <= sizeof(data_memory));
+                static_assert(sizeof(type) <= sizeof(xproperty::settings::data_memory));
 
                 constexpr static void Write           ( type&       MemberVar,  const type& Data, context&  ) noexcept { MemberVar = Data; }
                 constexpr static void Read            ( const type& MemberVar,        type& Data, context&  ) noexcept { Data      = MemberVar; }
@@ -588,10 +588,23 @@ namespace xproperty
             constexpr static specializing_t*   getObject       ( type& MemberVar, context&) noexcept { return &MemberVar; }
             constexpr static atomic_type*      getAtomic       ( type& MemberVar, context&) noexcept { return &MemberVar; }
 
-            constexpr static void              VoidConstruct   ( data_memory& Data )                            noexcept  { new(&Data) type{}; }
-            constexpr static void              Destruct        ( data_memory& Data )                            noexcept  { std::destroy_at(&reinterpret_cast<type&>(Data) ); }
-            constexpr static void              MoveConstruct   ( data_memory& Data1,       type&& Data2 )       noexcept  { new(&Data1) type{ Data2 }; }
-            constexpr static void              CopyConstruct   ( data_memory& Data1, const type&  Data2 )       noexcept  { new(&Data1) type{ Data2 }; }
+            struct builder
+            {
+                builder() = default;
+                ~builder() = default;
+                builder(type&& x) : m_X{ std::move(x) }
+                {
+                }
+                builder(const type& x) : m_X{ x }
+                {
+                }
+                type m_X;
+            };
+
+            constexpr static void              VoidConstruct   ( data_memory& Data )                            noexcept  { reinterpret_cast<builder&>(Data).builder::builder(); }  //std::construct_at(&reinterpret_cast<type&>(Data) ); }
+            constexpr static void              Destruct        ( data_memory& Data )                            noexcept  { reinterpret_cast<builder&>(Data).builder::~builder(); }//std::destroy_at(&reinterpret_cast<type&>(Data) ); }
+            constexpr static void              MoveConstruct   ( data_memory& Data1,       type&& Data2 )       noexcept  { reinterpret_cast<builder&>(Data1).builder::builder(std::forward<type&&>(Data2)); }//new(&Data1) type{ Data2 }; }
+            constexpr static void              CopyConstruct   ( data_memory& Data1, const type&  Data2 )       noexcept  { reinterpret_cast<builder&>(Data1).builder::builder(Data2); } //new(&Data1) type{ Data2 }; }
 
         };
 
@@ -715,7 +728,7 @@ namespace xproperty
             using enum_item         = xproperty::settings::enum_item;
             using void_construct    = void(settings::data_memory&);
             using destruct          = void(settings::data_memory&);
-            using move_construct    = void(settings::data_memory&,       settings::data_memory&);
+            using move_construct    = void(settings::data_memory&,       settings::data_memory&&);
             using copy_construct    = void(settings::data_memory&, const settings::data_memory&);
 
             const char*                 m_pName;
@@ -747,8 +760,8 @@ namespace xproperty
                                     }()
             , .m_pVoidConstruct = var_t<T>::VoidConstruct
             , .m_pDestruct      = var_t<T>::Destruct
-            , .m_pMoveConstruct = +[](settings::data_memory& D,       settings::data_memory& S) constexpr { settings::var_type<T>::MoveConstruct( D, reinterpret_cast<T&&>(S) );      }
-            , .m_pCopyConstruct = +[](settings::data_memory& D, const settings::data_memory& S) constexpr { settings::var_type<T>::CopyConstruct( D, reinterpret_cast<const T&>(S));  }
+            , .m_pMoveConstruct = +[](settings::data_memory& D,       settings::data_memory&& S) constexpr { settings::var_type<T>::MoveConstruct( D, std::forward<T&&>(reinterpret_cast<T&&>(S)) );      }
+            , .m_pCopyConstruct = +[](settings::data_memory& D, const settings::data_memory& S)  constexpr { settings::var_type<T>::CopyConstruct( D, reinterpret_cast<const T&>(S));  }
             };
         }();
 
@@ -854,6 +867,8 @@ namespace xproperty
                 static_assert( std::is_enum_v<T> || settings::var_type<T>::guid_v != 0 );
                 if(m_pType) 
                 {
+                    m_pType->m_pDestruct(m_Data);
+                    /*
                     if( m_pType == &atomic_v<T> ) 
                     {
                         if constexpr (settings::var_type<T>::guid_v == 0)
@@ -866,16 +881,21 @@ namespace xproperty
                         m_pType->m_pDestruct(m_Data);
                         m_pType = &atomic_v<T>;
                     }
+                    */
                 }
                 else
                 {
                     m_pType = &atomic_v<T>;
                 }
 
+                /*
                 if constexpr (settings::var_type<T>::guid_v == 0)
                     m_pType->m_pVoidConstruct(m_Data);
                 else
                     settings::var_type<T>::VoidConstruct(m_Data);
+                */
+                m_pType->m_pVoidConstruct(m_Data);
+
                 return reinterpret_cast<T&>(m_Data);
             }
 
@@ -886,6 +906,8 @@ namespace xproperty
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
                 if (m_pType)
                 {
+                    m_pType->m_pDestruct(m_Data);
+                    /*
                     if (m_pType == &atomic_v<T>)
                     {
                         if constexpr (settings::var_type<T>::guid_v == 0)
@@ -898,16 +920,22 @@ namespace xproperty
                         m_pType->m_pDestruct(m_Data);
                         m_pType = &atomic_v<T>;
                     }
+                    */
                 }
                 else
                 {
                     m_pType = &atomic_v<T>;
                 }
 
+                /*
                 if constexpr (settings::var_type<T>::guid_v == 0)
-                    m_pType->m_pMoveConstruct(m_Data, std::move(Data) );
+                    m_pType->m_pMoveConstruct(m_Data, std::forward<T&&>(Data) );
                 else
-                    settings::var_type<T>::MoveConstruct(m_Data, std::move(Data) );
+                    settings::var_type<T>::MoveConstruct(m_Data, std::forward<T&&>(Data) );
+                    */
+
+                m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(reinterpret_cast<settings::data_memory&&>(Data)) );
+
                 return reinterpret_cast<T&>(m_Data);
             }
 
@@ -1006,7 +1034,7 @@ namespace xproperty
                 return m_pType && m_pType->m_IsEnum;
             }
 
-            ~any()
+            constexpr ~any() noexcept
             {
                 if (m_pType) 
                 {
@@ -1015,31 +1043,42 @@ namespace xproperty
                 }
             }
 
-            any() = default;
-            any( any&& Any )
+            constexpr any() = default;
+            constexpr any( any&& Any ) noexcept
             {
                 m_pType = Any.m_pType;
                 if (Any.m_pType)
                 {
-                    m_pType->m_pMoveConstruct(m_Data, Any.m_Data);
-                    Any.m_pType = nullptr;
+                    m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(Any.m_Data));
                 }
+
+                // destroy the other
+                Any.any::~any();
             }
 
-            any( const any& Any)
+            constexpr any( const any& Any) noexcept
             {
                 m_pType = Any.m_pType;
                 if (Any.m_pType) m_pType->m_pCopyConstruct(m_Data, Any.m_Data);
             }
 
-            template< typename T, typename = xproperty::settings::var_type<T>::type >
-            any(const T& Data)
+            template< typename T>
+            requires (xproperty::settings::var_type<T>::guid_v != 0)
+            constexpr any(const T& Data) noexcept
             {
                 m_pType = &atomic_v<T>;
                 m_pType->m_pCopyConstruct(m_Data, reinterpret_cast<const settings::data_memory&>(Data) );
             }
 
-            any& operator = (const any& Any)
+            template< typename T >
+            requires (xproperty::settings::var_type<T>::guid_v != 0)
+            constexpr any( T&& Data ) noexcept
+            {
+                m_pType = &atomic_v<T>;
+                m_pType->m_pMoveConstruct( m_Data, reinterpret_cast<settings::data_memory&>(Data) );
+            }
+
+            constexpr any& operator = (const any& Any) noexcept
             {
                 if(m_pType) m_pType->m_pDestruct(m_Data);
                 m_pType = Any.m_pType;
@@ -1047,15 +1086,19 @@ namespace xproperty
                 return *this;
             }
 
-            any& operator = (any&& Any)
+            constexpr  any& operator = (any&& Any) noexcept
             {
                 if (m_pType) m_pType->m_pDestruct(m_Data);
                 m_pType = Any.m_pType;
                 if (Any.m_pType)
                 {
-                    m_pType->m_pMoveConstruct(m_Data, Any.m_Data);
+                    m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(Any.m_Data));
                     Any.m_pType = nullptr;
                 }
+
+                // destroy the other
+                Any.any::~any();
+
                 return *this;
             }
 
@@ -1111,7 +1154,7 @@ namespace xproperty
             {
                 const std::span<const members>          m_Members;
 
-                const members* findMember( std::uint32_t GUID ) const noexcept
+                [[nodiscard]] inline const members* findMember( std::uint32_t GUID ) const noexcept
                 {
                     if(GUID)
                     {
@@ -1210,6 +1253,19 @@ namespace xproperty
         {
             using fn_destroy_instance   = void( void* );
 
+            struct deleter
+            {
+                constexpr deleter() noexcept = default;
+                constexpr deleter(const deleter& X) noexcept : m_pDestroyInstance {X.m_pDestroyInstance}{ }
+                constexpr deleter( fn_destroy_instance* p) noexcept : m_pDestroyInstance{ p }{}
+                void operator()( void* p) const noexcept
+                {
+                    if(m_pDestroyInstance) m_pDestroyInstance(p);
+                }
+
+                fn_destroy_instance* m_pDestroyInstance{};
+            };
+
             const char* const                           m_pName;
             std::uint32_t                               m_GUID;
             std::uint32_t                               m_GroupGUID;
@@ -1218,7 +1274,7 @@ namespace xproperty
             const std::span<const base>                 m_BaseList;
 
             template< typename...T_ARGS>
-            void* CreateInstance(T_ARGS&&... Args) const
+            std::unique_ptr<void, deleter> CreateInstance(T_ARGS&&... Args) const
             {
                 using col = std::tuple<T_ARGS...>;
 
@@ -1236,17 +1292,11 @@ namespace xproperty
                     if (bCompatible)
                     {
                         col Arguments{ std::forward<T_ARGS>(Args)... };
-                        return E.m_pCallConstructor(&Arguments);
+                        return { E.m_pCallConstructor(&Arguments), deleter{m_pDestroyInstance} };
                     }
                 }
 
-                return nullptr;
-            }
-
-            void DestroyInstance( void* pInstance ) const noexcept
-            {
-                assert(m_pDestroyInstance);
-                m_pDestroyInstance(pInstance);
+                return { nullptr, {} };
             }
         };
 

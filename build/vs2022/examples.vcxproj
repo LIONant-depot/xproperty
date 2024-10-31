@@ -37,7 +37,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>ClangCL</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
@@ -189,6 +189,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <None Include="..\..\.gitignore" />
     <None Include="..\..\documentation\Documentation.md" />
     <None Include="..\..\documentation\MyProperty.md" />
     <None Include="..\..\README.md" />
@@ -207,6 +208,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\source\examples\create_documentation\main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\LICENSE.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

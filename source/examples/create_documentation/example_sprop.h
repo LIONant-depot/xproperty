@@ -13,22 +13,22 @@ namespace xproperty::example::sprop
             auto* pInfo     = xproperty::getObjectByType<T2>();
 
             // Create instance
-            void* pInstance = pInfo->CreateInstance();
+            auto upInstance = pInfo->CreateInstance();
 
             // Set values
-            static_cast<T2*>(pInstance)->setValues();
+            static_cast<T2*>(upInstance.get())->setValues();
 
             // Create a container
             xproperty::sprop::container PropContainer;
 
             // Collect all the properties and put them into the container
-            xproperty::sprop::collector(*static_cast<T1*>(pInstance), PropContainer, Context);
+            xproperty::sprop::collector(*static_cast<T1*>(upInstance.get()), PropContainer, Context);
 
             // Destroy instance
-            pInfo->DestroyInstance(pInstance);
+            upInstance.reset();
 
             // Create a brand new instance
-            pInstance = pInfo->CreateInstance();
+            upInstance = pInfo->CreateInstance();
 
             // Set properties
             {
@@ -37,7 +37,7 @@ namespace xproperty::example::sprop
                 for (auto& E : PropContainer.m_Properties)
                 {
                     // Print it to the Property
-                    setProperty(Error, *static_cast<T1*>(pInstance), E, Context);
+                    setProperty(Error, *static_cast<T1*>(upInstance.get()), E, Context);
                     if( false == Error.empty() )
                     {
                         MemFile.print("%s = %s\n", E.m_Path.c_str(), Error.c_str());
@@ -60,7 +60,7 @@ namespace xproperty::example::sprop
             }
 
             // Check Values
-            static_cast<T2*>(pInstance)->CheckValues();
+            static_cast<T2*>(upInstance.get())->CheckValues();
         }
     };
 

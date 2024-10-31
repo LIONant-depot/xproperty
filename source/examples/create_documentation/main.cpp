@@ -137,6 +137,12 @@ void ExecuteExamples(xproperty_doc::example_group& ExampleGroup)
 //--------------------------------------------------------------------------------------------
 int main()
 {
+#ifdef _DEBUG
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    //_crtBreakAlloc = 2442;
+#endif
+
     //
     // Execute all the examples, and generate the documentation for them
     //

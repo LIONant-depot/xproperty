@@ -17,7 +17,7 @@ namespace xproperty::sprop
         collector( T& Object, sprop::container& PropContainer, xproperty::settings::context& context, bool bForEditors = false ) noexcept
             : collector(Object, context, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members&, bool, const void*) noexcept
                 {
-                    PropContainer.m_Properties.emplace_back(pPropertyName, std::move(Value));
+                    PropContainer.m_Properties.emplace_back(pPropertyName, std::forward<xproperty::any&&>(Value) );
                 }, bForEditors ) {}
 
         template<typename T, typename T_CALLBACK>

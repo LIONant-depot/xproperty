@@ -264,10 +264,10 @@ namespace xproperty::example::printing
         static void DoExample( xproperty_doc::memfile& MemFile )
         {
             xproperty::settings::context Context;
-            auto* pInfo     = xproperty::getObjectByType<T2>();
-            void* pInstance = pInfo->CreateInstance();
-            static_cast<T2*>(pInstance)->setValues();
-            DumpObject(MemFile, *static_cast<T1*>(pInstance), Context);
+            auto* pInfo      = xproperty::getObjectByType<T2>();
+            auto  upInstance = pInfo->CreateInstance();
+            static_cast<T2*>(upInstance.get())->setValues();
+            DumpObject(MemFile, *static_cast<T1*>(upInstance.get()), Context);
         }
     };
 

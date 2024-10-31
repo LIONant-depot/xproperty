@@ -9,7 +9,7 @@ namespace xproperty_doc
         template< typename...T_ARGS>
         void print( T_ARGS&&... Args )
         {
-            if(m_Data.size() < (m_Index + 1024) )
+            if(m_Data.size() < static_cast<std::uint32_t>(m_Index + 1024) )
                 m_Data.resize(m_Data.size()+(1024*2));
 
             auto i = sprintf_s( &m_Data[m_Index], 1024, std::forward<T_ARGS&&>(Args)... );
