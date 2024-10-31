@@ -236,20 +236,89 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
-        if ( Flags.m_bShowReadOnly ) ImGui::InputText( "##value", (char*)Value.c_str(), Value.length(), ImGuiInputTextFlags_ReadOnly );
+        ImVec2 charSize = ImGui::CalcTextSize("A");
+        float f = ImGui::GetColumnWidth() / charSize.x;
+        float f2 = Value.length() - f;
+        
+        if ( Flags.m_bShowReadOnly ) 
+        {
+            if(f2 > -1)
+            {
+                std::array<char, 256> buff;
+                int ToOffset = max(0, int(f2));
+                sprintf_s(buff.data(), buff.size(), "%s", &(((char*)Value.c_str())[ToOffset + 1]) );
+                const auto p = ImGui::GetCursorPosX();
+                ImGui::BeginGroup();
+                ImGui::InputText("##value", buff.data(), int(f - 1), ImGuiInputTextFlags_ReadOnly);
+
+                // Draw the symbol to indicated that there is more string on the left
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(p);
+                ImGui::Text("#");
+                ImGui::EndGroup();
+            }
+            else
+            {
+                ImGui::InputText("##value", (char*)Value.c_str(), Value.length(), ImGuiInputTextFlags_ReadOnly);
+            }
+        }
         else
         {
             std::array<char, 256> buff;
             Value.copy( buff.data(), Value.length() );
             buff[ Value.length() ] = 0;
-            Cmd.m_isChange = ImGui::InputText( "##value", buff.data(), buff.size(), ImGuiInputTextFlags_EnterReturnsTrue );
+            ImGui::BeginGroup();
+
+            const auto CurPos   = ImGui::GetCursorPosX();
+            const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
+            if( WentOver ) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
+
+            Cmd.m_isChange = ImGui::InputText( "##value", buff.data(), buff.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+            if( ImGui::IsItemActivated() )
+            {
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::string>(Value);
+                Cmd.m_isEditing = true;
+            }
+            else
+            {
+                if(Cmd.m_isEditing == true && ImGui::IsItemActive() == false )
+                    Cmd.m_isEditing = false;
+            }
+
+            // Draw the symbol to indicated that there is more string on the left
+            if(WentOver)
+            {
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(CurPos);
+                ImGui::Text("#");
+            }
+
+            ImGui::EndGroup();
             if ( Cmd.m_isChange )
             {
                 if( Cmd.m_isEditing == false ) Cmd.m_Original.set<std::string>(Value);
                 Cmd.m_isEditing = true;
                 Cmd.m_NewValue.set<std::string>( buff.data() );
+
+                // Have we really changed anything?
+                if(Cmd.m_Original.get<std::string>() == Cmd.m_NewValue.get<std::string>() )
+                    Cmd.m_isChange = false;
             }
-            if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) Cmd.m_isEditing = false;
+            if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) 
+                Cmd.m_isEditing = false;
+        }
+
+        // For strings that are too long... we will show a tooltip with the full string
+        if (f2 > -1 && ImGui::IsItemHovered() )
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(charSize.x * 100);
+
+            ImGui::TextUnformatted( Value.c_str() );
+
+            ImGui::EndTooltip();
+            ImGui::PopStyleVar();
         }
     }
 
@@ -626,6 +695,15 @@ void xproperty::inspector::Undo(void) noexcept
     if (m_UndoSystem.m_Index == 0 || m_UndoSystem.m_lCmds.size() == 0)
         return;
 
+    if(m_UndoSystem.m_Index == (m_UndoSystem.m_lCmds.size()-1) )
+    {
+        if( m_UndoSystem.m_lCmds.back().m_bHasChanged == false )
+        {
+            m_UndoSystem.m_lCmds.pop_back();
+            Undo();
+            return;
+        }
+    }
     auto&               Value = m_UndoSystem.m_lCmds[--m_UndoSystem.m_Index];
     std::string         Error;
     xproperty::sprop::io_property<true>(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_Original }, m_Context);
@@ -1173,16 +1251,13 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                     std::string Error;
                                     xproperty::sprop::setProperty( Error, C.m_Base.second, *C.m_Base.first, { Entry.m_Property.m_Path, UndoCmd.m_NewValue }, m_Context );
                                     assert(Error.empty());
+                                    UndoCmd.m_bHasChanged = true;
                                 }
 
                                 if( UndoCmd.m_isEditing == false )
                                 {
-                                    // Make sure to mark this cmd is done
-                                    UndoCmd.m_isChange = false;
-
-                                    // Make it an official undo step
-                                    m_UndoSystem.m_Index++;
-                                    assert( m_UndoSystem.m_Index == static_cast<int>(m_UndoSystem.m_lCmds.size()) );
+                                    if(UndoCmd.m_bHasChanged) m_UndoSystem.m_Index++;
+                                    assert( m_UndoSystem.m_Index <= static_cast<int>(m_UndoSystem.m_lCmds.size()) );
                                 }
                                 return;
                             }
@@ -1211,6 +1286,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             std::string Error;
                             xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, { Entry.m_Property.m_Path, Cmd.m_NewValue }, m_Context);
                             assert(Error.empty());
+                            Cmd.m_bHasChanged = true;
                         }
                         
 
@@ -1219,7 +1295,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             m_UndoSystem.m_lCmds.erase( m_UndoSystem.m_lCmds.begin() + m_UndoSystem.m_Index, m_UndoSystem.m_lCmds.end()  );
 
                         // Make sure we don't have more entries than we should
-                        if( m_UndoSystem.m_Index > m_UndoSystem.m_MaxSteps )
+                        while( m_UndoSystem.m_Index >= m_UndoSystem.m_MaxSteps )
                         {
                             m_UndoSystem.m_lCmds.erase(m_UndoSystem.m_lCmds.begin());
                             m_UndoSystem.m_Index--;

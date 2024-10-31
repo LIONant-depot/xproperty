@@ -45,8 +45,9 @@ namespace xproperty
                 std::uint8_t                m_Flags{ 0 };
                 struct
                 {
-                    bool                    m_isEditing : 1         // Is Item currently been edited
-                                          , m_isChange  : 1;
+                    bool                    m_isEditing   : 1         // Is Item currently been edited
+                                          , m_isChange    : 1
+                                          , m_bHasChanged : 1;
                 };
             };
 
@@ -101,8 +102,28 @@ namespace xproperty
 
             XPROPERTY_DEF
             ( "System", system
-            , obj_member_ro<"Index",    &system::m_Index,    member_ui<int>::drag_bar<0.6f> >
-            , obj_member   <"MaxSteps", &system::m_MaxSteps, member_ui<int>::drag_bar<0.6f> >
+            , obj_member_ro<"Index",    &system::m_Index >
+            , obj_member   <"MaxSteps", +[](system& O, bool bRead, int& InOutValue)
+                {
+                    if( bRead ) InOutValue = O.m_MaxSteps;
+                    else
+                    {
+                        O.m_MaxSteps = std::min(100, std::max(1, InOutValue));
+
+                        if(const int CurSize = static_cast<int>(O.m_lCmds.size()); CurSize >= O.m_MaxSteps )
+                        {
+                            // We delete the older commands first
+                            const int ToDelete = CurSize - O.m_MaxSteps;
+                            O.m_lCmds.erase(O.m_lCmds.begin(), O.m_lCmds.begin() + ToDelete);
+                        }
+
+                        // Make sure our index is safe
+                        if (O.m_Index > O.m_MaxSteps) O.m_Index = O.m_MaxSteps;
+                    }
+
+                }
+                , member_ui<int>::scroll_bar< 1, 100 > 
+                >
             , obj_member_ro<"Commands", &system::m_lCmds >
             )
         };
