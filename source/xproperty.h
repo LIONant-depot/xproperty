@@ -1093,7 +1093,6 @@ namespace xproperty
                 if (Any.m_pType)
                 {
                     m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(Any.m_Data));
-                    Any.m_pType = nullptr;
                 }
 
                 // destroy the other
