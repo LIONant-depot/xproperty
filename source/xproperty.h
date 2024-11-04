@@ -946,6 +946,8 @@ namespace xproperty
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
                 if (m_pType)
                 {
+                    m_pType->m_pDestruct(m_Data);
+                    /*
                     if (m_pType == &atomic_v<T>)
                     {
                         if constexpr (settings::var_type<T>::guid_v == 0)
@@ -958,16 +960,20 @@ namespace xproperty
                         m_pType->m_pDestruct(m_Data);
                         m_pType = &atomic_v<T>;
                     }
+                    */
                 }
                 else
                 {
                     m_pType = &atomic_v<T>;
                 }
 
+                settings::var_type<T>::CopyConstruct(m_Data, Data);
+                /*
                 if constexpr (settings::var_type<T>::guid_v == 0)
                     m_pType->m_pCopyConstruct(m_Data, Data);
                 else
                     settings::var_type<T>::CopyConstruct(m_Data, Data);
+                    */
                 return reinterpret_cast<T&>(m_Data);
             }
 

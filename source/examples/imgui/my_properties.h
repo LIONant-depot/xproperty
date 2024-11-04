@@ -593,7 +593,6 @@ namespace xproperty::flags
             bool  m_bShowReadOnly : 1       // Tells the UI to show this property/ies as read only
                 , m_bDontSave     : 1       // Tells the serializer not to save this property/ies
                 , m_bDontShow     : 1       // Tells the UI not to show this property/ies
-                , m_bScope        : 1       // This one used not used in internal to the inspector only...
                 ;
         };
     };

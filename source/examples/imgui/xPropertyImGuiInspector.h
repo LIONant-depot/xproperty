@@ -252,6 +252,7 @@ protected:
         int                                             m_Dimensions;
         int                                             m_MyDimension;
         xproperty::flags::type                          m_Flags;
+        bool                                            m_bScope;
     };
 
     struct component

@@ -746,7 +746,7 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
             {
                 std::uint32_t          GUID        = Member.m_GUID;
                 std::uint32_t          GroupGUID   = 0;
-
+                
                 // Handle the flags
                 xproperty::flags::type Flags = [&]
                 {
@@ -765,10 +765,10 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                 }();
 
                 Flags.m_bShowReadOnly |= isConst;
-                Flags.m_bScope         =    std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
+                bool bScope            =    std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
                                          || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant);
 
-                if(Flags.m_bScope || std::holds_alternative<xproperty::type::members::var>(Member.m_Variant) )
+                if(bScope || std::holds_alternative<xproperty::type::members::var>(Member.m_Variant) )
                 {
                     iDimensions = -1;
                     myDimension = -1;
@@ -791,7 +791,7 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                     auto i = std::strlen(pPropertyName);
                     if( (pPropertyName[i-1] == ']') && (pPropertyName[i - 2] == '[') )
                     {
-                        Flags.m_bScope = true;
+                        bScope = true;
 
                         std::visit([&]( auto& List ) constexpr
                         {
@@ -834,10 +834,11 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                     , Member.m_pName
                     , Member.m_GUID
                     , GroupGUID
-                    , Flags.m_bScope ? nullptr : &Member
+                    , bScope ? nullptr : &Member
                     , iDimensions
                     , myDimension
                     , Flags
+                    , bScope
                     ) 
                 );
             }, true );
@@ -994,7 +995,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if (E.m_Property.m_Path.size() < iStart || E.m_Property.m_Path.size() < iEnd) return false;
 
             // Handle multidimensional arrays...
-            if (E.m_Flags.m_bScope 
+            if (E.m_bScope 
              && E.m_Dimensions > 1 
              && Tree[iDepth].m_iArray >= 0 
              && Tree[iDepth].m_MyDimension >= E.m_MyDimension
@@ -1051,12 +1052,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if( E.m_GroupGUID == xproperty::settings::vector2_group::guid_v )
             {
                 // This guy is not longer a scope...
-                E.m_Flags.m_bScope = false;
+                E.m_bScope = false;
             }
         }
 
         // Create a new tree
-        if( E.m_Flags.m_bScope ) 
+        if( E.m_bScope ) 
         {
             // Is an array?
             if( E.m_Property.m_Path.back() == ']' )
@@ -1149,7 +1150,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImVec2 rpos = ImGui::GetCursorScreenPos();
         CRA = ImGui::GetContentRegionAvail();
 
-        if( E.m_Flags.m_bScope || bRenderBlankRight )
+        if( E.m_bScope || bRenderBlankRight )
         {
             if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex );
 
