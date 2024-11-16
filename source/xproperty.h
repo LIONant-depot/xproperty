@@ -2195,17 +2195,22 @@ namespace xproperty
         template< xproperty::details::fixed_string T_NAME_V, typename...T_ARGS >
         struct scope< T_NAME_V, std::tuple<T_ARGS...> >
         {
+            using                      members_t = xproperty::details::filter_by_tag_t< meta::obj_member_tag, T_ARGS... >;
+            using                    user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
+
             inline constexpr static auto name_v    = T_NAME_V;
             inline constexpr static auto members_v = []() consteval
             {
-                if constexpr (sizeof...(T_ARGS)) return std::array{ T_ARGS::meta_t::getInfo() ... };
+                if constexpr ( std::tuple_size_v<members_t> > 0 ) return []< typename...T>(std::tuple<T...>*) consteval
+                {
+                    return std::array{ T::meta_t::getInfo() ... };
+                }((members_t*)0);
                 else                             return std::span<type::members>{};
             }();
-            using user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
 
             consteval static type::members::scope getInfoScope( void ) noexcept
             {
-                return{ .m_Members = members_v };
+                return{ .m_Members = members_v  };
             }
 
             consteval static type::members getInfo( void ) noexcept

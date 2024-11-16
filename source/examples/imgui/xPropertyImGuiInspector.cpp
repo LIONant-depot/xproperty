@@ -234,7 +234,7 @@ namespace xproperty::ui::details
     template<>
     void draw<std::string, style::defaulted>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
-        auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
+       // auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
 
         ImVec2 charSize = ImGui::CalcTextSize("A");
         float f = ImGui::GetColumnWidth() / charSize.x;
@@ -316,6 +316,138 @@ namespace xproperty::ui::details
             ImGui::PushTextWrapPos(charSize.x * 100);
 
             ImGui::TextUnformatted( Value.c_str() );
+
+            ImGui::EndTooltip();
+            ImGui::PopStyleVar();
+        }
+    }
+
+    //-----------------------------------------------------------------------------------
+    
+    template<>
+    void draw<std::string, style::file_dialog>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    {
+        auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
+
+        ImVec2 charSize = ImGui::CalcTextSize("A");
+        float ButtonWidth = charSize.x * 3;
+        float f = (ImGui::GetColumnWidth() - ButtonWidth) / charSize.x;
+        float f2 = Value.length() - f;
+
+        float ItemWidth = [&]
+        {
+            if( f2 > -1 )
+            {
+                return Value.length() * charSize.x + 3;
+            }
+            else
+            {
+                return ImGui::GetColumnWidth() - ButtonWidth - 3;
+            }            
+        }();
+
+        if (Flags.m_bShowReadOnly)
+        {
+            if (f2 > -1)
+            {
+                std::array<char, 256> buff;
+                int ToOffset = max(0, int(f2));
+                sprintf_s(buff.data(), buff.size(), "%s", &(((char*)Value.c_str())[ToOffset + 1]));
+                const auto p = ImGui::GetCursorPosX();
+                ImGui::BeginGroup();
+                ImGui::InputText("##value", buff.data(), int(f - 1), ImGuiInputTextFlags_ReadOnly);
+
+                // Draw the symbol to indicated that there is more string on the left
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(p);
+                ImGui::Text("#");
+                ImGui::EndGroup();
+            }
+            else
+            {
+                ImGui::InputText("##value", (char*)Value.c_str(), Value.length(), ImGuiInputTextFlags_ReadOnly);
+            }
+        }
+        else
+        {
+            std::array<char, 260> buff;
+            Value.copy(buff.data(), Value.length());
+            buff[Value.length()] = 0;
+            ImGui::BeginGroup();
+
+            const auto CurPos = ImGui::GetCursorPosX();
+            const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
+            if (WentOver) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
+
+            ImGui::PushItemWidth(ItemWidth);
+            Cmd.m_isChange = ImGui::InputText("##value", buff.data(), buff.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::PopItemWidth();
+
+            if (ImGui::IsItemActivated())
+            {
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::string>(Value);
+                Cmd.m_isEditing = true;
+            }
+            else
+            {
+                if (Cmd.m_isEditing == true && ImGui::IsItemActive() == false)
+                    Cmd.m_isEditing = false;
+            }
+
+            ImGui::SameLine(0, -3);
+            if( ImGui::Button("...",ImVec2(0, ButtonWidth-3)) )
+            {
+                OPENFILENAMEA ofn;
+                ZeroMemory(&ofn, sizeof(ofn));
+                ofn.lStructSize     = sizeof(ofn);
+                ofn.hwndOwner       = GetActiveWindow();
+                ofn.lpstrFile       = buff.data();
+                ofn.lpstrFile[0]    = '\0';
+                ofn.nMaxFile        = static_cast<std::uint32_t>(buff.size());
+                ofn.lpstrFilter     = I.m_pFilter;
+                ofn.nFilterIndex    = 1;
+                ofn.lpstrFileTitle  = nullptr;
+                ofn.nMaxFileTitle   = 0;
+                ofn.lpstrInitialDir = nullptr;
+                ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+                if (GetOpenFileNameA(&ofn) == TRUE)
+                {
+                    Cmd.m_NewValue.set<std::string>(ofn.lpstrFile);
+                    Cmd.m_isChange = true;
+                }
+            }
+
+            // Draw the symbol to indicated that there is more string on the left
+            if (WentOver)
+            {
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(CurPos);
+                ImGui::Text("#");
+            }
+
+            ImGui::EndGroup();
+            if (Cmd.m_isChange)
+            {
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::string>(Value);
+                Cmd.m_isEditing = true;
+                Cmd.m_NewValue.set<std::string>(buff.data());
+
+                // Have we really changed anything?
+                if (Cmd.m_Original.get<std::string>() == Cmd.m_NewValue.get<std::string>())
+                    Cmd.m_isChange = false;
+            }
+            if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit())
+                Cmd.m_isEditing = false;
+        }
+
+        // For strings that are too long... we will show a tooltip with the full string
+        if (f2 > -1 && ImGui::IsItemHovered())
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(charSize.x * 100);
+
+            ImGui::TextUnformatted(Value.c_str());
 
             ImGui::EndTooltip();
             ImGui::PopStyleVar();
@@ -768,6 +900,14 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                 bool bScope            =    std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
                                          || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant);
 
+                const bool bAtomicArray = std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant);
+
+                const bool bDefaultOpen = [&]
+                {
+                    if (auto* pDefaultOpen = Member.getUserData<xproperty::settings::member_ui_open_t>(); pDefaultOpen) return pDefaultOpen->m_bOpen;
+                    return !(bAtomicArray || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant));
+                }();
+
                 if(bScope || std::holds_alternative<xproperty::type::members::var>(Member.m_Variant) )
                 {
                     iDimensions = -1;
@@ -786,7 +926,7 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
 
                 // Check if we are dealing with atomic types and the size field...
                 if ( std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant)
-                     || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant) )
+                  || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant) )
                 {
                     auto i = std::strlen(pPropertyName);
                     if( (pPropertyName[i-1] == ']') && (pPropertyName[i - 2] == '[') )
@@ -839,6 +979,8 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                     , myDimension
                     , Flags
                     , bScope
+                    , bAtomicArray
+                    , bDefaultOpen
                     ) 
                 );
             }, true );
@@ -900,47 +1042,107 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 {
     struct element
     {
-        std::uint32_t   m_CRC;
-        int             m_iArray;
-        std::size_t     m_iStart;
-        std::size_t     m_iEnd;
-        int             m_OpenAll;
-        int             m_MyDimension;
-        bool            m_isOpen          : 1
-                        , m_isAtomicArray : 1
-                        , m_isReadOnly    : 1
-                        , m_isHidden      : 1;
+        std::string_view     m_Path;
+        std::uint32_t        m_CRC;
+        int                  m_iArray;
+        std::size_t          m_iStart;
+        std::size_t          m_iEnd;
+        int                  m_OpenAll;
+        int                  m_MyDimension;
+        bool                 m_isOpen          : 1
+                             , m_isAtomicArray : 1
+                             , m_isReadOnly    : 1
+                             , m_isHidden      : 1
+                             , m_isDefaultOpen : 1;
     };
 
     int                         iDepth   = -1;
     std::array<element,32>      Tree;
-    auto                        PushTree = [&]( std::uint32_t UID, const char* pName, std::size_t iStart, std::size_t iEnd, int myDimension, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
-    {
-        bool Open = iDepth<0? true : Tree[ iDepth ].m_isOpen;
-        if( Open )
-        {
-            if ( iDepth >0 && Tree[iDepth-1].m_OpenAll ) ImGui::SetNextItemOpen( Tree[iDepth-1].m_OpenAll > 0 );
-            Open = ImGui::TreeNodeEx( pName, (bArray?0:ImGuiTreeNodeFlags_DefaultOpen) | ( ( iDepth == -1 ) ? ImGuiTreeNodeFlags_Framed : 0 ) );
-        }
-        auto& L = Tree[ ++iDepth ];
 
-        L.m_CRC             = UID;
+    constexpr auto ComputeNewStartEnd = []( std::string_view Str, std::size_t& iStart, std::size_t& iEnd ) constexpr
+    {
+        ++iEnd;
+        iStart = iEnd;
+
+        for (++iEnd; iEnd < Str.size(); ++iEnd)
+        {
+            if (Str[iEnd] == '/' ) break;
+        }
+
+        return iEnd;
+    };
+
+    constexpr auto ComputeCRC = []( std::string_view Str, std::size_t iEnd ) constexpr
+    {
+        return xproperty::settings::strguid({ Str.data(), static_cast<std::uint32_t>(iEnd+1)});
+    };
+
+    const auto PushTreeStruct = [&]( bool Open, std::string_view Path, int myDimension, bool bDefaultOpen, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
+    {
+        //
+        // Compute start / end
+        //
+        auto& L = Tree[++iDepth];
+
+        // Compute start / end
+        if (iDepth == 0) L.m_iStart = 0;
+        else
+        {
+            L.m_iStart = Tree[iDepth - 1].m_iEnd + 1;
+            while (Path[L.m_iStart] == '/') 
+              L.m_iStart++;
+        }
+
+        if (L.m_iStart && Path[L.m_iStart-1] == '[')
+        {
+            L.m_iEnd = L.m_iStart+1;
+            while (Path[L.m_iEnd] != ']') L.m_iEnd++;
+        }
+        else 
+        {
+            L.m_iEnd = Path.size();
+            if (Path[L.m_iEnd - 1] == ']')
+            {
+                assert(Path[L.m_iEnd - 2] == '[');
+                L.m_iEnd -= 2;
+            }
+        }
+
+
+
+        // set remaining fields
+        L.m_Path            = Path;
+        L.m_CRC             = ComputeCRC(Path, L.m_iEnd);
         L.m_iArray          = bArray ? 0 : -1;
-        L.m_iStart          = iStart;
-        L.m_iEnd            = iEnd;
         L.m_OpenAll         = 0;
         L.m_isOpen          = Open;
+        L.m_isDefaultOpen   = bDefaultOpen;
         L.m_isAtomicArray   = bAtomic;
-        L.m_isReadOnly      = isReadOnly || ((iDepth>0)?Tree[ iDepth -1 ].m_isReadOnly : false);
+        L.m_isReadOnly      = isReadOnly || ((iDepth > 0) ? Tree[iDepth - 1].m_isReadOnly : false);
         L.m_MyDimension     = myDimension;
         L.m_isHidden        = isHidden;
 
         return Open;
     };
-    auto PopTree = [ & ]( std::size_t& iStart, std::size_t& iEnd )
+
+    const auto PushTree = [&]( const char* pTreeName, std::string_view Path, int myDimension, bool bDefaultOpen, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
+    {
+        bool Open = iDepth<0? true : Tree[ iDepth ].m_isOpen;
+        if( Open )
+        {
+            if ( iDepth >0 && Tree[iDepth-1].m_OpenAll ) ImGui::SetNextItemOpen( Tree[iDepth-1].m_OpenAll > 0 );
+            Open = ImGui::TreeNodeEx(pTreeName, (bDefaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0) | ((iDepth == -1) ? ImGuiTreeNodeFlags_Framed : 0));
+        }
+
+        PushTreeStruct(Open, Path, myDimension, bDefaultOpen, isReadOnly, isHidden, bArray, bAtomic);
+
+        return Open;
+    };
+
+    auto PopTree = [ & ]()
     {
         // Handle muti-dimensional array increment of entries
-        if (Tree[iDepth].m_MyDimension >= 0 && iDepth > 1 ) Tree[iDepth - 1].m_iArray++;
+        // if (Tree[iDepth].m_MyDimension >= 0 && iDepth > 1 ) Tree[iDepth - 1].m_iArray++;
 
         const auto& E = Tree[ iDepth-- ];
 
@@ -948,13 +1150,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         {
             ImGui::TreePop();
         }
-
-        iStart = E.m_iStart;
-        iEnd   = E.m_iEnd;
     };
-
-    std::size_t iStart = 0;
-    std::size_t iEnd   = strlen( C.m_Base.first->m_pName );
 
     //
     // Deal with the top most tree
@@ -964,7 +1160,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImGui::AlignTextToFramePadding();
 
         // If the main tree is Close then forget about it
-        PushTree( C.m_Base.first->m_GUID, C.m_Base.first->m_pName, iStart, iEnd, -1, false, false );
+        PushTree(C.m_Base.first->m_pName, C.m_Base.first->m_pName, -1, true, false, false);
 
         ImGui::NextColumn();
         ImGui::AlignTextToFramePadding();
@@ -976,23 +1172,37 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         
     if( Tree[iDepth].m_isOpen == false )
     {
-        PopTree( iStart, iEnd );
+        PopTree();
         return;
     }
 
     //
     // Do all properties
     //
+    bool bArrayMustInsertIndex = false;
     for ( std::size_t iE = 0; iE<C.m_List.size(); ++iE )
     {
         auto& E = *C.m_List[iE];
+
+        //
+        // If the user ask us to hide this property we will do so
+        //
+        if (Tree[iDepth].m_isHidden)
+        {
+            const auto& T = Tree[iDepth];
+            if( E.m_Property.m_Path.length() >= T.m_iEnd && ComputeCRC(E.m_Property.m_Path, T.m_iEnd ) == Tree[iDepth].m_CRC)
+               continue;
+
+            --iDepth;
+        }
 
         //
         // If we have a close tree skip same level entries
         //
         auto CheckSameLevel = [&]
         {
-            if (E.m_Property.m_Path.size() < iStart || E.m_Property.m_Path.size() < iEnd) return false;
+            const auto& T = Tree[iDepth];
+            if (auto l = E.m_Property.m_Path.length(); l < T.m_iStart || l < T.m_iEnd) return false;
 
             // Handle multidimensional arrays...
             if (E.m_bScope 
@@ -1001,36 +1211,41 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
              && Tree[iDepth].m_MyDimension >= E.m_MyDimension
              ) return false;
 
-            return xproperty::settings::strguid({ &E.m_Property.m_Path.c_str()[iStart], static_cast<std::uint32_t>(iEnd - iStart + 1) }) == Tree[iDepth].m_CRC;
+            return ComputeCRC(E.m_Property.m_Path, T.m_iEnd) == Tree[iDepth].m_CRC;
         };
 
-        bool bSameLevel = CheckSameLevel();
-
-        if( Tree[iDepth].m_isOpen == false && bSameLevel )
-            continue;
-
-        //
-        // If the user ask us to hide this property we will do so
-        //
+        while (CheckSameLevel() == false)
+        {
+            PopTree();
+        }
 
         // A scope is hidden...
-        if( Tree[iDepth].m_isHidden && bSameLevel )
-            continue;
+        if (E.m_Flags.m_bDontShow && E.m_bScope)
+        {
+            // Push a temp tree node
+            PushTreeStruct( false, E.m_Property.m_Path, 0, false, false, true );
 
-        // A property is hidden...
-        if (E.m_Flags.m_bDontShow) continue;
+            // Start skipping the entries
+            bArrayMustInsertIndex = false;
+            continue;
+        }
+
+        if( Tree[iDepth].m_isOpen == false )
+        {
+            bArrayMustInsertIndex = false;
+            continue;
+        }
+            
 
         //
         // Do we need to pop scopes?
         //
-        while( bSameLevel == false )
-        {
-            PopTree( iStart, iEnd );
-            bSameLevel = CheckSameLevel();
-        }
 
         // Make sure at this point everything is open
         assert( Tree[iDepth].m_isOpen );
+
+        // A property is hidden...
+        if (E.m_Flags.m_bDontShow) continue;
 
         //
         // Render the left column
@@ -1057,18 +1272,22 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         }
 
         // Create a new tree
-        if( E.m_bScope ) 
+        if( ((Tree[iDepth].m_isAtomicArray && Tree[iDepth].m_iArray >= 0) || Tree[iDepth].m_iArray == -1) // We can only start new scopes in cases where we are not 
+            && E.m_bScope                       // We are handling some scope
+            && bArrayMustInsertIndex == false   // If we are adding Sub Indices then we should not enter here
+            )
         {
             // Is an array?
             if( E.m_Property.m_Path.back() == ']' )
             {
-                if( Tree[iDepth].m_iArray < 0 )
+                if( *(E.m_Property.m_Path.end()-2) == '[' )//Tree[iDepth].m_iArray < 0 )
                 {
                     std::array<char, 128> Name;
                     snprintf(Name.data(), Name.size(), "%s[%dd] ", E.m_pName, E.m_Dimensions );
-                    PushTree( E.m_GUID, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, false, true, C.m_List[iE+1]->m_Property.m_Path.back() == ']' );
-                    iStart = iEnd + 1;
-                    iEnd   = E.m_Property.m_Path.size() - 2;
+                    PushTree(Name.data(), E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray );
+
+                    if (Tree[iDepth].m_isAtomicArray == false)
+                        bArrayMustInsertIndex = true;
                 }
                 else
                 {
@@ -1083,14 +1302,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     }
 
                     stroffset += snprintf(&Name.data()[stroffset], Name.size() - stroffset, "[%dd]", E.m_Dimensions - E.m_MyDimension);
-                    PushTree(E.m_GUID, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, false, true, C.m_List[iE + 1]->m_Property.m_Path.back() == ']');
+                    PushTree(Name.data(), E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
                 }
             }
             else
             {
-                PushTree( E.m_GUID, E.m_pName, iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow );
-                iStart = iEnd + 1;
-                iEnd   = E.m_Property.m_Path.size();
+                PushTree( E.m_pName, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow );
             }
         }
         else
@@ -1104,22 +1321,18 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 // Atomic array
                 if ( Tree[iDepth].m_isAtomicArray )
                 {
-                    ImGui::TreeNodeEx( reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", Name.data() );
+                    ImGui::TreeNodeEx( reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", Name.data() );
                 }
                 else
                 {
-                    auto NewEnd = iEnd;
-                    while( E.m_Property.m_Path[NewEnd] != '/' ) NewEnd++;
-
-                    auto CRC = xproperty::settings::strguid( { &E.m_Property.m_Path.c_str()[ iStart ], static_cast<std::uint32_t>( NewEnd - iStart + 1 ) } );
-
-                    PushTree(CRC, Name.data(), iStart, iEnd, E.m_MyDimension, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow);
-                    iEnd = NewEnd;
+                    PushTree( Name.data(), E.m_Property.m_Path, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow);
 
                     bRenderBlankRight = true;
 
                     // We need to redo this entry
                     iE--;
+
+                    bArrayMustInsertIndex = false;
                 }
             }
             else
@@ -1154,7 +1367,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         {
             if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex );
 
-            if (E.m_Property.m_Path.back() == ']' )
+            if (E.m_Property.m_Path.back() == ']' && bRenderBlankRight == false )
             {
                 ImGui::Text("Size: %llu  ", E.m_Property.m_Value.get<std::size_t>());
             }
@@ -1324,7 +1537,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
     // Pop any scope
     //
     while( iDepth >= 0 ) 
-        PopTree( iStart, iEnd );
+        PopTree();
 }
 
 //-------------------------------------------------------------------------------------------------

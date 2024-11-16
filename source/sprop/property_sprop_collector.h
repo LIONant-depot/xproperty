@@ -87,7 +87,8 @@ namespace xproperty::sprop
         , void* const                       pClass
         , const T&                          Info
         , const xproperty::type::members&   Members
-        , const bool                        isConst 
+        , const bool                        isConst
+        , const void*                       pParentClass
         )
         {
             if (Info.m_pWrite == nullptr) assert( isConst == true );
@@ -100,7 +101,7 @@ namespace xproperty::sprop
             Info.m_pRead(pClass, Value, Info.m_UnregisteredEnumSpan, *m_pContext);
 
             // Let the user know that we got properties
-            CallBack( m_CurrentPath.data(), std::move(Value), Members, isConst, pClass);
+            CallBack( m_CurrentPath.data(), std::move(Value), Members, isConst, pParentClass);
         }
 
         //----------------------------------------------------------------------------------------------
@@ -180,7 +181,7 @@ namespace xproperty::sprop
                     }
                     else
                     {
-                        DumpAtomicTypes(CallBack, pObject, List, Members, isConst);
+                        DumpAtomicTypes(CallBack, pObject, List, Members, isConst, pClass);
                     }
                 }
 
@@ -217,7 +218,7 @@ namespace xproperty::sprop
                              if (m_bForEditors) CallBack(m_CurrentPath.data(), xproperty::any(), Member, bConst, pClass);
                              DumpScope(CallBack, pClass, &Arg, bConst);
                          }
-                    else if constexpr (std::is_same_v<T, var&>)         {DumpAtomicTypes(CallBack, pClass, Arg, Member, bConst);}
+                    else if constexpr (std::is_same_v<T, var&>)         {DumpAtomicTypes(CallBack, pClass, Arg, Member, bConst, pClass);}
                     else if constexpr (std::is_same_v<T, props&>)       
                     { 
                         if(auto [pInstance, pObj] = Arg.m_pCast(pClass, *m_pContext); pInstance ) 

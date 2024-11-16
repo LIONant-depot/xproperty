@@ -253,6 +253,8 @@ protected:
         int                                             m_MyDimension;
         xproperty::flags::type                          m_Flags;
         bool                                            m_bScope;
+        bool                                            m_bAtomicArray;
+        bool                                            m_bDefaultOpen;
     };
 
     struct component
