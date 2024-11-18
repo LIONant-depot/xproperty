@@ -461,10 +461,10 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
-        if ( Flags.m_bShowReadOnly ) ImGui::Button( Value.c_str(), ImVec2(-1,16) );
+        if ( Flags.m_bShowReadOnly ) ImGui::Button( Value.c_str(), ImVec2(-1,0) );
         else
         {
-            Cmd.m_isChange = ImGui::Button( Value.c_str(), ImVec2(-1,16) );
+            Cmd.m_isChange = ImGui::Button( Value.c_str(), ImVec2(-1, 0));
             if ( Cmd.m_isChange )
             {
                 if( Cmd.m_isEditing == false ) Cmd.m_Original.set<std::string>(Value);
@@ -1273,7 +1273,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     snprintf(Name.data(), Name.size(), "%s[%dd] ", E.m_pName, E.m_Dimensions );
                     PushTree(Name.data(), E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray );
 
-                    if (Tree[iDepth].m_isAtomicArray == false )
+                    if (Tree[iDepth].m_isAtomicArray == false)
                         bArrayMustInsertIndex = true;
                 }
                 else
@@ -1306,7 +1306,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 snprintf( Name.data(), Name.size(), "[%d]", Tree[iDepth].m_iArray++ );
 
                 // Atomic array
-                if ( Tree[iDepth].m_isAtomicArray )
+                if ( Tree[iDepth].m_isAtomicArray || E.m_GroupGUID )
                 {
                     ImGui::TreeNodeEx( reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", Name.data() );
                 }
