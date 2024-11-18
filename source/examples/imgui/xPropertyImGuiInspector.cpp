@@ -1059,19 +1059,6 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
     int                         iDepth   = -1;
     std::array<element,32>      Tree;
 
-    constexpr auto ComputeNewStartEnd = []( std::string_view Str, std::size_t& iStart, std::size_t& iEnd ) constexpr
-    {
-        ++iEnd;
-        iStart = iEnd;
-
-        for (++iEnd; iEnd < Str.size(); ++iEnd)
-        {
-            if (Str[iEnd] == '/' ) break;
-        }
-
-        return iEnd;
-    };
-
     constexpr auto ComputeCRC = []( std::string_view Str, std::size_t iEnd ) constexpr
     {
         return xproperty::settings::strguid({ Str.data(), static_cast<std::uint32_t>(iEnd+1)});
@@ -1108,8 +1095,6 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             }
         }
 
-
-
         // set remaining fields
         L.m_Path            = Path;
         L.m_CRC             = ComputeCRC(Path, L.m_iEnd);
@@ -1142,7 +1127,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
     auto PopTree = [ & ]()
     {
         // Handle muti-dimensional array increment of entries
-        // if (Tree[iDepth].m_MyDimension >= 0 && iDepth > 1 ) Tree[iDepth - 1].m_iArray++;
+        if (Tree[iDepth].m_MyDimension > 0 && iDepth > 1 ) Tree[iDepth - 1].m_iArray++;
 
         const auto& E = Tree[ iDepth-- ];
 
@@ -1272,7 +1257,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         }
 
         // Create a new tree
-        if( ((Tree[iDepth].m_isAtomicArray && Tree[iDepth].m_iArray >= 0) || Tree[iDepth].m_iArray == -1) // We can only start new scopes in cases where we are not 
+        if( ((Tree[iDepth].m_isAtomicArray && Tree[iDepth].m_iArray >= 0) 
+            || Tree[iDepth].m_iArray == -1 
+            || (E.m_Dimensions > 1) ) // We can only start new scopes in cases where we are not 
             && E.m_bScope                       // We are handling some scope
             && bArrayMustInsertIndex == false   // If we are adding Sub Indices then we should not enter here
             )
@@ -1280,13 +1267,13 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // Is an array?
             if( E.m_Property.m_Path.back() == ']' )
             {
-                if( *(E.m_Property.m_Path.end()-2) == '[' )//Tree[iDepth].m_iArray < 0 )
+                if( *(E.m_Property.m_Path.end()-2) == '[' && E.m_Dimensions == 1 )//Tree[iDepth].m_iArray < 0 )
                 {
                     std::array<char, 128> Name;
                     snprintf(Name.data(), Name.size(), "%s[%dd] ", E.m_pName, E.m_Dimensions );
                     PushTree(Name.data(), E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray );
 
-                    if (Tree[iDepth].m_isAtomicArray == false)
+                    if (Tree[iDepth].m_isAtomicArray == false )
                         bArrayMustInsertIndex = true;
                 }
                 else
