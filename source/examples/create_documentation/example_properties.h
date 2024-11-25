@@ -1341,6 +1341,171 @@ XPROPERTY_REG(virtual_properties)
 /* [[virtual_properties]]
 <br>
 
+# Unions, variants, and any other complexities
+
+## <a name="Example7.1"></a> Example 1 - Union, variants properties
+
+When doing very tricky things like dealing with variants, unions, any, etc... can be handled by using a callback which returns the basic
+data that xproperty needs. In this case a std::pair<const xproperty::type::object*, void*>. Note that these can be nullptr if no data is accessible.
+Because of this there is a limitation that all the types inside should have "view". Views are helpful structures that will have properties.
+In the following example you can see these views been declared, registered, and used. 
+cpp */
+
+struct union_variant_properties
+{
+    using enum_t   = registered_enum::example;
+    using unenum_t = enums_registered::unreg;
+
+    union some_union
+    {
+        std::uint32_t   m_Value;
+        struct
+        {
+            std::int8_t m_A;
+            std::int8_t m_B;
+            std::int8_t m_C;
+            std::int8_t m_D;
+        };
+    };
+
+    struct some_union_view_as_value
+    {
+        std::uint32_t   m_Value;
+        XPROPERTY_DEF
+        ( "some_union - as value", some_union_view_as_value
+        , xproperty::obj_member<"Value", &some_union_view_as_value::m_Value>
+        )
+    };
+
+    struct some_union_view_as_int8
+    {
+        std::int8_t     m_A;
+        std::int8_t     m_B;
+        std::int8_t     m_C;
+        std::int8_t     m_D;
+        XPROPERTY_DEF
+        ( "some_union - as int8", some_union_view_as_int8
+        , xproperty::obj_member<"A", &some_union_view_as_int8::m_A>
+        , xproperty::obj_member<"B", &some_union_view_as_int8::m_B>
+        , xproperty::obj_member<"C", &some_union_view_as_int8::m_C>
+        , xproperty::obj_member<"D", &some_union_view_as_int8::m_D>
+        )
+    };
+
+    using my_variant = std::variant
+    < base1                         // base1 comes with its own view
+    , std::vector<base1>            // we will need to create a view for this
+    >;
+
+    enum class my_varient_enum : std::uint8_t
+    { BASE1
+    , VECTOR_BASE1
+    };
+
+    inline static constexpr auto my_varient_enum_v = std::array
+    { xproperty::settings::enum_item{ "BAS1",           my_varient_enum::BASE1         }
+    , xproperty::settings::enum_item{ "VECTOR_BASE1",   my_varient_enum::VECTOR_BASE1  }
+    };
+
+    struct my_variant_view_vec_base1
+    {
+        std::vector<base1>   m_Vector;
+        XPROPERTY_DEF
+        ( "my_variant - as vector of base1", my_variant_view_vec_base1
+        , xproperty::obj_member<"A", &my_variant_view_vec_base1::m_Vector>
+        )
+    };
+
+    bool                        m_UnionType {false};
+    some_union                  m_SomeUnion;
+    my_variant                  m_SomeVariant;
+
+    void setValues()
+    {
+        m_UnionType = true;
+        m_SomeUnion.m_A = 1;
+        m_SomeUnion.m_B = 2;
+        m_SomeUnion.m_C = 3;
+        m_SomeUnion.m_D = 4;
+
+        m_SomeVariant = std::vector<base1>{2};
+        for( auto& E : std::get<std::vector<base1>>(m_SomeVariant))
+        {
+            E.setValues();
+        }
+    }
+
+    void CheckValues() const
+    {
+        assert(m_UnionType);
+        assert(m_SomeUnion.m_A == 1);
+        assert(m_SomeUnion.m_B == 2);
+        assert(m_SomeUnion.m_C == 3);
+        assert(m_SomeUnion.m_D == 4);
+
+        assert(std::holds_alternative<std::vector<base1>>(m_SomeVariant) );
+        for (auto& E : std::get<std::vector<base1>>(m_SomeVariant))
+        {
+            E.CheckValues();
+        }
+    }
+
+    XPROPERTY_DEF 
+    ( "Union Variant Properties", union_variant_properties
+    , xproperty::obj_member<"UnionType", &union_variant_properties::m_UnionType>
+    , xproperty::obj_member
+        < "SomeUnion"
+        , +[]( union_variant_properties& O ) constexpr -> std::pair<const xproperty::type::object*, void*>
+        {
+            if (O.m_UnionType) return { xproperty::getObjectByType<some_union_view_as_int8>(), &O.m_SomeUnion };
+            return { xproperty::getObjectByType<some_union_view_as_value>(), &O.m_SomeUnion };
+        }>
+
+    , obj_member<"SomeVariantType", +[](union_variant_properties& O, bool bRead, my_varient_enum& Enum )
+        {
+            if( bRead )
+            {
+                auto Index = O.m_SomeVariant.index();
+                Enum = static_cast<my_varient_enum>(Index);
+            }
+            else
+            {
+                switch( Enum )
+                {
+                case my_varient_enum::BASE1:        O.m_SomeVariant = base1{}; break;
+                case my_varient_enum::VECTOR_BASE1: O.m_SomeVariant = std::vector<base1>{}; break;
+                }
+            }
+        }
+        , member_enum_span<my_varient_enum_v>>
+
+    , xproperty::obj_member
+        < "SomeVariant"
+        , +[]( union_variant_properties& O ) constexpr -> std::pair<const xproperty::type::object*, void*>
+        {
+            if(std::holds_alternative<base1>(O.m_SomeVariant)) 
+            {
+                return { xproperty::getObjectByType<base1>(), &std::get<base1>(O.m_SomeVariant) };
+            }
+            if (std::holds_alternative<std::vector<base1>>(O.m_SomeVariant))
+            {
+                return { xproperty::getObjectByType<my_variant_view_vec_base1>(), &std::get<std::vector<base1>>(O.m_SomeVariant) };
+            }
+            return { nullptr, nullptr };
+        }>
+
+    , xproperty::obj_member<"setValues",   &union_variant_properties::setValues >
+    , xproperty::obj_member<"CheckValues", &union_variant_properties::CheckValues >
+    )
+};
+XPROPERTY_REG(union_variant_properties)
+XPROPERTY_REG2(some_union_view_as_value_props, union_variant_properties::some_union_view_as_value)
+XPROPERTY_REG2(some_union_view_as_int8_props, union_variant_properties::some_union_view_as_int8)
+XPROPERTY_REG2(my_variant_view_vec_base1_props, union_variant_properties::my_variant_view_vec_base1)
+
+/* [[union_variant_properties]]
+<br>
+
 # User Data
 
 ## <a name="Example7.1"></a> Example 1 - Adding Member Help

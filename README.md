@@ -1,7 +1,7 @@
 <img src="https://i.imgur.com/GfJb3sQ.jpg" align="right" width="150px" />
 
 
-# xProperties (Version: 0.4.0.5 Pre-Alpha)
+# xProperties (Version: 0.5.0.0 Pre-Alpha)
 
 [             ![Feedback](https://img.shields.io/badge/feedback-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties)
@@ -51,7 +51,7 @@ XPROPERTY_REG(common)
 * **No allocations**
 * **Most things happens at compile time**
 * **No external dependencies**
-* **No macros overused** (4 of them used for convinience)
+* **No macros overused** (4 of them used for convinience can be ignored)
 * **No exceptions for maximun speed**
 * **No extra/external compilation step needed** 
 * **Minimalistic API**
@@ -59,6 +59,7 @@ XPROPERTY_REG(common)
 * **Flexible configuration**
 * **Data and Function base properties**
 * **Allows the user to support any container such `std::array` and `std::vector` or anything else**
+* **Supports unions, variants, any, etc...**
 * **Support C-arrays, raw pointers, and the user can add support for std::share_ptr or any other C++ type of pointer**
 * **Very easy to extend (Easy to add new types, and add extra data per type, or new type of lists)**
 * **Supports base class interface for OOP**
@@ -68,8 +69,3 @@ XPROPERTY_REG(common)
 * **Property Inspector Example for [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
 
 ![Inspector](documentation/ImguiPropertyInspector.png "ImGUI Property Inspector Example")
-
-# TODO:
-* **Add support for `std::variant`**
-* **Add support for unions**
-* **Compound properties**

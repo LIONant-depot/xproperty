@@ -1935,6 +1935,34 @@ namespace xproperty
             }
         };
 
+
+        template< xproperty::details::fixed_string T_NAME_V, typename T_CLASS, auto T_LAMBDA_V, typename... T_ARGS >
+        struct member<T_NAME_V, std::pair<const xproperty::type::object*, void*>(*)(T_CLASS&), T_LAMBDA_V, T_ARGS... >
+        {
+            using user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
+
+            static consteval xproperty::type::members getInfo()
+            {
+                //
+                // Handle Vars and Refs that are properties... we just convert them to a scope
+                //
+                return
+                { .m_GUID       = xproperty::settings::strguid(T_NAME_V)
+                , .m_pName      = T_NAME_V
+                , .m_Variant    = xproperty::type::members::props{ .m_pCast = [](void* pClass, settings::context& C) -> std::tuple<void*, const type::object*>
+                {
+                    using fn_t = xproperty::details::function_traits<decltype(T_LAMBDA_V)>;
+                         if constexpr (std::tuple_size_v<typename fn_t::args> == 1) { auto a = T_LAMBDA_V(*static_cast<T_CLASS*>(pClass));    return { a.second, a.first }; }
+                    else if constexpr (std::tuple_size_v<typename fn_t::args> == 2) { auto a = T_LAMBDA_V(*static_cast<T_CLASS*>(pClass), C); return { a.second, a.first }; }
+                    else static_assert(always_false<fn_t>::value, "The Size function for the given list type must have 1 or 2 parameters only");
+                }}
+                , .m_bConst     = details::is_read_only_v<T_CLASS, int, T_ARGS...>
+                , .m_pGetUserData = details::GetUserData<user_data_t>
+                };
+            }
+        };
+
+
         //
         // HANDLE MEMBER VARIABLES with unregistered ( VARS, pVARS )
         //

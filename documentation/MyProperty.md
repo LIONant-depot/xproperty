@@ -493,8 +493,10 @@ namespace xproperty::settings
         case xproperty::settings::var_type<double>::guid_v:          return sprintf_s( String.data(), String.size(), "%f",   Value.get<double>());        
         case xproperty::settings::var_type<std::string>::guid_v:     return sprintf_s( String.data(), String.size(), "%s", Value.get<std::string>().c_str()); 
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   return sprintf_s( String.data(), String.size(), "%llu", Value.get<std::uint64_t>());
-        case xproperty::settings::var_type<std::int64_t>::guid_v:    return sprintf_s( String.data(), String.size(), "%lld", Value.get<std::int64_t>()); 
-        default: assert(false); break;
+        case xproperty::settings::var_type<std::int64_t>::guid_v:    return sprintf_s( String.data(), String.size(), "%lld", Value.get<std::int64_t>());
+        case xproperty::settings::var_type<bool>::guid_v:            return sprintf_s(String.data(), String.size(),  "%s",   Value.get<bool>()?"true":"false");
+        default: 
+           assert(false); break;
         }
         return 0;
     }
@@ -514,6 +516,7 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::string>::ctype_v:     return xproperty::settings::var_type<std::string>::guid_v; 
         case xproperty::settings::var_type<std::uint64_t>::ctype_v:   return xproperty::settings::var_type<std::uint64_t>::guid_v;
         case xproperty::settings::var_type<std::int64_t>::ctype_v:    return xproperty::settings::var_type<std::int64_t>::guid_v;
+        case xproperty::settings::var_type<bool>::ctype_v:            return xproperty::settings::var_type<bool>::guid_v;
         default: assert(false); break;
         }
         return 0;
@@ -534,6 +537,7 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::string>::guid_v:     return xproperty::settings::var_type<std::string>::ctype_v;
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   return xproperty::settings::var_type<std::uint64_t>::ctype_v;
         case xproperty::settings::var_type<std::int64_t>::guid_v:    return xproperty::settings::var_type<std::int64_t>::ctype_v;
+        case xproperty::settings::var_type<bool>::guid_v:            return xproperty::settings::var_type<bool>::ctype_v;
         default: assert(false); break;
         }
         return 0;
@@ -554,6 +558,7 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::string>::guid_v:     Value.set<std::string>     (String.data());  return true;
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   Value.set<std::uint64_t>   (static_cast<std::uint64_t>(std::stoull(String.data())));  return true;
         case xproperty::settings::var_type<std::int64_t>::guid_v:    Value.set<std::int64_t>    (static_cast<std::int64_t>(std::stoll(String.data())));  return true;
+        case xproperty::settings::var_type<bool>::guid_v:            Value.set<bool>            (static_cast<bool>(String[0] == 't'));  return true;
         default: assert(false); break;
         }
         return false; 

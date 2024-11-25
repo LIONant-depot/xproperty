@@ -121,8 +121,9 @@ void ExecuteExamples(xproperty_doc::example_group& ExampleGroup)
         printf("Example of: Virtual properties\n");
         printf("GROUP: %s\n", ExampleGroup.m_GroupName.c_str());
         printf("------------------------------------------------------------------\n");
-        if (true) DoExample< TT, virtual_properties>(Examples.emplace_back());
-        if (true) DoExample< TT, user_data_object>  (Examples.emplace_back());
+        if (true) DoExample< TT, virtual_properties>        (Examples.emplace_back());
+        if (true) DoExample< TT, union_variant_properties>  (Examples.emplace_back());
+        if (true) DoExample< TT, user_data_object>          (Examples.emplace_back());
     }
 }
 
