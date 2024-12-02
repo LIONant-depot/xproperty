@@ -50,7 +50,8 @@ examples Examples
     , CreateInstance<list_c_arrays>()                   
     , CreateInstance<lists_cpp>()                    
     , CreateInstance<lists_advance>()                   
-    , CreateInstance<virtual_properties>()        
+    , CreateInstance<virtual_properties>()
+    , CreateInstance<union_variant_properties>()
     , CreateInstance<user_data_object>()
 };
 

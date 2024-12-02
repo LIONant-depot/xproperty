@@ -224,7 +224,7 @@ namespace xproperty::sprop
                         if(auto [pInstance, pObj] = Arg.m_pCast(pClass, *m_pContext); pInstance ) 
                         {
                             // Let the user know that we are dumping an object
-                            if (m_bForEditors) CallBack( m_CurrentPath.data(), xproperty::any(pObj->m_GroupGUID), Member, bConst, pInstance );
+                            if (m_bForEditors) CallBack( m_CurrentPath.data(), xproperty::any(pObj->m_GroupGUID), Member, bConst, pClass);
                             DumpObject(CallBack, pInstance, *pObj, bConst);
                         }
                     }
