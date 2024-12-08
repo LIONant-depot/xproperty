@@ -995,19 +995,25 @@ namespace xproperty
                 return reinterpret_cast<T&>(m_Data);
             }
 
-            constexpr std::uint32_t getEnumValue(void) const noexcept
+            template< typename T >
+            constexpr T getCastValue(void) const noexcept
             {
-                assert(isEnum());
                 switch (m_pType->m_Size)
                 {
-                case 1: return static_cast<std::uint32_t>(reinterpret_cast<const std::uint8_t&>(m_Data));
-                case 2: return static_cast<std::uint32_t>(reinterpret_cast<const std::uint16_t&>(m_Data));
-                case 4: return static_cast<std::uint32_t>(reinterpret_cast<const std::uint32_t&>(m_Data));
-                case 8: return static_cast<std::uint32_t>(reinterpret_cast<const std::uint64_t&>(m_Data));
+                case 1: return static_cast<T>(reinterpret_cast<const std::uint8_t&>(m_Data));
+                case 2: return static_cast<T>(reinterpret_cast<const std::uint16_t&>(m_Data));
+                case 4: return static_cast<T>(reinterpret_cast<const std::uint32_t&>(m_Data));
+                case 8: return static_cast<T>(reinterpret_cast<const std::uint64_t&>(m_Data));
                 default: assert(false); return 0;
                 }
             }
-            
+
+            constexpr std::uint32_t getEnumValue(void) const noexcept
+            {
+                assert(isEnum());
+                return getCastValue<std::uint32_t>();
+            }
+
             constexpr const std::span<const atomic::enum_item>& getEnumSpan( void ) const noexcept
             {
                 assert(isEnum());
@@ -1081,7 +1087,7 @@ namespace xproperty
             constexpr any( T&& Data ) noexcept
             {
                 m_pType = &atomic_v<T>;
-                m_pType->m_pMoveConstruct( m_Data, reinterpret_cast<settings::data_memory&>(Data) );
+                m_pType->m_pMoveConstruct( m_Data, reinterpret_cast<settings::data_memory&&>(Data) );
             }
 
             constexpr any& operator = (const any& Any) noexcept
@@ -1396,6 +1402,31 @@ namespace xproperty
                             type::atomic_v<atomic_t>.m_RegisteredEnumSpan = S;
                         else
                             assert(S.size() == type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size());
+
+                        // This forces to have std::string as part of its atomic types... which is not ideal...
+                        if( Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v )
+                        {
+                            auto& String = Any.get<std::string>();
+                            for( auto& E : type::atomic_v<atomic_t>.m_RegisteredEnumSpan )
+                            {
+                                if(String == E.m_pName)
+                                {
+                                    type::any RealValue;
+                                    RealValue.set<atomic_t>( static_cast<atomic_t>(E.m_Value) );
+                                    type::var_t<t>::Write
+                                    (const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(pClass)))
+                                        , RealValue.get<atomic_t>()
+                                        , Context
+                                    );
+
+                                    return;
+                                }
+                            }
+
+                            // TODO: How to log this information???
+                            // << Fail to set the enum value >>
+                            return;
+                        }
                     }
 
                     type::var_t<t>::Write
@@ -1885,18 +1916,71 @@ namespace xproperty
                             }
 
                             if constexpr (sizeof...(T_ADDITIONAL) == 0)
-                                T_LAMBDA_V
-                                ( *static_cast<T_CLASS*>(pClass)
-                                , false
-                                , const_cast<type::any&>(Any).get<t>()
-                                );
+                            {
+                                if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
+                                {
+                                    auto& String = Any.get<std::string>();
+                                    for (auto& E : type::atomic_v<t>.m_RegisteredEnumSpan)
+                                    {
+                                        if (String == E.m_pName)
+                                        {
+                                            type::any RealValue;
+                                            RealValue.set<t>(static_cast<t>(E.m_Value));
+
+                                            T_LAMBDA_V
+                                            ( *static_cast<T_CLASS*>(pClass)
+                                            , false
+                                            , const_cast<type::any&>(RealValue).get<t>()
+                                            );
+                                            return;
+                                        }
+                                    }
+
+                                    // TODO: Value failed to be set... what to do???
+                                }
+                                else
+                                {
+                                    T_LAMBDA_V
+                                    ( *static_cast<T_CLASS*>(pClass)
+                                    , false
+                                    , const_cast<type::any&>(Any).get<t>()
+                                    );
+                                }
+                            }
                             else
-                                T_LAMBDA_V
-                               ( *static_cast<T_CLASS*>(pClass)
-                               , false
-                               , const_cast<type::any&>(Any).get<t>()
-                               , Context
-                               );
+                            {
+                                if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
+                                {
+                                    auto& String = Any.get<std::string>();
+                                    for (auto& E : type::atomic_v<t>.m_RegisteredEnumSpan)
+                                    {
+                                        if (String == E.m_pName)
+                                        {
+                                            type::any RealValue;
+                                            RealValue.set<t>(static_cast<t>(E.m_Value));
+
+                                            T_LAMBDA_V
+                                            ( *static_cast<T_CLASS*>(pClass)
+                                            , false
+                                            , const_cast<type::any&>(RealValue).get<t>()
+                                            , Context
+                                            );
+                                            return;
+                                        }
+                                    }
+
+                                    // TODO: Value failed to be set... what to do???
+                                }
+                                else
+                                {
+                                    T_LAMBDA_V
+                                    ( *static_cast<T_CLASS*>(pClass)
+                                    , false
+                                    , const_cast<type::any&>(Any).get<t>()
+                                    , Context
+                                    );
+                                }
+                            }
                         }
                     }
                     , .m_AtomicType = xproperty::type::atomic_v<atomic_t>

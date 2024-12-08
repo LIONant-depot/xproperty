@@ -80,7 +80,7 @@ namespace xproperty::sprop
                         if (m_isSize)
                         {
                             // Means we are trying to access the size rather than
-                            if constexpr (IS_SET_V) Arg.m_Table[m_KeyCount].m_pSetSize(pObject, m_Property.m_Value.template get<std::size_t>(), m_Context);
+                            if constexpr (IS_SET_V) Arg.m_Table[m_KeyCount].m_pSetSize(pObject, m_Property.m_Value.template getCastValue<std::size_t>(), m_Context);
                             else                    m_Property.m_Value.set(Arg.m_Table[m_KeyCount].m_pGetSize(pObject, m_Context));
                         }
                         else
