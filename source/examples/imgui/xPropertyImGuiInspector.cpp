@@ -11,25 +11,12 @@ namespace xproperty::ui::details
 {
     //-----------------------------------------------------------------------------------
 
-    static float ReadOnlyWidth = -1;
-    template< typename T>
-    bool ReadOnly( const char* pFmt, T Value )
-    {
-        std::array<char, 128> Buff;
-        snprintf( Buff.data(), Buff.size(), pFmt, Value );
-        ImGui::Button( Buff.data(), ImVec2(ReadOnlyWidth, 0) );
-        return false;
-    }
-
-    //-----------------------------------------------------------------------------------
-
     template< auto T_IMGUID_DATA_TYPE_V, typename T >
     static void DragRenderNumbers(undo::cmd& Cmd, const T& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<T>::data&>(IB);
 
-        if (Flags.m_bShowReadOnly) ui::details::ReadOnly(I.m_pFormat, Value);
-        else
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
             T V = Value;
             Cmd.m_isChange = ImGui::SliderScalar("##value", T_IMGUID_DATA_TYPE_V, &V, &I.m_Min, &I.m_Max, I.m_pFormat);
@@ -41,6 +28,7 @@ namespace xproperty::ui::details
             }
             if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit()) Cmd.m_isEditing = false;
         }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
     }
 
     //-----------------------------------------------------------------------------------
@@ -49,8 +37,7 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<T>::data&>(IB);
 
-        if ( Flags.m_bShowReadOnly ) ui::details::ReadOnly( I.m_pFormat, Value );
-        else
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
             T V = Value;
             Cmd.m_isChange = ImGui::DragScalar("##value", T_IMGUID_DATA_TYPE_V, &V, I.m_Speed, &I.m_Min, &I.m_Max, I.m_pFormat );
@@ -62,6 +49,7 @@ namespace xproperty::ui::details
             }
             if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) Cmd.m_isEditing = false;
         }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
     }
 
     //-----------------------------------------------------------------------------------
@@ -239,30 +227,8 @@ namespace xproperty::ui::details
         ImVec2 charSize = ImGui::CalcTextSize("A");
         float f = ImGui::GetColumnWidth() / charSize.x;
         float f2 = Value.length() - f;
-        
-        if ( Flags.m_bShowReadOnly ) 
-        {
-            if(f2 > -1)
-            {
-                std::array<char, 256> buff;
-                int ToOffset = max(0, int(f2));
-                sprintf_s(buff.data(), buff.size(), "%s", &(((char*)Value.c_str())[ToOffset + 1]) );
-                const auto p = ImGui::GetCursorPosX();
-                ImGui::BeginGroup();
-                ImGui::InputText("##value", buff.data(), int(f - 1), ImGuiInputTextFlags_ReadOnly);
 
-                // Draw the symbol to indicated that there is more string on the left
-                ImGui::SameLine();
-                ImGui::SetCursorPosX(p);
-                ImGui::Text("#");
-                ImGui::EndGroup();
-            }
-            else
-            {
-                ImGui::InputText("##value", (char*)Value.c_str(), Value.length(), ImGuiInputTextFlags_ReadOnly);
-            }
-        }
-        else
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
             std::array<char, 256> buff;
             Value.copy( buff.data(), Value.length() );
@@ -289,8 +255,8 @@ namespace xproperty::ui::details
             if(WentOver)
             {
                 ImGui::SameLine();
-                ImGui::SetCursorPosX(CurPos);
-                ImGui::Text("#");
+                ImGui::SetCursorPosX(CurPos-5);
+                ImGui::ArrowButton("", ImGuiDir_Left);
             }
 
             ImGui::EndGroup();
@@ -307,9 +273,10 @@ namespace xproperty::ui::details
             if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) 
                 Cmd.m_isEditing = false;
         }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
         // For strings that are too long... we will show a tooltip with the full string
-        if (f2 > -1 && ImGui::IsItemHovered() )
+        if (f2 > -1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) )
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
             ImGui::BeginTooltip();
@@ -346,29 +313,7 @@ namespace xproperty::ui::details
             }            
         }();
 
-        if (Flags.m_bShowReadOnly)
-        {
-            if (f2 > -1)
-            {
-                std::array<char, 256> buff;
-                int ToOffset = max(0, int(f2));
-                sprintf_s(buff.data(), buff.size(), "%s", &(((char*)Value.c_str())[ToOffset + 1]));
-                const auto p = ImGui::GetCursorPosX();
-                ImGui::BeginGroup();
-                ImGui::InputText("##value", buff.data(), int(f - 1), ImGuiInputTextFlags_ReadOnly);
-
-                // Draw the symbol to indicated that there is more string on the left
-                ImGui::SameLine();
-                ImGui::SetCursorPosX(p);
-                ImGui::Text("#");
-                ImGui::EndGroup();
-            }
-            else
-            {
-                ImGui::InputText("##value", (char*)Value.c_str(), Value.length(), ImGuiInputTextFlags_ReadOnly);
-            }
-        }
-        else
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
             std::array<char, 260> buff;
             Value.copy(buff.data(), Value.length());
@@ -381,7 +326,6 @@ namespace xproperty::ui::details
 
             ImGui::PushItemWidth(ItemWidth);
             Cmd.m_isChange = ImGui::InputText("##value", buff.data(), buff.size(), ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::PopItemWidth();
 
             if (ImGui::IsItemActivated())
             {
@@ -421,8 +365,8 @@ namespace xproperty::ui::details
             if (WentOver)
             {
                 ImGui::SameLine();
-                ImGui::SetCursorPosX(CurPos);
-                ImGui::Text("#");
+                ImGui::SetCursorPosX(CurPos - 5);
+                ImGui::ArrowButton("", ImGuiDir_Left);
             }
 
             ImGui::EndGroup();
@@ -439,9 +383,10 @@ namespace xproperty::ui::details
             if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit())
                 Cmd.m_isEditing = false;
         }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
         // For strings that are too long... we will show a tooltip with the full string
-        if (f2 > -1 && ImGui::IsItemHovered())
+        if (f2 > -1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
             ImGui::BeginTooltip();
@@ -461,8 +406,7 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
-        if ( Flags.m_bShowReadOnly ) ImGui::Button( Value.c_str(), ImVec2(-1,0) );
-        else
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
             Cmd.m_isChange = ImGui::Button( Value.c_str(), ImVec2(-1, 0));
             if ( Cmd.m_isChange )
@@ -472,7 +416,9 @@ namespace xproperty::ui::details
                 Cmd.m_NewValue.set<std::string>( Value );
             }
             if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) Cmd.m_isEditing = false;
-        }        
+        }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+
     }
 
     //-----------------------------------------------------------------------------------
@@ -526,11 +472,7 @@ namespace xproperty::ui::details
         //
         // Handle the UI part...
         //
-        if (Flags.m_bShowReadOnly) 
-        {
-            ImGui::InputText("##value", (char*)AnyValue.m_pType->m_RegisteredEnumSpan[current_item].m_pName, std::strlen(AnyValue.m_pType->m_RegisteredEnumSpan[current_item].m_pName), ImGuiInputTextFlags_ReadOnly);
-        }
-        else
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
 
             Cmd.m_isChange = false;
@@ -568,6 +510,7 @@ namespace xproperty::ui::details
                 ImGui::EndCombo();
             }
         }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
     }
 
     //-----------------------------------------------------------------------------------
@@ -616,10 +559,10 @@ namespace xproperty::ui::details
     }
     */
 
-    static
-    void onRender( xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags ) noexcept
+    template< typename T_UI_TAG >
+    static void onRender( xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags) noexcept
     {
-        using                       generic    = void(xproperty::ui::undo::cmd&, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
+        using generic = void(xproperty::ui::undo::cmd&, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
 
         //
         // Enums are handle special... 
@@ -635,7 +578,13 @@ namespace xproperty::ui::details
         //
         const auto& StyleBase = [&]() -> const member_ui_base&
         {
-            const xproperty::settings::member_ui_t* pMemberUI = Entry.getUserData<xproperty::settings::member_ui_t>();
+            const xproperty::settings::member_ui_t* pMemberUI = reinterpret_cast<const xproperty::settings::member_ui_t*>(Entry.getUserData<T_UI_TAG>());
+
+            // if the user does not specify a way to edit the size of a list we assume it is read-only
+            if constexpr ( std::is_same_v<xproperty::settings::member_ui_list_size_t, T_UI_TAG> )
+            {
+                if(pMemberUI==nullptr) Flags.m_bShowReadOnly = true;
+            }
 
             // This is super strange... in visual studio 17.11.1 these static assets are failing... Not sure why...
             // static_assert(xproperty::member_ui<std::int64_t> ::defaults::data_v.m_TypeGUID == xproperty::settings::var_type<std::int64_t>::guid_v);
@@ -735,27 +684,7 @@ namespace xproperty::ui::details
                 }
 
                 ImGui::PushID(Entry.m_GUID);
-
-                ReadOnlyWidth = Width;
-                onRender(Cmd, Value, Entry, Flags);
-                ReadOnlyWidth = -1;
-
-                /*
-                float V = Value.get<float>();
-                if (Flags.m_isShowReadOnly) ui::details::ReadOnly(I.m_pFormat, V, Width);
-                else
-                {
-                    Cmd.m_isChange = ImGui::DragScalar("##value", ImGuiDataType_Float, &V, I.m_Speed, &I.m_Min, &I.m_Max, I.m_pFormat);
-                    if (Cmd.m_isChange)
-                    {
-                        if (Cmd.m_isEditing == false) Cmd.m_Original = Value;
-                        Cmd.m_isEditing = true;
-                        Cmd.m_NewValue.set<float>(V);
-                    }
-                    if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit()) Cmd.m_isEditing = false;
-                }
-                */
-
+                onRender<xproperty::settings::member_ui_t>(Cmd, Value, Entry, Flags);
                 ImGui::PopID();
 
                 if(iElement == 1 ) ImGui::PopItemWidth();
@@ -974,7 +903,7 @@ void xproperty::inspector::RefreshAllProperties( void ) noexcept
                     , Member.m_pName
                     , Member.m_GUID
                     , GroupGUID
-                    , bScope ? nullptr : &Member
+                    , & Member //bScope ? nullptr : &Member
                     , iDimensions
                     , myDimension
                     , Flags
@@ -1053,7 +982,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                              , m_isAtomicArray : 1
                              , m_isReadOnly    : 1
                              , m_isHidden      : 1
-                             , m_isDefaultOpen : 1;
+                             , m_isDefaultOpen : 1
+                             ;
     };
 
     int                         iDepth   = -1;
@@ -1328,12 +1258,6 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             }
         }
 
-        if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
-        {
-            ImColor     CC = ImVec4(0.7f, 0.7f, 1.0f, 0.35f);
-            ImGui::GetWindowDrawList()->AddRectFilled(lpos, ImVec2(lpos.x + CRA.x, lpos.y + ImGui::GetFrameHeight()), CC);
-        }
-
         // Print the help
         if ( ImGui::IsItemHovered() && bRenderBlankRight == false )
         {
@@ -1350,13 +1274,66 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImVec2 rpos = ImGui::GetCursorScreenPos();
         CRA = ImGui::GetContentRegionAvail();
 
+        auto HandleElement = [this, &C](entry& Entry, entry& ParentEntry, int i, bool bElementTag )
+        {
+            // Any other entry except the editing entry gets handle here
+            xproperty::ui::undo::cmd Cmd;
+
+            if (ParentEntry.m_GroupGUID)
+            {
+                xproperty::ui::details::group_render::RenderElement(ParentEntry, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+            }
+            else
+            {
+                if(bElementTag) xproperty::ui::details::onRender<xproperty::settings::member_ui_t>          (Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+                else            xproperty::ui::details::onRender<xproperty::settings::member_ui_list_size_t>(Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+            }
+
+            if (Cmd.m_isEditing || Cmd.m_isChange)
+            {
+                assert(m_UndoSystem.m_Index <= static_cast<int>(m_UndoSystem.m_lCmds.size()));
+
+                // Set the property value
+                if (Cmd.m_isChange)
+                {
+                    std::string Error;
+                    xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, { Entry.m_Property.m_Path, Cmd.m_NewValue }, m_Context);
+                    assert(Error.empty());
+                    Cmd.m_bHasChanged = true;
+                }
+
+
+                // Make sure we reset the undo buffer to current entry
+                if (m_UndoSystem.m_Index < static_cast<int>(m_UndoSystem.m_lCmds.size()))
+                    m_UndoSystem.m_lCmds.erase(m_UndoSystem.m_lCmds.begin() + m_UndoSystem.m_Index, m_UndoSystem.m_lCmds.end());
+
+                // Make sure we don't have more entries than we should
+                while (m_UndoSystem.m_Index >= m_UndoSystem.m_MaxSteps)
+                {
+                    m_UndoSystem.m_lCmds.erase(m_UndoSystem.m_lCmds.begin());
+                    m_UndoSystem.m_Index--;
+                }
+
+                // Insert the cmd into the list
+                Cmd.m_Name.assign(Entry.m_Property.m_Path);
+                Cmd.m_pPropObject = C.m_Base.first;
+                Cmd.m_pClassObject = C.m_Base.second;
+
+                m_UndoSystem.m_lCmds.push_back(std::move(Cmd));
+            }
+        };
+
         if( E.m_bScope || bRenderBlankRight )
         {
             if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex );
 
             if (E.m_Property.m_Path.back() == ']' && bRenderBlankRight == false )
             {
-                ImGui::Text("Size: %llu  ", E.m_Property.m_Value.get<std::size_t>());
+                ImGui::Text("Size:");
+                ImGui::SameLine();
+                ImGui::PushItemWidth(40*2);
+                HandleElement( E, E, 0, false );
+                ImGui::PopItemWidth();
             }
 
             if( iDepth>0 && ((E.m_Dimensions - E.m_MyDimension) > 1 || Tree[iDepth].m_isAtomicArray == false) && Tree[iDepth].m_isOpen )
@@ -1367,12 +1344,6 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 ImGui::SameLine();
                 if ( ImGui::Button( " C " ) ) Tree[iDepth-1].m_OpenAll = -1;
                 HelpMarker( "Closes/Collapses all entries in the list" );
-            }
-
-            if (E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly)
-            {
-                ImColor     CC = ImVec4(0.7f, 0.7f, 1.0f, 0.35f);
-                ImGui::GetWindowDrawList()->AddRectFilled(rpos, ImVec2(rpos.x + CRA.x, rpos.y + ImGui::GetFrameHeight()), CC);
             }
         }
         else
@@ -1414,14 +1385,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 }
                 else
                 {
-                    xproperty::ui::details::onRender(Cmd, E.m_Property.m_Value, *E.m_pUserData, E.m_Flags);
+                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(Cmd, E.m_Property.m_Value, *E.m_pUserData, E.m_Flags);
                     assert(Cmd.m_isChange == false);
                     assert(Cmd.m_isEditing == false);
                 }
 
                 ImGui::PopStyleColor();
-
-                ImGui::GetWindowDrawList()->AddRectFilled(rpos, ImVec2(rpos.x + CRA.x, rpos.y + ImGui::GetFrameHeight() ), CC );
             }
             else
             {
@@ -1444,7 +1413,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 }
                                 else
                                 {
-                                    xproperty::ui::details::onRender( UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags );
+                                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>( UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags );
                                 }
 
                                 if (UndoCmd.m_isChange)
@@ -1464,51 +1433,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             }
                         }
                     }
-                
-                    // Any other entry except the editing entry gets handle here
-                    xproperty::ui::undo::cmd Cmd;
 
-                    if (E.m_GroupGUID)
-                    {
-                        xproperty::ui::details::group_render::RenderElement(E, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
-                    }
-                    else
-                    {
-                        xproperty::ui::details::onRender(Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
-                    }
+                    HandleElement(Entry, E, i, true);
 
-                    if( Cmd.m_isEditing || Cmd.m_isChange )
-                    {
-                        assert( m_UndoSystem.m_Index <= static_cast<int>(m_UndoSystem.m_lCmds.size()) );
-
-                        // Set the property value
-                        if (Cmd.m_isChange)
-                        {
-                            std::string Error;
-                            xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, { Entry.m_Property.m_Path, Cmd.m_NewValue }, m_Context);
-                            assert(Error.empty());
-                            Cmd.m_bHasChanged = true;
-                        }
-                        
-
-                        // Make sure we reset the undo buffer to current entry
-                        if( m_UndoSystem.m_Index < static_cast<int>(m_UndoSystem.m_lCmds.size()) )
-                            m_UndoSystem.m_lCmds.erase( m_UndoSystem.m_lCmds.begin() + m_UndoSystem.m_Index, m_UndoSystem.m_lCmds.end()  );
-
-                        // Make sure we don't have more entries than we should
-                        while( m_UndoSystem.m_Index >= m_UndoSystem.m_MaxSteps )
-                        {
-                            m_UndoSystem.m_lCmds.erase(m_UndoSystem.m_lCmds.begin());
-                            m_UndoSystem.m_Index--;
-                        }
-
-                        // Insert the cmd into the list
-                        Cmd.m_Name.assign( Entry.m_Property.m_Path );
-                        Cmd.m_pPropObject  = C.m_Base.first;
-                        Cmd.m_pClassObject = C.m_Base.second;
-
-                        m_UndoSystem.m_lCmds.push_back( std::move(Cmd) );
-                    }
                 }( *C.m_List[iE + i] );
             }
 

@@ -1585,7 +1585,7 @@ namespace xproperty
 
             namespace details
             {
-                template< typename T_CLASS, typename T_MEMBER_TYPE, auto T_LAMBDA_V >
+                template< typename T_CLASS, typename T_MEMBER_TYPE, auto T_LAMBDA_V, typename... T_ARGS >
                 consteval static type::list_table getListTable()
                 {
                     using t                 = type::var_t<T_MEMBER_TYPE>;
@@ -1595,20 +1595,40 @@ namespace xproperty
                     using begin_iterator_t  = typename t::begin_iterator;
                     using end_iterator_t    = typename t::end_iterator;
 
+                    using  overwrite_list_size_tuple_t = xproperty::details::filter_by_tag_t< meta::member_overwrite_list_size_tag, T_ARGS... >;
+
                     return
                     { .m_pGetSize = [](void* pClass, settings::context& C) constexpr -> std::size_t
                         {
-                            T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
-                            if (pA == nullptr) return 0;
+                            if constexpr( std::is_same_v<std::tuple<>, overwrite_list_size_tuple_t > )
+                            {
+                                T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
+                                if (pA == nullptr) return 0;
 
-                            return t::getSize(*pA, C);
+                                return t::getSize(*pA, C);
+                            }
+                            else
+                            {
+                                using callback = std::tuple_element_t< 0, overwrite_list_size_tuple_t >;
+                                std::size_t Size;
+                                callback::overwrite_size_v( *static_cast<T_CLASS*>(pClass), true, Size );
+                                return Size;
+                            }
                         }
                     , .m_pSetSize = [](void* pClass, std::size_t Size, settings::context& C) constexpr
                         {
-                            T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
-                            if (pA == nullptr) return;
+                            if constexpr (std::is_same_v<std::tuple<>, overwrite_list_size_tuple_t >)
+                            {
+                                T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
+                                if (pA == nullptr) return;
 
-                            t::setSize(const_cast<type&>(*pA), Size, C);
+                                t::setSize(const_cast<type&>(*pA), Size, C);
+                            }
+                            else
+                            {
+                                using callback = std::tuple_element_t< 0, overwrite_list_size_tuple_t >;
+                                callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size);
+                            }
                         }
                     , .m_pStart = []( void* pClass, xproperty::type::begin_iterator& Iterator, settings::context& C ) constexpr
                         {
@@ -1673,7 +1693,7 @@ namespace xproperty
                 }
             }
 
-            template< typename T_CLASS, typename T_MEMBER_TYPE, auto T_LAMBDA_V >
+            template< typename T_CLASS, typename T_MEMBER_TYPE, auto T_LAMBDA_V, typename... T_ARGS >
             struct list_table
             {
                 using dimensions = list_dimensions
@@ -1687,7 +1707,7 @@ namespace xproperty
 
                 consteval static auto GetArray()
                 {
-                    if constexpr( std::is_same_v< tuple_dimensions, std::tuple<> > ) return std::array{ details::getListTable<T_CLASS,T_MEMBER_TYPE,T_LAMBDA_V>() };
+                    if constexpr( std::is_same_v< tuple_dimensions, std::tuple<> > ) return std::array{ details::getListTable<T_CLASS,T_MEMBER_TYPE,T_LAMBDA_V, T_ARGS...>() };
                     else                                                             return []<typename...T>(std::tuple<T...>*) consteval
                     {
                         return std::array
@@ -2094,7 +2114,7 @@ namespace xproperty
         requires meets_requirements_v<false, true, T_MEMBER_TYPE>
         struct member<T_NAME_V, T_MEMBER_TYPE&(*)(T_CLASS&), T_LAMBDA_V, T_ARGS... >
         {
-            using                           table_helper    = details::list_table< T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V >;
+            using                           table_helper    = details::list_table< T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V, T_ARGS... >;
             inline static constexpr auto    array_v         = table_helper::GetArray();
             using                           user_data_t     = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
 
@@ -2569,19 +2589,18 @@ namespace xproperty
         constexpr static tuple_t overwrite_v = { T_OVERWRITES... };
     };
 
-    // void(*)( Type& , std::size_t Size, context& Context )
-    template< auto...T_OVERWRITE_LIST_SIZE >
-    struct member_overwrite_set_size : xproperty::tag< xproperty::meta::member_overwrite_list_size_tag >
+    // void(*)( CLASS&, bool bRead, std::size_t& Size, context& Context )
+    template< auto T_OVERWRITE_LIST_SIZE_CALLBACK >
+    struct member_overwrite_list_size : tag< meta::member_overwrite_list_size_tag >
     {
-        using tuple_t = std::tuple< decltype(T_OVERWRITE_LIST_SIZE) ... >;
-        constexpr static auto overwrite_set_size_v = { T_OVERWRITE_LIST_SIZE... };
+        constexpr static auto overwrite_size_v = T_OVERWRITE_LIST_SIZE_CALLBACK;
     };
 
     //
     // USER DATA
     //
     template< details::fixed_string ID, std::uint32_t GUID = xproperty::settings::strguid(ID) >
-    struct member_user_data : xproperty::tag< xproperty::meta::user_data_tag >
+    struct member_user_data : tag< meta::user_data_tag >
     {
         constexpr static auto type_string_v = ID.m_Value;
         constexpr static auto type_guid_v   = GUID;
@@ -2597,7 +2616,7 @@ namespace xproperty
     };
 
     template< details::fixed_string T_NAME_V, typename...T_ARGS >
-    struct obj_scope_ro : obj_scope< T_NAME_V, xproperty::tag< meta::read_only_tag >, T_ARGS...> {};
+    struct obj_scope_ro : obj_scope< T_NAME_V, tag< meta::read_only_tag >, T_ARGS...> {};
 
     //
     // BASE (THE OBJECT PARENT)

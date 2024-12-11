@@ -38,6 +38,10 @@ namespace xproperty::settings
         const xproperty::ui::details::member_ui_base* m_pUIBase;
     };
 
+    struct member_ui_list_size_t : xproperty::member_user_data<"UI LIST SIZE">
+    {
+    };
+
     struct member_flags_t : xproperty::member_user_data<"Flags">
     {
         xproperty::flags::type m_Flags;
@@ -47,6 +51,11 @@ namespace xproperty::settings
     {
         using callback = xproperty::flags::type(const void*, settings::context& ) noexcept;
         callback* m_pCallback;
+    };
+
+    struct list_flags_ui_t : xproperty::member_user_data<"List Flags">
+    {
+        std::uint32_t m_Flags;
     };
 
 }
@@ -61,7 +70,7 @@ namespace xproperty::settings
 
 namespace xproperty
 {
-    template< typename T>
+    template< typename T >
     struct member_ui;
 
     template< xproperty::flags::_flags...T_V>
@@ -125,7 +134,7 @@ namespace xproperty
         };
 
         template<typename T, xproperty::details::fixed_string T_FORMAT_MAIN>
-        struct member_ui_numbers : ui::details::member_ui_base
+        struct member_ui_numbers //: ui::details::member_ui_base
         {
             inline static constexpr auto type_guid_v = xproperty::settings::var_type<T>::guid_v;
 
@@ -248,6 +257,28 @@ namespace xproperty
 
             }
         };
+    };
+
+    struct member_ui_list_size
+    {
+        template<  std::uint64_t               T_MIN   = std::numeric_limits<std::uint64_t>::lowest()
+                 , std::uint64_t               T_MAX   = std::numeric_limits<std::uint64_t>::max()
+                 , float                       T_SPEED = 0.5f >
+        struct drag_bar : member_ui<std::uint64_t>::drag_bar< T_SPEED, T_MIN, T_MAX >
+        {
+            constexpr static auto type_string_v = xproperty::settings::member_ui_list_size_t::type_string_v;
+            constexpr static auto type_guid_v   = xproperty::settings::member_ui_list_size_t::type_guid_v;
+        };
+
+        template< std::uint64_t               T_MIN = std::numeric_limits<std::uint64_t>::lowest()
+                , std::uint64_t               T_MAX = std::numeric_limits<std::uint64_t>::max()>
+        struct scroll_bar : member_ui<std::uint64_t>::scroll_bar< T_MIN, T_MAX >
+        {
+            constexpr static auto type_string_v = xproperty::settings::member_ui_list_size_t::type_string_v;
+            constexpr static auto type_guid_v   = xproperty::settings::member_ui_list_size_t::type_guid_v;
+        };
+
+        using defaults = drag_bar< 1, 10000 >;
     };
 }
 #endif
