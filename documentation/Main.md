@@ -26,21 +26,21 @@ To get started with the xProperties library, follow the links below to explore v
 
 ## Code folder overview
 
-- **[Source [Dir]](source)** - Main source code of the library
-    - **[xproperty.h](source/xproperty.h)** - Single Header file for the library (**Customization needed**)
-    - **[Examples [Dir]](source/examples)** - Here you will find examples on how to use the library
-        - **[create_documentation [Dir]](source/examples/create_documentation)** - Generate most of the documentation found here, and a unitest.
-        - **[imgui [Dir]](source/examples/imgui)** - Example on how to use the library with imgui
-        - **[simple_examples [Dir]](source/examples/simple_examples)** - Simple examples to get started
-        - **[xcore_sprop_serializer [Dir]](source/examples/xcore_sprop_serializer)** - Examples on how to serialize the properties using [xcore::textfile](https://gitlab.com/LIONant/xcore/-/blob/master/src/xcore_textfile.h)
-    - **[sprop [Dir]](source/sprop)** - Extension to the xproperty library that adds more functionality (very useful)
+- **[Source [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source)** - Main source code of the library
+    - **[xproperty.h](https://github.com/LIONant-depot/xproperty/tree/master/source/xproperty.h)** - Single Header file for the library (**Customization needed**)
+    - **[Examples [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples)** - Here you will find examples on how to use the library
+        - **[create_documentation [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/create_documentation)** - Generate most of the documentation found here, and a unitest.
+        - **[imgui [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/imgui)** - Example on how to use the library with imgui
+        - **[simple_examples [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/simple_examples)** - Simple examples to get started
+        - **[xcore_sprop_serializer [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/xcore_sprop_serializer)** - Examples on how to serialize the properties using [xcore::textfile](https://gitlab.com/LIONant/xcore/-/blob/master/src/xcore_textfile.h)
+    - **[sprop [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/sprop)** - Extension to the xproperty library that adds more functionality (very useful)
 
 ### Feedback and Contributions
 
 We welcome any feedback and contributions to the project. Please follow the links below to provide feedback or contribute to the project.
 
 - [Feedback](https://github.com/LIONant-depot/xproperty/issues)
-- [Contributions](https://github.com/LIONant-depot)
+- [Contributions](https://github.com/LIONant-depot/xproperty)
 
 ### License
 

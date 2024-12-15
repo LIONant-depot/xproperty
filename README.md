@@ -1,11 +1,7 @@
 <img src="https://i.imgur.com/GfJb3sQ.jpg" align="right" width="150px" />
 
+# [xProperties (Version: 0.5.0.6 Pre-Alpha)](https://github.com/LIONant-depot/xproperty)
 
-# [xProperties Project Page](https://github.com/LIONant-depot/xproperty)
-
-## (Version: 0.5.0.5 Pre-Alpha)
-
-<br><img src="https://i.imgur.com/9a5d2ee.png" align="right" width="150px" />
 [             ![Feedback](https://img.shields.io/badge/feedback-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties)
 [              ![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -16,6 +12,7 @@
 [          ![Clang C++20](https://img.shields.io/badge/clang%20C%2B%2B20-compatible-brightgreen.svg)]()
 [            ![GCC C++20](https://img.shields.io/badge/gcc%20C%2B%2B20-compatible-brightgreen.svg)]()
 [   ![Visual Studio 2022](https://img.shields.io/badge/Visual%20Studio%202022-compatible-brightgreen.svg)](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)
+<br><img src="https://i.imgur.com/9a5d2ee.png" align="right" width="150px" />
 
 
 Simple yet powerful reflection system / property system. This project is meant for students and professionals alike to have 
@@ -73,3 +70,12 @@ XPROPERTY_REG(common)
 * **Property Inspector Example for [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
 
 ![Inspector](documentation/ImguiPropertyInspector.png "ImGUI Property Inspector Example")
+
+# Dependencies:
+
+* No dependencies required for the main library
+* Some of the examples may require external libraries such:
+    *  [xcore](https://gitlab.com/LIONant/xcore) for serialization and deserialization example
+    *  [ImGui](https://github.com/ocornut/imgui) for the ImGUI example
+
+---
