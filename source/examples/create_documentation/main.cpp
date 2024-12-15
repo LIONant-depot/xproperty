@@ -156,7 +156,7 @@ int main()
 
         // Generate the documentation
         if constexpr (true) xproperty_doc::Generate
-            ( "../../documentation/Documentation.md"
+            ( "../../documentation/DetailDocumentation.md"
             , "../../source/examples/create_documentation/example_properties.h"
             , Examples
             );
@@ -171,7 +171,7 @@ int main()
         std::vector<xproperty_doc::example_group> Examples;
 
         xproperty_doc::Generate
-        ( "../../documentation/MyProperty.md"
+        ( "../../documentation/Settings.md"
         , "../../source/examples/create_documentation/my_properties.h"
         , Examples
         );

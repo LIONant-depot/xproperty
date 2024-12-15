@@ -15,18 +15,21 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\documentation\Documentation.md">
-      <Filter>Documentation</Filter>
-    </None>
-    <None Include="..\..\documentation\MyProperty.md">
-      <Filter>Documentation</Filter>
-    </None>
     <None Include="..\..\README.md" />
     <None Include="..\..\.gitignore" />
     <None Include="..\..\documentation\SimpleExample01.md">
       <Filter>Documentation</Filter>
     </None>
     <None Include="..\..\documentation\SimpleExample02.md">
+      <Filter>Documentation</Filter>
+    </None>
+    <None Include="..\..\documentation\Main.md">
+      <Filter>Documentation</Filter>
+    </None>
+    <None Include="..\..\documentation\DetailDocumentation.md">
+      <Filter>Documentation</Filter>
+    </None>
+    <None Include="..\..\documentation\Settings.md">
       <Filter>Documentation</Filter>
     </None>
   </ItemGroup>

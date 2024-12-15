@@ -190,8 +190,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="..\..\.gitignore" />
-    <None Include="..\..\documentation\Documentation.md" />
-    <None Include="..\..\documentation\MyProperty.md" />
+    <None Include="..\..\documentation\DetailDocumentation.md" />
+    <None Include="..\..\documentation\Main.md" />
+    <None Include="..\..\documentation\Settings.md" />
     <None Include="..\..\documentation\SimpleExample01.md" />
     <None Include="..\..\documentation\SimpleExample02.md" />
     <None Include="..\..\README.md" />

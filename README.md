@@ -13,16 +13,16 @@
 [          ![Clang C++20](https://img.shields.io/badge/clang%20C%2B%2B20-compatible-brightgreen.svg)]()
 [            ![GCC C++20](https://img.shields.io/badge/gcc%20C%2B%2B20-compatible-brightgreen.svg)]()
 [   ![Visual Studio 2022](https://img.shields.io/badge/Visual%20Studio%202022-compatible-brightgreen.svg)](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)
-<br>
-<br>
 <img src="https://i.imgur.com/9a5d2ee.png" align="right" width="150px" />
+
+## [Project Page: https://github.com/LIONant-depot](https://github.com/LIONant-depot)
 
 Simple yet powerful reflection system / property system. This project is meant for students and professionals alike to have 
 a default goto code that solves the very annoying issue of C++ properties. The code should be able to be inserted in game engines 
 and applications without a problem. If you wish please read the
-[Documentation](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md). 
+[Documentation](documentation/Main.md). 
 
-Any feedback is welcome. Please follow us and help support the project.
+Feel free to use the code in your projects. Don't forget to visit the project page and provide feedback or contribute, all is welcome.
 
 # Code example:
 
@@ -47,6 +47,7 @@ XPROPERTY_REG(common)
 # Features
 * **MIT license**
 * **C++20**
+* **Easy to integrate with existing libraries and systems**
 * **Single header**
 * **No allocations**
 * **Most things happens at compile time**
@@ -57,6 +58,7 @@ XPROPERTY_REG(common)
 * **Minimalistic API**
 * **Op-In properties**
 * **Flexible configuration**
+* **Properties can be define with the struct/classed making it easy to mantain**
 * **Data and Function base properties**
 * **Allows the user to support any container such `std::array` and `std::vector` or anything else**
 * **Supports unions, variants, any, etc...**
@@ -65,7 +67,8 @@ XPROPERTY_REG(common)
 * **Supports base class interface for OOP**
 * **Handle any kind of inheritance**
 * **Works on all major compilers**
-* **Examples for all the features and [Documentation](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)**
+* **Examples for all the features and [Documentation](documentation/Main.md)**
+* **Examples on serization and deserialization using [xcore](https://gitlab.com/LIONant/xcore)**
 * **Property Inspector Example for [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
 
 ![Inspector](documentation/ImguiPropertyInspector.png "ImGUI Property Inspector Example")
