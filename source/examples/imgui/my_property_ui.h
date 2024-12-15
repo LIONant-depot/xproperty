@@ -119,6 +119,7 @@ namespace xproperty
 
         struct style
         {
+            struct edit_box;
             struct scroll_bar;
             struct drag_bar;
             struct enumeration;
@@ -164,6 +165,22 @@ namespace xproperty
                 constexpr scroll_bar() : settings::member_ui_t{ .m_pUIBase = &data_v }{}
             };
 
+            template< T                                 T_MIN       = std::numeric_limits<T>::lowest()
+                    , T                                 T_MAX       = std::numeric_limits<T>::max()
+                    , xproperty::details::fixed_string  T_FORMAT    = T_FORMAT_MAIN
+                    >
+            struct edit_box : settings::member_ui_t
+            {
+                inline static constexpr data data_v
+                { {.m_pDrawFn = &ui::details::draw<T, ui::details::style::edit_box>::Render, .m_TypeGUID = type_guid_v }
+                , T_MIN
+                , T_MAX
+                , T_FORMAT
+                , 0
+                };
+                constexpr edit_box() : settings::member_ui_t{ .m_pUIBase = &data_v }{}
+            };
+
             template< float                             T_SPEED     = 0.5f
                     , T                                 T_MIN       = std::numeric_limits<T>::lowest()
                     , T                                 T_MAX       = std::numeric_limits<T>::max()
@@ -195,8 +212,8 @@ namespace xproperty
     template<> struct member_ui<std::int8_t>    : ui::details::member_ui_numbers<std::int8_t,   "%d">   {};
     template<> struct member_ui<std::uint8_t>   : ui::details::member_ui_numbers<std::uint8_t,  "%d">   {};
     template<> struct member_ui<char>           : ui::details::member_ui_numbers<int8_t,        "%d">   {};
-    template<> struct member_ui<float>          : ui::details::member_ui_numbers<float,         "%.3f"> {};
-    template<> struct member_ui<double>         : ui::details::member_ui_numbers<double,        "%.3f"> {};
+    template<> struct member_ui<float>          : ui::details::member_ui_numbers<float,         "%g">   {};   // %.4g
+    template<> struct member_ui<double>         : ui::details::member_ui_numbers<double,        "%g">   {};   // %.4g
 
     template<> struct member_ui<std::string>
     {
