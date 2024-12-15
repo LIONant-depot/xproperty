@@ -1,15 +1,15 @@
 /*
-# Simple Example
+# Simple Example 01
 
 In this example:
-•	We define a class my_class with two member variables m_IntValue and m_FloatValue.
-•	We define a member function printValues to print the values of these members.
-•	We use the XPROPERTY_DEF macro to define the properties for my_class.
-•	We register the class with XPROPERTY_REG(my_class).
-•	In the main function, we create an instance of MyClass, create a property to set, and use the setProperty function to set the m_IntValue property.
-•	If there is an error, it is printed to the standard error output. Otherwise, the printValues function is called to display the values.
+1. We define a class my_class with two member variables m_IntValue and m_FloatValue.
+2. We define a member function printValues to print the values of these members.
+3. We use the XPROPERTY_DEF macro to define the properties for my_class.
+4. We register the class with XPROPERTY_REG(my_class).
+5. In the main function, we create an instance of MyClass, create a property to set, and use the setProperty function to set the m_IntValue property.
+6. If there is an error, it is printed to the standard error output. Otherwise, the printValues function is called to display the values.
 
-This demonstrates how to use the setProperty function to set a property in a class defined using the xProperties library.
+This demonstrates how to use the xproperty::sprop::setProperty function to set a property in a class defined using the xProperties library.
 
 cpp */
 

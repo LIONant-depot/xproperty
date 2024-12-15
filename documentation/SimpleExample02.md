@@ -1,5 +1,5 @@
 
-# Simple Example
+# Simple Example 02
 
 This example demonstrates how to:
 1.	Define a class with properties using the xProperties library.
