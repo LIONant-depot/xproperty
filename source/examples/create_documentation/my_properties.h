@@ -2,19 +2,18 @@
 ------------------------------------------------------------------------------
 # WHAT IS THIS FILE FOR?
 ------------------------------------------------------------------------------
-There are libraries that are used by including a header file. xproperty does not
-work like that, stead you have to define your own custom header file and then
-include xproperty there. The reason for this is that xproperty needs to be
-configured. So stead of creating dependencies to other header files and just
-much easier to do it this way. In other the only place that will include xproperty
-is your config header file (this one), all your other header and sources will include
-this file.
+This is a wrapper file around the xproperty header file which allows to configure
+the library, Otherwise the library can not be used so this is a requirement.
+While using the library the user should include this file no the **xproperty.h**
+directly. Example of this file can be found [my_properties.h](https://github.com/LIONant-depot/xproperty/blob/master/source/examples/create_documentation/my_properties.h).
+So stead of creating dependencies to other header files and it is 
+much easier to do it this way.
 
 ------------------------------------------------------------------------------
 # CORE INCLUDES
 ------------------------------------------------------------------------------
-Add here all your header files required to configure your own xproperty.
-Note that xproperty itself doesn't require any header files.
+Add here all your header files required to configure your own xproperty as stated above.
+Note that **xproperty.h** itself doesn't require any external dependencies.
 
 cpp */
 #pragma once
@@ -30,7 +29,7 @@ cpp */
 ------------------------------------------------------------------------------
 configure the memory requirements for the xproperty library.
 The library itself does not allocate any memory, but it does require to know
-some edge cases. We must specify our worse case memory usage for our basic types
+some edge cases. We must specify our worse case memory usage for our atomic/basic types
 as well as for the iterator. Note that it requires to be put in the **xproperty::settings**
 namespace.
 cpp */
@@ -44,7 +43,7 @@ namespace xproperty::settings
         // or other types strange alignment types. So you have to choose your worse case scenario.
         constexpr auto force_minimum_case_alignment = 16;
 
-        // This is the structure which is align and as big as our worse alignment and worse size
+        // This is the structure which aligns, and it is as big as our worse alignment and worse size
         template< typename...T >
         struct alignas(force_minimum_case_alignment) atomic_type_worse_alignment_and_memory
         {

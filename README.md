@@ -1,8 +1,11 @@
 <img src="https://i.imgur.com/GfJb3sQ.jpg" align="right" width="150px" />
 
 
-# xProperties (Version: 0.5.0.5 Pre-Alpha)
+# [xProperties Project Page](https://github.com/LIONant-depot/xproperty)
 
+## (Version: 0.5.0.5 Pre-Alpha)
+
+<br><img src="https://i.imgur.com/9a5d2ee.png" align="right" width="150px" />
 [             ![Feedback](https://img.shields.io/badge/feedback-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties)
 [              ![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -13,9 +16,7 @@
 [          ![Clang C++20](https://img.shields.io/badge/clang%20C%2B%2B20-compatible-brightgreen.svg)]()
 [            ![GCC C++20](https://img.shields.io/badge/gcc%20C%2B%2B20-compatible-brightgreen.svg)]()
 [   ![Visual Studio 2022](https://img.shields.io/badge/Visual%20Studio%202022-compatible-brightgreen.svg)](https://github.com/LIONant-depot/xproperty/blob/master/documentation/Documentation.md)
-<img src="https://i.imgur.com/9a5d2ee.png" align="right" width="150px" />
 
-## [Project Page: https://github.com/LIONant-depot](https://github.com/LIONant-depot)
 
 Simple yet powerful reflection system / property system. This project is meant for students and professionals alike to have 
 a default goto code that solves the very annoying issue of C++ properties. The code should be able to be inserted in game engines 
