@@ -177,5 +177,29 @@ int main()
         );
     }
 
+    //
+    // Generate Simple Examples
+    //
+    if constexpr (true)
+    {
+        // There are not examples here... but we still need the vector
+        std::vector<xproperty_doc::example_group> Examples;
+
+        // Example 01
+        xproperty_doc::Generate
+        ( "../../documentation/SimpleExample01.md"
+        , "../../source/examples/simple_examples/simple_examples_01.h"
+        , Examples
+        );
+
+        // Example 02
+        xproperty_doc::Generate
+        ( "../../documentation/SimpleExample02.md"
+        , "../../source/examples/simple_examples/simple_examples_02.h"
+        , Examples
+        );
+
+    }
+
     return 0;
 }

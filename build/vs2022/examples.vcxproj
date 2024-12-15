@@ -192,6 +192,8 @@
     <None Include="..\..\.gitignore" />
     <None Include="..\..\documentation\Documentation.md" />
     <None Include="..\..\documentation\MyProperty.md" />
+    <None Include="..\..\documentation\SimpleExample01.md" />
+    <None Include="..\..\documentation\SimpleExample02.md" />
     <None Include="..\..\README.md" />
   </ItemGroup>
   <ItemGroup>
@@ -200,6 +202,8 @@
     <ClInclude Include="..\..\source\examples\create_documentation\example_sprop.h" />
     <ClInclude Include="..\..\source\examples\create_documentation\generate_documentation.h" />
     <ClInclude Include="..\..\source\examples\create_documentation\my_properties.h" />
+    <ClInclude Include="..\..\source\examples\simple_examples\simple_examples_01.h" />
+    <ClInclude Include="..\..\source\examples\simple_examples\simple_examples_02.h" />
     <ClInclude Include="..\..\source\xproperty.h" />
     <ClInclude Include="..\..\source\sprop\property_sprop.h" />
     <ClInclude Include="..\..\source\sprop\property_sprop_collector.h" />

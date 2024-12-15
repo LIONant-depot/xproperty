@@ -23,6 +23,12 @@
     </None>
     <None Include="..\..\README.md" />
     <None Include="..\..\.gitignore" />
+    <None Include="..\..\documentation\SimpleExample01.md">
+      <Filter>Documentation</Filter>
+    </None>
+    <None Include="..\..\documentation\SimpleExample02.md">
+      <Filter>Documentation</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\source\xproperty.h">
@@ -53,6 +59,12 @@
       <Filter>CreateDocumentationExample</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\examples\create_documentation\my_properties.h">
+      <Filter>CreateDocumentationExample</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\examples\simple_examples\simple_examples_01.h">
+      <Filter>CreateDocumentationExample</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\examples\simple_examples\simple_examples_02.h">
       <Filter>CreateDocumentationExample</Filter>
     </ClInclude>
   </ItemGroup>
