@@ -1611,7 +1611,11 @@ namespace xproperty
                             {
                                 using callback = std::tuple_element_t< 0, overwrite_list_size_tuple_t >;
                                 std::size_t Size;
-                                callback::overwrite_size_v( *static_cast<T_CLASS*>(pClass), true, Size );
+
+                                using fn_t = xproperty::details::function_traits<callback>;
+                                if constexpr (fn_t::arity_v == 3) callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), true, Size);
+                                else                              callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), true, Size, C);
+                                
                                 return Size;
                             }
                         }
@@ -1627,7 +1631,10 @@ namespace xproperty
                             else
                             {
                                 using callback = std::tuple_element_t< 0, overwrite_list_size_tuple_t >;
-                                callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size);
+
+                                using fn_t = xproperty::details::function_traits<callback>;
+                                if constexpr (fn_t::arity_v == 3) callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size);
+                                else                              callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size, C);
                             }
                         }
                     , .m_pStart = []( void* pClass, xproperty::type::begin_iterator& Iterator, settings::context& C ) constexpr
