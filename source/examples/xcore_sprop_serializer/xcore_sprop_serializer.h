@@ -1,6 +1,10 @@
+#ifndef XPROPERTY_XCORE_SERIALIZER_H
+#define XPROPERTY_XCORE_SERIALIZER_H
+#pragma once
+
 #include "xcore.h"
-#include "../dependencies/xproperty/source/examples/imgui/my_properties.h"
-#include "../dependencies/xproperty/source/sprop/property_sprop.h"
+#include "../imgui/my_properties.h"
+#include "../../sprop/property_sprop.h"
 
 namespace xproperty::sprop::serializer
 {
@@ -283,3 +287,4 @@ namespace xproperty::sprop::serializer
     }
 }
 
+#endif
