@@ -3,7 +3,7 @@
 #include "..\..\sprop\property_sprop_getset.h"
 #include "..\..\sprop\property_sprop_collector.h"
 #include <windows.h>
-
+#include <algorithm>
 #include "calculator.cpp"
 
 
@@ -306,6 +306,14 @@ namespace xproperty::ui::details
             ImGui::SameLine(0, -3);
             if( ImGui::Button("...",ImVec2(0, ButtonWidth-3)) )
             {
+                // Set the current path as the dafaulted path
+                std::string CurrentPath;
+                {
+                    std::array< wchar_t, MAX_PATH > WCurrentPath;
+                    GetCurrentDirectory(static_cast<DWORD>(WCurrentPath.size()), WCurrentPath.data());
+                    std::transform(WCurrentPath.begin(), WCurrentPath.end(), std::back_inserter(CurrentPath), [](wchar_t c) {return (char)c; });
+                }
+
                 OPENFILENAMEA ofn;
                 ZeroMemory(&ofn, sizeof(ofn));
                 ofn.lStructSize     = sizeof(ofn);
@@ -317,7 +325,7 @@ namespace xproperty::ui::details
                 ofn.nFilterIndex    = 1;
                 ofn.lpstrFileTitle  = nullptr;
                 ofn.nMaxFileTitle   = 0;
-                ofn.lpstrInitialDir = nullptr;
+                ofn.lpstrInitialDir = CurrentPath.c_str();
                 ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
                 if (GetOpenFileNameA(&ofn) == TRUE)
                 {
