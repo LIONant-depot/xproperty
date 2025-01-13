@@ -477,9 +477,24 @@ namespace xproperty::ui::details
                         Cmd.m_isChange = true;
                     }
 
+                    if (AnyValue.m_pType->m_RegisteredEnumSpan[n].m_pHelp)
+                    {
+                        if (ImGui::IsItemHovered())
+                        {
+                            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10,10));
+                            ImGui::BeginTooltip();
+                            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 50);
+                            ImGui::TextUnformatted(AnyValue.m_pType->m_RegisteredEnumSpan[n].m_pHelp);
+                            ImGui::PopTextWrapPos();
+                            ImGui::EndTooltip();
+                            ImGui::PopStyleVar();
+                        }
+                    }
+
                     if (is_selected)
                         ImGui::SetItemDefaultFocus();   // You may set the initial focus when opening the combo (scrolling + for keyboard navigation support)
                 }
+
                 ImGui::EndCombo();
             }
         }

@@ -1,6 +1,6 @@
 <img src="https://i.imgur.com/GfJb3sQ.jpg" align="right" width="150px" />
 
-# [xProperties (Version: 0.5.0.7 Pre-Alpha)](https://github.com/LIONant-depot/xproperty)
+# [xProperties (Version: 0.5.1.7 Pre-Alpha)](https://github.com/LIONant-depot/xproperty)
 
 [             ![Feedback](https://img.shields.io/badge/feedback-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](https://gitlab.com/LIONant/properties)

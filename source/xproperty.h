@@ -435,16 +435,27 @@ namespace xproperty
         struct enum_item
         {
             const char*                 m_pName;
+            const char*                 m_pHelp;
             std::uint32_t               m_Value;
 
             enum_item() = default;
 
             template<typename T>
-            constexpr enum_item( const char* pName, T Val )
+            constexpr enum_item( const char* pName, T Val ) noexcept
                 : m_pName { pName }
+                , m_pHelp { nullptr }
                 , m_Value { static_cast<std::uint32_t>(Val) }
             {
                 static_assert( std::is_enum_v<T> );
+            }
+
+            template<typename T>
+            constexpr enum_item(const char* pName, T Val, const char* pHelp ) noexcept
+                : m_pName{ pName }
+                , m_pHelp{ pHelp }
+                , m_Value{ static_cast<std::uint32_t>(Val) }
+            {
+                static_assert(std::is_enum_v<T>);
             }
         };
 
