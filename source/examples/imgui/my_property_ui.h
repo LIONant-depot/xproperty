@@ -18,7 +18,7 @@ namespace xproperty::flags
     };
     static_assert(sizeof(type)==1);
 
-    enum _flags : std::uint32_t
+    enum _flags : std::uint8_t
     { SHOW_READONLY = std::uint32_t(1<<0)
     , DONT_SAVE     = std::uint32_t(1<<1)
     , DONT_SHOW     = std::uint32_t(1<<2)

@@ -1955,26 +1955,37 @@ namespace xproperty
 
                             if constexpr (sizeof...(T_ADDITIONAL) == 0)
                             {
-                                if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
+                                if constexpr (std::is_enum_v<t> && type::var_t<t>::guid_v == 1)
                                 {
-                                    auto& String = Any.get<std::string>();
-                                    for (auto& E : type::atomic_v<t>.m_RegisteredEnumSpan)
+                                    if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
                                     {
-                                        if (String == E.m_pName)
+                                        auto& String = Any.get<std::string>();
+                                        for (auto& E : type::atomic_v<t>.m_RegisteredEnumSpan)
                                         {
-                                            type::any RealValue;
-                                            RealValue.set<t>(static_cast<t>(E.m_Value));
+                                            if (String == E.m_pName)
+                                            {
+                                                type::any RealValue;
+                                                RealValue.set<t>(static_cast<t>(E.m_Value));
 
-                                            T_LAMBDA_V
-                                            ( *static_cast<T_CLASS*>(pClass)
-                                            , false
-                                            , const_cast<type::any&>(RealValue).get<t>()
-                                            );
-                                            return;
+                                                T_LAMBDA_V
+                                                ( *static_cast<T_CLASS*>(pClass)
+                                                , false
+                                                , const_cast<type::any&>(RealValue).get<t>()
+                                                );
+                                                return;
+                                            }
                                         }
-                                    }
 
-                                    // TODO: Value failed to be set... what to do???
+                                        // TODO: Value failed to be set... what to do???
+                                    }
+                                    else
+                                    {
+                                        T_LAMBDA_V
+                                        (*static_cast<T_CLASS*>(pClass)
+                                            , false
+                                            , const_cast<type::any&>(Any).get<t>()
+                                        );
+                                    }
                                 }
                                 else
                                 {
