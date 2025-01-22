@@ -221,7 +221,9 @@ namespace xproperty
 
         struct data : ui::details::member_ui_base
         {
-            const char* m_pFilter = {nullptr};
+            const char* m_pFilter                       = {nullptr};
+            bool        m_bMakePathRelative             = { false };
+            int         m_RelativeCurrentPathMinusCount = { 0 };
         };
 
         inline static constexpr auto type_guid_v = xproperty::settings::var_type<std::string>::guid_v;
@@ -235,12 +237,14 @@ namespace xproperty
             constexpr button() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
 
-        template< xproperty::details::fixed_string  T_FILTER = "All\0*.*\0Text\0*.TXT\0" >
+        template< xproperty::details::fixed_string  T_FILTER = "All\0*.*\0Text\0*.TXT\0", bool T_MAKE_PATH_RELATIVE_V = false, int T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V = 0 >
         struct file_dialog : settings::member_ui_t
         {
             inline static constexpr data data_v
             {{ .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
             , T_FILTER
+            , T_MAKE_PATH_RELATIVE_V
+            , T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V
             };
 
             constexpr file_dialog() : settings::member_ui_t{ .m_pUIBase = &data_v } {}

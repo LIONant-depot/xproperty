@@ -282,17 +282,17 @@ namespace xproperty::ui::details
 
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
-            std::array<char, 260> buff;
-            Value.copy(buff.data(), Value.length());
-            buff[Value.length()] = 0;
+            Value.copy(g_ScrachCharBuffer.data(), Value.length());
+            g_ScrachCharBuffer[Value.length()] = 0;
             ImGui::BeginGroup();
 
             const auto CurPos = ImGui::GetCursorPosX();
             const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
             if (WentOver) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
 
-            ImGui::PushItemWidth(ItemWidth);
-            Cmd.m_isChange = ImGui::InputText("##value", buff.data(), buff.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+            if (Cmd.m_isEditing == false) ImGui::PushItemWidth(ItemWidth);
+            Cmd.m_isChange = ImGui::InputText("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+            if (Cmd.m_isEditing == false) ImGui::PopItemWidth();
 
             if (ImGui::IsItemActivated())
             {
@@ -320,9 +320,9 @@ namespace xproperty::ui::details
                 ZeroMemory(&ofn, sizeof(ofn));
                 ofn.lStructSize     = sizeof(ofn);
                 ofn.hwndOwner       = GetActiveWindow();
-                ofn.lpstrFile       = buff.data();
+                ofn.lpstrFile       = g_ScrachCharBuffer.data();
                 ofn.lpstrFile[0]    = '\0';
-                ofn.nMaxFile        = static_cast<std::uint32_t>(buff.size());
+                ofn.nMaxFile        = static_cast<std::uint32_t>(g_ScrachCharBuffer.size());
                 ofn.lpstrFilter     = I.m_pFilter;
                 ofn.nFilterIndex    = 1;
                 ofn.lpstrFileTitle  = nullptr;
@@ -331,8 +331,33 @@ namespace xproperty::ui::details
                 ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
                 if (GetOpenFileNameA(&ofn) == TRUE)
                 {
-                    Cmd.m_NewValue.set<std::string>(ofn.lpstrFile);
                     Cmd.m_isChange = true;
+
+                    if ( I.m_bMakePathRelative )
+                    {
+                        int nPops = 1;
+
+                        // Count the paths for the current path
+                        for (const char* p = CurrentPath.c_str(); *p; p++)
+                        {
+                            if (*p == '\\' || *p == '/') nPops++;
+                        }
+
+                        // Add whatever the user requested
+                        nPops -= I.m_RelativeCurrentPathMinusCount;
+
+                        // Find our relative path and set the new string
+                        for (const char* p = ofn.lpstrFile; *p; p++)
+                        {
+                            if (*p == '\\' || *p == '/') nPops--;
+                            if (nPops <= 0)
+                            {
+                                ++p;
+                                for ( int i=0; g_ScrachCharBuffer[i] = *p; ++i, ++p ){}
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -349,7 +374,7 @@ namespace xproperty::ui::details
             {
                 if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::string>(Value);
                 Cmd.m_isEditing = true;
-                Cmd.m_NewValue.set<std::string>(buff.data());
+                Cmd.m_NewValue.set<std::string>(g_ScrachCharBuffer.data());
 
                 // Have we really changed anything?
                 if (Cmd.m_Original.get<std::string>() == Cmd.m_NewValue.get<std::string>())
@@ -637,7 +662,7 @@ namespace xproperty::ui::details
 
     struct group_render
     {
-        static void RenderElement( inspector::entry& GroupEntry, int iElement, xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags) noexcept
+        static void RenderElement( inspector::entry& GroupEntry, int iElement, xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags, inspector& Inspector, inspector::entry& IEntry ) noexcept
         {
             //
             // Handle the case of vector2
@@ -657,9 +682,10 @@ namespace xproperty::ui::details
                 {
                     ImGui::PushItemWidth(Width);
                     Color = ImU32(0x440000ff); 
-                    ImGui::Text("%s:", Entry.m_pName);
+                    ImGui::Text("%c:", Entry.m_pName[0]);
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
+                    if (ImGui::IsItemHovered()) Inspector.Help(IEntry);
                 }
 
                 if (iElement == 1) 
@@ -668,9 +694,10 @@ namespace xproperty::ui::details
 
                     Color = ImU32(0x4400ff00);
 
-                    ImGui::Text("%s:", Entry.m_pName);
+                    ImGui::Text("%c:", Entry.m_pName[0]);
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
+                    if (ImGui::IsItemHovered()) Inspector.Help(IEntry);
                 }
 
                 ImGui::PushID(Entry.m_GUID);
@@ -1271,7 +1298,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
             if (ParentEntry.m_GroupGUID)
             {
-                xproperty::ui::details::group_render::RenderElement(ParentEntry, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+                xproperty::ui::details::group_render::RenderElement(ParentEntry, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry);
             }
             else
             {
@@ -1370,7 +1397,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     for (int i = 0; i < n; ++i)
                     {
                         auto& Entry = *C.m_List[iE + i];
-                        xproperty::ui::details::group_render::RenderElement(E, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+                        xproperty::ui::details::group_render::RenderElement(E, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry);
                     }
                 }
                 else
@@ -1399,7 +1426,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             {
                                 if ( E.m_GroupGUID ) 
                                 {
-                                    xproperty::ui::details::group_render::RenderElement(E, i, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+                                    xproperty::ui::details::group_render::RenderElement(E, i, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry);
                                 }
                                 else
                                 {
