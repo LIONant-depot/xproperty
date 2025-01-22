@@ -183,6 +183,7 @@ namespace xproperty::ui::details
     }
 
     //-----------------------------------------------------------------------------------
+    std::array<char, 16 * 1024>   g_ScrachCharBuffer;
 
     template<>
     void draw<std::string, style::defaulted>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
@@ -195,16 +196,17 @@ namespace xproperty::ui::details
 
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
-            std::array<char, 256> buff;
-            Value.copy( buff.data(), Value.length() );
-            buff[ Value.length() ] = 0;
+            const auto              InputLength = Value.length();
+
+            Value.copy(g_ScrachCharBuffer.data(), InputLength );
+            g_ScrachCharBuffer[InputLength] = 0;
             ImGui::BeginGroup();
 
             const auto CurPos   = ImGui::GetCursorPosX();
             const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
             if( WentOver ) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
 
-            Cmd.m_isChange = ImGui::InputText( "##value", buff.data(), buff.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+            Cmd.m_isChange = ImGui::InputText( "##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
             if( ImGui::IsItemActivated() )
             {
                 if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::string>(Value);
@@ -229,7 +231,7 @@ namespace xproperty::ui::details
             {
                 if( Cmd.m_isEditing == false ) Cmd.m_Original.set<std::string>(Value);
                 Cmd.m_isEditing = true;
-                Cmd.m_NewValue.set<std::string>( buff.data() );
+                Cmd.m_NewValue.set<std::string>(g_ScrachCharBuffer.data());
 
                 // Have we really changed anything?
                 if(Cmd.m_Original.get<std::string>() == Cmd.m_NewValue.get<std::string>() )
