@@ -93,7 +93,11 @@ namespace xproperty::sprop
                     }
                     else if constexpr (std::is_same_v<T, var&>)
                     {
-                        assert(isPath == false);
+                        if(isPath == true)
+                        {
+                            printf("[ERROR]: Unable to find this get/set this [%s] property\n", m_Property.m_Path.c_str() );
+                            return false;
+                        }
                         if constexpr (IS_SET_V) Arg.m_pWrite(pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
                         else                    Arg.m_pRead (pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
 
