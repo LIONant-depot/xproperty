@@ -685,9 +685,9 @@ namespace xproperty::ui::details
                     if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
                     ImGui::Text("%c:", Entry.m_pName[0]);
                     if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) Inspector.Help(IEntry);
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
-                    if (ImGui::IsItemHovered()) Inspector.Help(IEntry);
                 }
 
                 if (iElement == 1) 
@@ -699,9 +699,9 @@ namespace xproperty::ui::details
                     if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
                     ImGui::Text("%c:", Entry.m_pName[0]);
                     if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) Inspector.Help(IEntry);
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
-                    if (ImGui::IsItemHovered()) Inspector.Help(IEntry);
                 }
 
                 ImGui::PushID(Entry.m_GUID);
