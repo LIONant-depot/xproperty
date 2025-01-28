@@ -681,8 +681,10 @@ namespace xproperty::ui::details
                 if (iElement == 0)
                 {
                     ImGui::PushItemWidth(Width);
-                    Color = ImU32(0x440000ff); 
+                    Color = ImU32(0x440000ff);
+                    if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
                     ImGui::Text("%c:", Entry.m_pName[0]);
+                    if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
                     if (ImGui::IsItemHovered()) Inspector.Help(IEntry);
@@ -694,7 +696,9 @@ namespace xproperty::ui::details
 
                     Color = ImU32(0x4400ff00);
 
+                    if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
                     ImGui::Text("%c:", Entry.m_pName[0]);
+                    if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
                     ImGui::SameLine();
                     pos = ImGui::GetCursorScreenPos();
                     if (ImGui::IsItemHovered()) Inspector.Help(IEntry);
