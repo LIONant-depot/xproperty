@@ -1350,7 +1350,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
             if (E.m_Property.m_Path.back() == ']' && bRenderBlankRight == false )
             {
+                if (E.m_Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
                 ImGui::Text("Size:");
+                if (E.m_Flags.m_bShowReadOnly) ImGui::EndDisabled();
                 ImGui::SameLine();
                 ImGui::PushItemWidth(40*2);
                 HandleElement( E, E, 0, false );
