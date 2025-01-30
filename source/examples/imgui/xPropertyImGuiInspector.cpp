@@ -669,47 +669,34 @@ namespace xproperty::ui::details
             // All vector 2 should have 2 elements in the following order...
             // [0] = X, [1] = Y
             //
-            if (GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v)
+            if( GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v 
+             || GroupEntry.m_GroupGUID == xproperty::settings::vector3_group::guid_v)
             {
-                auto& I = member_ui<float>::defaults::data_v;
+                int         MaxElemens = GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v ? 2 : 3;
+                auto&       I = member_ui<float>::defaults::data_v;
                 ImGuiStyle* style = &ImGui::GetStyle();
-                const auto   Width = (ImGui::GetContentRegionAvail().x - style->ItemInnerSpacing.x - 14*2)  / 2;
+                const auto   Width = (ImGui::GetContentRegionAvail().x - style->ItemInnerSpacing.x - 14* MaxElemens)  / MaxElemens;
                 const auto   Height = ImGui::GetFrameHeight();
                 ImVec2       pos;
-                ImU32        Color;
+                static constexpr auto Colors = std::array<ImU32, 3>{ 0x440000ff, 0x4400ff00, 0x44ff0000 };
 
-                if (iElement == 0)
-                {
-                    ImGui::PushItemWidth(Width);
-                    Color = ImU32(0x440000ff);
-                    if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
-                    ImGui::Text("%c:", Entry.m_pName[0]);
-                    if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) Inspector.Help(IEntry);
-                    ImGui::SameLine();
-                    pos = ImGui::GetCursorScreenPos();
-                }
+                if (iElement == 0) ImGui::PushItemWidth(Width);
+                else               ImGui::SameLine(0, 2);
 
-                if (iElement == 1) 
-                {
-                    ImGui::SameLine(0, 2);
+                if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
+                ImGui::Text("%c:", Entry.m_pName[0]);
+                if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) Inspector.Help(IEntry);
+                ImGui::SameLine();
+                pos = ImGui::GetCursorScreenPos();
 
-                    Color = ImU32(0x4400ff00);
-
-                    if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
-                    ImGui::Text("%c:", Entry.m_pName[0]);
-                    if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) Inspector.Help(IEntry);
-                    ImGui::SameLine();
-                    pos = ImGui::GetCursorScreenPos();
-                }
 
                 ImGui::PushID(Entry.m_GUID);
                 onRender<xproperty::settings::member_ui_t>(Cmd, Value, Entry, Flags);
                 ImGui::PopID();
 
-                if(iElement == 1 ) ImGui::PopItemWidth();
-                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + Width, pos.y + Height), Color);
+                if( iElement == (MaxElemens-1) ) ImGui::PopItemWidth();
+                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + Width, pos.y + Height), Colors[iElement]);
             }
         }
     };
@@ -1200,7 +1187,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // Handle property groups
         if (E.m_GroupGUID != 0)
         {
-            if( E.m_GroupGUID == xproperty::settings::vector2_group::guid_v )
+            if( E.m_GroupGUID == xproperty::settings::vector2_group::guid_v 
+             || E.m_GroupGUID == xproperty::settings::vector3_group::guid_v )
             {
                 // This guy is not longer a scope...
                 E.m_bScope = false;
@@ -1380,6 +1368,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 if (E.m_GroupGUID == xproperty::settings::vector2_group::guid_v)
                 {
                     n = 2;
+                }
+                else if (E.m_GroupGUID == xproperty::settings::vector3_group::guid_v)
+                {
+                    n = 3;
                 }
             }
 
