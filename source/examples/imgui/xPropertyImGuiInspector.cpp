@@ -48,7 +48,7 @@ namespace xproperty::ui::details
             {
                 if (Cmd.m_isEditing == false) Cmd.m_Original.set<T>(Value);
                 Cmd.m_isEditing = true;
-                Cmd.m_NewValue.set<T>(V);
+                Cmd.m_NewValue.set<T>(std::clamp(V, I.m_Min, I.m_Max));
             }
             if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) Cmd.m_isEditing = false;
         }
@@ -91,7 +91,7 @@ namespace xproperty::ui::details
                     //double Result = xproperty::ui::details::calculator::evaluateExpression(Buffer.data());
                     calculator Calc(Buffer.data());
                     double Result = Calc.Compute(); //calcuxproperty::ui::details::calculator::evaluateExpression(Buffer.data());
-                    Cmd.m_NewValue.set<T>(std::min<T>(I.m_Max, std::max<T>(I.m_Min, static_cast<T>(Result))));
+                    Cmd.m_NewValue.set<T>(std::clamp(static_cast<T>(Result), I.m_Min, I.m_Max)); //  std::min<T>(I.m_Max, std::max<T>(I.m_Min, static_cast<T>(Result))));
                 }
                 catch (const std::exception& e)
                 {

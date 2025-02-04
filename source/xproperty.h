@@ -473,6 +473,7 @@ namespace xproperty
             {
                 using                        type   = T;
                 inline constexpr static auto guid_v = 0u;
+                inline constexpr static auto name_v = xproperty::details::fixed_string("Unkown Type");
             };
 
             template<typename T >
@@ -1438,6 +1439,12 @@ namespace xproperty
                             // << Fail to set the enum value >>
                             return;
                         }
+                    }
+
+                    if (Any.m_pType->m_GUID != type::var_t<t>::guid_v )
+                    {
+                        printf("[ERROR]: Trying to set properties of the wrong types, from type [%s] to type [%s]\n", Any.m_pType->m_pName, type::var_t<t>::name_v.m_Value);
+                        return;
                     }
 
                     type::var_t<t>::Write
