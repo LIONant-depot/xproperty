@@ -219,6 +219,10 @@ namespace xproperty
     {
         member_ui() = delete;
 
+        // This path can be set by the user to indicate what is the current relevant path
+        // this is used for the file dialog and the path dialogs
+        inline static std::string g_CurrentPath;
+
         struct data : ui::details::member_ui_base
         {
             const char* m_pFilter                       = {nullptr};

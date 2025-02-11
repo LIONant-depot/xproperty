@@ -39,6 +39,11 @@ namespace xproperty::sprop
                 {
                     if constexpr (std::is_same_v<T, scope&>)
                     {
+                        if (isPath == false)
+                        {
+                            m_Error = std::format("ERROR: Fail to find the property! {} Location {}", m_Property.m_Path, m_iPath);
+                            return false;
+                        }
                         assert(isPath);
                         GUID = getNextGuid(isPath);
                         return PropertyMember(pClass, Arg, GUID, isPath);

@@ -308,8 +308,9 @@ namespace xproperty::ui::details
             ImGui::SameLine(0, -3);
             if( ImGui::Button("...",ImVec2(0, ButtonWidth-3)) )
             {
-                // Set the current path as the dafaulted path
-                std::string CurrentPath;
+                // The user can change the path in the dialog... changing the current path.
+                // We want to allow the user to do that because it is more convenient for them...
+                std::string CurrentPath;// = xproperty::member_ui<std::string>::g_CurrentPath;
                 {
                     std::array< wchar_t, MAX_PATH > WCurrentPath;
                     GetCurrentDirectory(static_cast<DWORD>(WCurrentPath.size()), WCurrentPath.data());
@@ -336,6 +337,9 @@ namespace xproperty::ui::details
                     if ( I.m_bMakePathRelative )
                     {
                         int nPops = 1;
+
+                        // Set the expected current path
+                        CurrentPath = xproperty::member_ui<std::string>::g_CurrentPath;
 
                         // Count the paths for the current path
                         for (const char* p = CurrentPath.c_str(); *p; p++)
