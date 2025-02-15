@@ -3,8 +3,15 @@
 #include "..\..\sprop\property_sprop_getset.h"
 #include "..\..\sprop\property_sprop_collector.h"
 #include <windows.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #include <algorithm>
+#include <olectl.h>
+#include <shobjidl.h>
+#include <comdef.h>
+#include <shlwapi.h> // For PathMatchSpecW
 #include "calculator.cpp"
+#pragma comment( lib, "shlwapi.lib") // For PathMatchSpecW
 
 
 //-----------------------------------------------------------------------------------
@@ -257,7 +264,211 @@ namespace xproperty::ui::details
     }
 
     //-----------------------------------------------------------------------------------
-    
+    // Windows suck... I had to write this stupid class to have a nice looking folder browser
+    //-----------------------------------------------------------------------------------
+    bool CheckFolderFilter(const wchar_t* path, const char* pFilter)
+    {
+        if (pFilter == nullptr) return true;
+
+        wchar_t filters[1024] = { 0 }; // Assumes filter string fits in this buffer
+        for (int i = 0; (filters[i] = static_cast<wchar_t>(pFilter[i])) || (filters[i + 1] = static_cast<wchar_t>(pFilter[i + 1])); ++i) {}
+
+        wchar_t* spec = filters;
+        bool isValid = false;
+        bool bFristDescriptor = true;
+        while (*spec != L'\0')
+        {
+            // Skip to the specifications part, ignoring the description
+            if (bFristDescriptor)
+            {
+                spec = wcschr(spec, L'\0') + 1;
+                bFristDescriptor = false;
+            }
+
+            if (*spec == L'\0') break; // End of filter string
+
+            // spec now points to the start of a filter specification
+            wchar_t* nextSpec = wcschr(spec, L';');
+            if (nextSpec == nullptr)
+            {
+                // If no ';' found, continue until the end of the string
+                nextSpec = wcschr(spec, L'\0');
+            }
+
+            if (nextSpec == nullptr) break; // Safety check
+
+            wchar_t* endOfSpec = nextSpec;
+            *endOfSpec = L'\0'; // Temporarily null-terminate the spec for comparison
+
+            // Use PathMatchSpecW to check if the path matches the current spec
+            if (PathMatchSpecW(path, spec))
+            {
+                isValid = true;
+                break; // Found a match, no need to check further
+            }
+
+            spec = endOfSpec + 1; // Move to next specification or end if no more
+            if (*spec == L'\0')
+            {
+                bFristDescriptor = true;
+                spec++;
+            }
+        }
+
+        return isValid;
+    }
+
+    //-----------------------------------------------------------------------------------
+
+    bool SelectFolderWithFilters( const char* pFilers, const wchar_t* pInitialPath )
+    {
+        struct CFolderFilter : public IFileDialogEvents
+        {
+            // IUnknown methods
+            IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv)
+            {
+                if (riid == IID_IUnknown || riid == IID_IFileDialogEvents)
+                {
+                    *ppv = static_cast<IFileDialogEvents*>(this);
+                    AddRef();
+                    return S_OK;
+                }
+                *ppv = nullptr;
+                return E_NOINTERFACE;
+            }
+            IFACEMETHODIMP_(ULONG) AddRef()     { return InterlockedIncrement(&m_cRef); }
+            IFACEMETHODIMP_(ULONG) Release()    { ULONG cRef = InterlockedDecrement(&m_cRef); if (cRef == 0) delete this; return cRef; }
+            IFACEMETHODIMP OnFolderChange(IFileDialog* pfd)     { UpdateOkButtonState(pfd); return S_OK; }
+            IFACEMETHODIMP OnSelectionChange(IFileDialog* pfd)  { UpdateOkButtonState(pfd); return S_OK;}
+            IFACEMETHODIMP OnFolderChanging(IFileDialog* pfd, IShellItem* psiFolder) { return S_OK; }
+            IFACEMETHODIMP OnTypeChange(IFileDialog* pfd) { return S_OK; }
+            IFACEMETHODIMP OnFileOk(IFileDialog* pfd)    { return UpdateOkButtonState(pfd);}
+            IFACEMETHODIMP OnOverwrite(IFileDialog* pfd, IShellItem* psi, FDE_OVERWRITE_RESPONSE* pResponse) { return S_OK; }
+            IFACEMETHODIMP OnShareViolation(IFileDialog* pfd, IShellItem* psi, FDE_SHAREVIOLATION_RESPONSE* pResponse) { *pResponse = FDESVR_DEFAULT; return S_OK; }
+            void SetFilter(const char* filter) { m_filter = filter; }
+            HWND GetParentWindow(IFileDialog* pfd) { HWND hwnd = FindWindowEx(GetActiveWindow(), nullptr, L"#32770", nullptr); return hwnd; }
+
+            ULONG           m_cRef = 1;
+            const char* m_filter = nullptr;
+
+
+            IFACEMETHODIMP UpdateOkButtonState(IFileDialog* pfd)
+            {
+                auto FinalRsult = S_OK;
+                HWND hwndParent = GetParentWindow(pfd);
+
+                IShellItem* psiResult = nullptr;
+                if (SUCCEEDED(pfd->GetCurrentSelection(&psiResult)))
+                {
+                    PWSTR pszFilePath = nullptr;
+                    if (SUCCEEDED(psiResult->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath)))
+                    {
+                        bool isValid = CheckFolderFilter(pszFilePath, m_filter);
+
+                        IFileDialogCustomize* pfdc = nullptr;
+                        if (SUCCEEDED(pfd->QueryInterface(IID_PPV_ARGS(&pfdc))))
+                        {
+                            if (true)
+                            {
+                                auto X = GetDlgItem(hwndParent, 1);
+                                if (isValid) ShowWindow(X, SW_SHOW); //EnableWindow( X, true); //ShowWindow(X, SW_SHOW);
+                                else         ShowWindow(X, SW_HIDE); //EnableWindow(X, false); //ShowWindow(X, SW_HIDE);
+                            }
+                            //pfdc->SetControlState(1, isValid ? CDCS_ENABLED : CDCS_INACTIVE);
+                            if (isValid == false) FinalRsult = S_FALSE;
+                        }
+
+                        CoTaskMemFree(pszFilePath);
+
+                    }
+                    psiResult->Release();
+                }
+
+                return FinalRsult;
+            }
+        };
+
+        // Helper function to create the event handler
+        auto CFolderFilter_CreateInstance = [](REFIID riid, void** ppv, const char* pFilers)->HRESULT
+        {
+            *ppv = nullptr;
+            CFolderFilter* pInstance = new (std::nothrow) CFolderFilter();
+            pInstance->SetFilter(pFilers);
+            if (pInstance == nullptr) return E_OUTOFMEMORY;
+            HRESULT hr = pInstance->QueryInterface(riid, ppv);
+            pInstance->Release(); // Release initial ref count
+            return hr;
+        };
+
+
+        HRESULT hr;
+        IFileDialog* pfd = nullptr;
+        DWORD dwCookie;
+        bool FinalResult = false;
+
+        // Create the FileOpenDialog object.
+        hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
+
+        if (SUCCEEDED(hr))
+        {
+            DWORD dwOptions;
+
+            // Get the current options.
+            hr = pfd->GetOptions(&dwOptions);
+            if (SUCCEEDED(hr))
+            {
+                // Set the FOS_PICKFOLDERS option to allow folder selection.
+                hr = pfd->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST);
+            }
+            else return FinalResult;
+
+
+            // Create and advise the event handler
+            IFileDialogEvents* pfde = nullptr;
+            hr = CFolderFilter_CreateInstance(IID_PPV_ARGS(&pfde), pFilers);
+            if (SUCCEEDED(hr))
+            {
+                hr = pfd->Advise(pfde, &dwCookie);
+                if (SUCCEEDED(hr))
+                {
+                    // set the initial path...
+                    IShellItem* psiInitialDir = nullptr;
+                    HRESULT hr = SHCreateItemFromParsingName(pInitialPath, nullptr, IID_PPV_ARGS(&psiInitialDir));
+                    if (SUCCEEDED(hr)) pfd->SetFolder(psiInitialDir);
+
+                    // Show the dialog
+                    hr = pfd->Show(nullptr);
+                    if (SUCCEEDED(hr))
+                    {
+                        IShellItem* psi;
+                        // Get the folder selected by the user
+                        hr = pfd->GetResult(&psi);
+                        if (SUCCEEDED(hr))
+                        {
+                            PWSTR pszFilePath = nullptr;
+                            hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+                            if (SUCCEEDED(hr))
+                            {
+                                for (int i = 0; g_ScrachCharBuffer[i] = static_cast<char>(pszFilePath[i]); ++i) {}
+                                CoTaskMemFree(pszFilePath);
+                                FinalResult = true;
+                            }
+                            psi->Release();
+                        }
+                    }
+                    // Unadvise the event handler
+                    pfd->Unadvise(dwCookie);
+                }
+                pfde->Release();
+            }
+            pfd->Release();
+        }
+
+        return FinalResult;
+    }
+
+    //-----------------------------------------------------------------------------------
+
     template<>
     void draw<std::string, style::file_dialog>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
@@ -311,30 +522,120 @@ namespace xproperty::ui::details
                 // The user can change the path in the dialog... changing the current path.
                 // We want to allow the user to do that because it is more convenient for them...
                 std::string CurrentPath;// = xproperty::member_ui<std::string>::g_CurrentPath;
+                std::array< wchar_t, MAX_PATH > WCurrentPath;
                 {
-                    std::array< wchar_t, MAX_PATH > WCurrentPath;
                     GetCurrentDirectory(static_cast<DWORD>(WCurrentPath.size()), WCurrentPath.data());
                     std::transform(WCurrentPath.begin(), WCurrentPath.end(), std::back_inserter(CurrentPath), [](wchar_t c) {return (char)c; });
                 }
 
-                OPENFILENAMEA ofn;
-                ZeroMemory(&ofn, sizeof(ofn));
-                ofn.lStructSize     = sizeof(ofn);
-                ofn.hwndOwner       = GetActiveWindow();
-                ofn.lpstrFile       = g_ScrachCharBuffer.data();
-                ofn.lpstrFile[0]    = '\0';
-                ofn.nMaxFile        = static_cast<std::uint32_t>(g_ScrachCharBuffer.size());
-                ofn.lpstrFilter     = I.m_pFilter;
-                ofn.nFilterIndex    = 1;
-                ofn.lpstrFileTitle  = nullptr;
-                ofn.nMaxFileTitle   = 0;
-                ofn.lpstrInitialDir = CurrentPath.c_str();
-                ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-                if (GetOpenFileNameA(&ofn) == TRUE)
+                // Set the scrach file to have nothing on it unless we put something...
+                g_ScrachCharBuffer[0]=0;
+                if (I.m_bFolders)
+                {
+                    SelectFolderWithFilters(I.m_pFilter, WCurrentPath.data());
+
+                    /*
+                    TCHAR path[MAX_PATH];
+                    CHAR path2[MAX_PATH];
+
+                    const char* path_param = path2;
+
+                    BROWSEINFO bi = { 0 };
+                    bi.lpszTitle = TEXT("Browse for folder...");
+                    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+                    bi.lpfn = BrowseCallbackProc;
+                    bi.lParam = (LPARAM)path_param;
+
+                    LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
+
+                    if (pidl != 0)
+                    {
+                        //get the name of the folder and put it in path
+                        SHGetPathFromIDList(pidl, path);
+
+                        //free memory used
+                        IMalloc* imalloc = 0;
+                        if (SUCCEEDED(SHGetMalloc(&imalloc)))
+                        {
+                            imalloc->Free(pidl);
+                            imalloc->Release();
+                        }
+                    }
+                    */
+
+                    /*
+                    HRESULT         hr;
+                    IFileDialog*    pfd = nullptr;
+
+                    // Create the FileOpenDialog object.
+                    hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
+
+                    if (SUCCEEDED(hr))
+                    {
+                        DWORD dwOptions;
+
+                        // Get the current options.
+                        hr = pfd->GetOptions(&dwOptions);
+                        if (SUCCEEDED(hr))
+                        {
+                            // Set the FOS_PICKFOLDERS option to allow folder selection.
+                            hr = pfd->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST);
+                        }
+
+                        // No need for filter when selecting folders, so we'll skip this part.
+
+                        // Show the dialog
+                        if (SUCCEEDED(hr))
+                        {
+                            hr = pfd->Show(nullptr);
+                            if (SUCCEEDED(hr))
+                            {
+                                IShellItem* psi;
+                                // Get the folder selected by the user
+                                hr = pfd->GetResult(&psi);
+                                if (SUCCEEDED(hr))
+                                {
+                                    PWSTR pszFilePath = nullptr;
+                                    hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+                                    if (SUCCEEDED(hr))
+                                    {
+                                        for (int i = 0; g_ScrachCharBuffer[i] = static_cast<char>(pszFilePath[i]); ++i){}
+                                        CoTaskMemFree(pszFilePath);
+                                    }
+                                    psi->Release();
+                                }
+                            }
+                        }
+                        pfd->Release();
+                    }
+                    */
+                }
+                else
+                {
+                    OPENFILENAMEA ofn;
+                    ZeroMemory(&ofn, sizeof(ofn));
+                    ofn.lStructSize     = sizeof(ofn);
+                    ofn.hwndOwner       = GetActiveWindow();
+                    ofn.lpstrFile       = g_ScrachCharBuffer.data();
+                    ofn.lpstrFile[0]    = '\0';
+                    ofn.nMaxFile        = static_cast<std::uint32_t>(g_ScrachCharBuffer.size());
+                    ofn.lpstrFilter     = I.m_pFilter;
+                    ofn.nFilterIndex    = 1;
+                    ofn.lpstrFileTitle  = nullptr;
+                    ofn.nMaxFileTitle   = 0;
+                    ofn.lpstrInitialDir = CurrentPath.c_str();
+                    ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+                    if (GetOpenFileNameA(&ofn) == TRUE)
+                    {
+                        assert(g_ScrachCharBuffer[0]);
+                    }
+                }
+
+                if (g_ScrachCharBuffer[0])
                 {
                     Cmd.m_isChange = true;
 
-                    if ( I.m_bMakePathRelative )
+                    if (I.m_bMakePathRelative)
                     {
                         int nPops = 1;
 
@@ -351,13 +652,13 @@ namespace xproperty::ui::details
                         nPops -= I.m_RelativeCurrentPathMinusCount;
 
                         // Find our relative path and set the new string
-                        for (const char* p = ofn.lpstrFile; *p; p++)
+                        for (const char* p = g_ScrachCharBuffer.data(); *p; p++)
                         {
                             if (*p == '\\' || *p == '/') nPops--;
                             if (nPops <= 0)
                             {
                                 ++p;
-                                for ( int i=0; g_ScrachCharBuffer[i] = *p; ++i, ++p ){}
+                                for (int i = 0; g_ScrachCharBuffer[i] = *p; ++i, ++p) {}
                                 break;
                             }
                         }

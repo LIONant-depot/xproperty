@@ -203,15 +203,15 @@ namespace xproperty
 
     }
 
-    template<> struct member_ui<std::int64_t>   : ui::details::member_ui_numbers<std::int64_t,  "%d">   {};
-    template<> struct member_ui<std::uint64_t>  : ui::details::member_ui_numbers<std::uint64_t, "%d">   {};
-    template<> struct member_ui<std::int32_t>   : ui::details::member_ui_numbers<std::int32_t,  "%d">   {};
-    template<> struct member_ui<std::uint32_t>  : ui::details::member_ui_numbers<std::uint32_t, "%d">   {};
-    template<> struct member_ui<std::int16_t>   : ui::details::member_ui_numbers<std::int16_t,  "%d">   {};
-    template<> struct member_ui<std::uint16_t>  : ui::details::member_ui_numbers<std::uint16_t, "%d">   {};
-    template<> struct member_ui<std::int8_t>    : ui::details::member_ui_numbers<std::int8_t,   "%d">   {};
-    template<> struct member_ui<std::uint8_t>   : ui::details::member_ui_numbers<std::uint8_t,  "%d">   {};
-    template<> struct member_ui<char>           : ui::details::member_ui_numbers<int8_t,        "%d">   {};
+    template<> struct member_ui<std::int64_t>   : ui::details::member_ui_numbers<std::int64_t,  "%lld"  >   {};
+    template<> struct member_ui<std::uint64_t>  : ui::details::member_ui_numbers<std::uint64_t, "%llu"  >   {};
+    template<> struct member_ui<std::int32_t>   : ui::details::member_ui_numbers<std::int32_t,  "%d"    >   {};
+    template<> struct member_ui<std::uint32_t>  : ui::details::member_ui_numbers<std::uint32_t, "%u"    >   {};
+    template<> struct member_ui<std::int16_t>   : ui::details::member_ui_numbers<std::int16_t,  "%hd"   >   {};
+    template<> struct member_ui<std::uint16_t>  : ui::details::member_ui_numbers<std::uint16_t, "%hu"   >   {};
+    template<> struct member_ui<std::int8_t>    : ui::details::member_ui_numbers<std::int8_t,   "%hhd"  >   {};
+    template<> struct member_ui<std::uint8_t>   : ui::details::member_ui_numbers<std::uint8_t,  "%hhu"  >   {};
+    template<> struct member_ui<char>           : ui::details::member_ui_numbers<int8_t,        "%hhd"  >   {};
     template<> struct member_ui<float>          : ui::details::member_ui_numbers<float,         "%g">   {};   // %.4g
     template<> struct member_ui<double>         : ui::details::member_ui_numbers<double,        "%g">   {};   // %.4g
 
@@ -228,6 +228,7 @@ namespace xproperty
             const char* m_pFilter                       = {nullptr};
             bool        m_bMakePathRelative             = { false };
             int         m_RelativeCurrentPathMinusCount = { 0 };
+            bool        m_bFolders                      = { false }; 
         };
 
         inline static constexpr auto type_guid_v = xproperty::settings::var_type<std::string>::guid_v;
@@ -249,11 +250,25 @@ namespace xproperty
             , T_FILTER
             , T_MAKE_PATH_RELATIVE_V
             , T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V
+            , false
             };
 
             constexpr file_dialog() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
 
+        template< xproperty::details::fixed_string  T_FILTER = "All\0*\0", bool T_MAKE_PATH_RELATIVE_V = false, int T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V = 0 >
+        struct folder_dialog : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            {{ .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
+            , T_FILTER
+            , T_MAKE_PATH_RELATIVE_V
+            , T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V
+            , true
+            };
+
+            constexpr folder_dialog() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
+        };
 
         struct defaults : settings::member_ui_t
         {
