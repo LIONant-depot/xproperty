@@ -266,7 +266,7 @@ namespace xproperty::sprop::serializer
             {
                 // For array counts let us convert it to int64 since we will never use the full range of the 64bit values
                 // This makes the file format look nicer...
-                Container.m_Properties.emplace_back( pPropertyName, xproperty::any{static_cast<std::int64_t>(Value.get<std::uint64_t>())} );
+                Container.m_Properties.emplace_back( pPropertyName, xproperty::any{static_cast<std::int64_t>(Value.getCastValue<std::uint64_t>())} );
             }
             else
             {

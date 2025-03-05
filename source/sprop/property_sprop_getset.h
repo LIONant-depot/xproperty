@@ -50,7 +50,12 @@ namespace xproperty::sprop
                     }
                     else if constexpr (std::is_same_v<T, props&>)
                     {
-                        assert(isPath);
+                        if (isPath == false)
+                        {
+                            printf("[ERROR]: Unable to find this get/set this [%s] property\n", m_Property.m_Path.c_str());
+                            return false;
+                        }
+
                         auto [pInstance, pObj] = Arg.m_pCast(pClass, m_Context);
                         //GUID = getNextGuid(isPath);
                         return PropertyObject(pInstance, *pObj, pObj->m_GUID, isPath, false);
