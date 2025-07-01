@@ -3,6 +3,7 @@
 #pragma once
 
 #include<functional>
+#include<string>
 
 #ifndef IMGUI_API
     #include "imgui.h"
@@ -11,6 +12,8 @@
 #ifndef MY_PROPERTIES_H
     #include "my_properties.h"
 #endif
+
+#include "../../sprop/property_sprop.h"
 
 // Microsoft and its macros....
 #undef max
@@ -46,8 +49,8 @@ namespace xproperty
                 struct
                 {
                     bool                    m_isEditing   : 1         // Is Item currently been edited
-                                          , m_isChange    : 1
-                                          , m_bHasChanged : 1;
+                                          , m_isChange    : 1         // Has the value is Change since the last time
+                                          , m_bHasChanged : 1;        // Has the value has changed at some point
                 };
             };
 
@@ -100,8 +103,12 @@ namespace xproperty
                 m_lCmds.clear();
             }
 
+            std::string Undo(xproperty::settings::context& Context) noexcept;
+            std::string Redo(xproperty::settings::context& Context) noexcept;
+            void        Add (const cmd& Cmd) noexcept;
+
             XPROPERTY_DEF
-            ( "System", system
+            ( "Undo System", system
             , obj_member_ro<"Index",    &system::m_Index >
             , obj_member   <"MaxSteps", +[](system& O, bool bRead, int& InOutValue)
                 {
@@ -133,6 +140,80 @@ namespace xproperty
     namespace ui::details
     {
         struct group_render;
+    
+        template< typename...T_ARGS >
+        struct delegate final
+        {
+            struct info
+            {
+                using callback = void(void* pPtr, T_ARGS...);
+
+                callback*   m_pCallback;
+                void*       m_pClass;
+            };
+
+            delegate(const delegate& ) = delete;
+            delegate(void) noexcept = default;
+
+            template< auto T_FUNCTION_PTR_V, typename  T_CLASS >
+            __inline void Register( T_CLASS& Class ) noexcept
+            {
+                m_Delegates.push_back
+                (
+                    info
+                    {
+                        .m_pCallback = [](void* pPtr, T_ARGS... Args) constexpr noexcept
+                        {
+                            std::invoke(T_FUNCTION_PTR_V, static_cast<T_CLASS*>(pPtr), std::forward<T_ARGS>(Args)...);
+                        }
+                    ,  .m_pClass = &Class
+                    }
+                );
+            }
+
+            template< auto T_FUNCTION_PTR_V >
+            __inline void Register( void ) noexcept
+            {
+                m_Delegates.push_back
+                (
+                    info
+                    {
+                        .m_pCallback = [](void*, T_ARGS... Args) constexpr noexcept
+                        {
+                            std::invoke(T_FUNCTION_PTR_V, std::forward<T_ARGS>(Args)...);
+                        }
+                    ,  .m_pClass = nullptr
+                    }
+                );
+            }
+
+            constexpr
+            __inline void NotifyAll( T_ARGS... Args ) const noexcept
+            {
+                for (const auto& D : m_Delegates)
+                {
+                    D.m_pCallback(D.m_pClass, std::forward<T_ARGS>(Args)...);
+                }
+            }
+
+            template< typename T_CLASS >
+            void RemoveDelegate(T_CLASS& Class) noexcept
+            {
+                m_Delegates.erase
+                (
+                    std::remove_if
+                    (
+                        m_Delegates.begin(), m_Delegates.end()
+                        , [&](const info& I) noexcept
+                        {
+                            return I.m_pClass == &Class;
+                        }
+                    )
+                );
+            }
+
+            std::vector<info>   m_Delegates{};
+        };
     }
 }
 
@@ -221,23 +302,53 @@ public:
         )
     };
 
+
 public:
 
-    inline                  inspector               ( const char* pName="Inspector", bool isOpen = true)    noexcept : m_pName{pName}, m_bWindowOpen{isOpen} {}
+    inline                  inspector               ( const char* pName="Inspector", bool isOpen = true)    noexcept : m_pName{pName}, m_bWindowOpen{isOpen}
+    {
+        // Set the default real time handler... user can always clear and set their own if they want...
+        m_OnRealtimeChangeEvent.Register< [](xproperty::inspector& Inspector, const xproperty::ui::undo::cmd& Cmd, xproperty::settings::context& Context)
+        {
+            std::string Error;
+            xproperty::sprop::setProperty(Error, Cmd.m_pClassObject, *Cmd.m_pPropObject, xproperty::sprop::container::prop{ Cmd.m_Name, Cmd.m_NewValue }, Context);
+            if (!Error.empty()) printf("Error: %s\n", Error.c_str());
+        }>();
+
+        m_OnGetComponentPointer.Register < [](xproperty::inspector& Inspector, const int Index, void*& pBase, void* pUserData)
+        {
+            // We are not replacing anything....
+        }>(); 
+    }
     virtual                ~inspector               ( void )                                                noexcept = default;
                 void        clear                   ( void )                                                noexcept;
                 void        AppendEntity            ( void )                                                noexcept;
-                void        AppendEntityComponent   ( const xproperty::type::object& PropObject, void* pBase ) noexcept;
-                void        Undo                    ( void )                                                noexcept;
-                void        Redo                    ( void )                                                noexcept;
-                void        Show                    ( std::function<void(void)> Callback )                  noexcept;
-    inline      bool        isValid                 ( void )                                        const   noexcept { return m_lEntities.empty() == false; }
+                void        AppendEntityComponent   ( const xproperty::type::object& PropObject, void* pBase, void* pUserData = nullptr) noexcept;
+                void        Show                    ( xproperty::settings::context& Context, std::function<void(void)> Callback ) noexcept;
+                bool        empty                   ( void )                                        const   noexcept { return m_lEntities.empty(); }
     inline      void        setupWindowSize         ( int Width, int Height )                               noexcept { m_Width = Width; m_Height = Height; }
     inline      void        setOpenWindow           ( bool b )                                              noexcept { m_bWindowOpen = b; }
     constexpr   bool        isWindowOpen            ( void )                                        const   noexcept { return m_bWindowOpen; }
 
 
-    settings                                            m_Settings {};
+    using on_change_event           = ui::details::delegate<inspector&, const xproperty::ui::undo::cmd& >;
+    using on_realtime_change_event  = ui::details::delegate<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
+    using on_get_component_pointer  = ui::details::delegate<inspector&, const int, void*&, void*>;
+
+    settings                    m_Settings {};
+    on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
+    on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
+                                                            //      User should use this to update the property in real time.
+
+    on_get_component_pointer    m_OnGetComponentPointer;    // To subscribe the arguments look as follows
+                                                            // inspector& - In, The instance of this class
+                                                            // const int  - In, The index of the component
+                                                            // void*&     - (In+Out), In - The pointer registered with the component
+                                                            //                        Out - if the user wants to change it he should replace the correct value
+                                                            // void*      - In, The user data given when the component was registered
+                                                            // The system uses this event when it needs to display the component
+
+
 
 protected:
 
@@ -259,8 +370,9 @@ protected:
 
     struct component
     {
-        std::pair<const xproperty::type::object*, void*>    m_Base { nullptr,nullptr };
-        std::vector<std::unique_ptr<entry>>                 m_List {};
+        std::pair<const xproperty::type::object*, void*>    m_Base      = { nullptr,nullptr };
+        void*                                               m_pUserData = { nullptr };;
+        std::vector<std::unique_ptr<entry>>                 m_List      = {};
     };
 
     struct entity
@@ -270,7 +382,7 @@ protected:
 
 protected:
 
-    void        RefreshAllProperties                ( void )                                        noexcept;
+    void        RefreshAllProperties                ( component& C )                                noexcept;
     void        Render                              ( component& C, int& GlobalIndex )              noexcept;
     void        Show                                ( void )                                        noexcept;
     void        DrawBackground                      ( int Depth, int GlobalIndex )          const   noexcept;
@@ -279,20 +391,21 @@ protected:
 
 protected:
 
+    using cmd_variant = std::variant< entry*, xproperty::ui::undo::cmd >;
+
     const char*                                 m_pName         {nullptr};
     std::vector<std::unique_ptr<entity>>        m_lEntities     {};
     int                                         m_Width         {430};
     int                                         m_Height        {450};
     bool                                        m_bWindowOpen   { true };
-    xproperty::ui::undo::system                 m_UndoSystem    {};
-    xproperty::settings::context                m_Context       {};
+    xproperty::settings::context*               m_pContext      {nullptr};
+    cmd_variant                                 m_CmdCurrentEdit{ nullptr };
 
     friend struct ui::details::group_render;
 
     XPROPERTY_VDEF
     ( "Inspector", inspector
     , obj_member<"Settings",   &inspector::m_Settings >
-    , obj_member<"UndoSystem", &inspector::m_UndoSystem >
     )
 };
 

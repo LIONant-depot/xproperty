@@ -9,7 +9,7 @@ namespace xproperty::sprop
     {
     protected:
 
-        using prop_t     = std::conditional_t< IS_SET_V, const container::prop, container::prop>;
+        using prop_t     = std::conditional_t< IS_SET_V, const xproperty::sprop::container::prop, xproperty::sprop::container::prop>;
         using inst_t     = std::conditional_t< IS_SET_V, void*, const void* >;
 
         using scope      = const xproperty::type::members::scope;

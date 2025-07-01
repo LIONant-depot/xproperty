@@ -235,6 +235,18 @@ namespace xproperty::sprop::serializer
 
             const bool bArray = std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant);
 
+            /*
+            if( std::holds_alternative<xproperty::type::members::props>(Member.m_Variant) 
+             || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant) )
+            {
+                // GUIDs for groups are marked as u32... vs sizes are mark as u64
+                if( Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint32_t>::guid_v )
+                {
+                    GroupGUID = Value.get<std::uint32_t>();
+                }
+            }
+            */
+
             if(bScope || bArray)
             {
                 std::uint32_t l = static_cast<std::uint32_t>(std::strlen(pPropertyName));
@@ -244,12 +256,16 @@ namespace xproperty::sprop::serializer
                 }
 
                 auto& E = ScopeList[++ScopeIndex];
-                E.m_GUID = xproperty::settings::strguid({ pPropertyName, l });
+                E.m_GUID   = xproperty::settings::strguid({ pPropertyName, l });
                 E.m_Length = l;
                 E.m_Ignore = Flags.m_bDontSave || isConst || ScopeList[ScopeIndex-1].m_Ignore;
 
                 // We don't save non-array headers
                 if( false == bArray ) return;
+
+                // If it is not a u32 then it is a group other wise it would have been u64 (the size of the array)
+                if (Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint32_t>::guid_v) 
+                    return;
             }
             else
             {
@@ -261,12 +277,19 @@ namespace xproperty::sprop::serializer
             if( Flags.m_bDontSave || isConst || ScopeList[ScopeIndex].m_Ignore ) return;
 
             // Store properties
-            if( std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant) 
-             || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant))
+            if( std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant) )
             {
                 // For array counts let us convert it to int64 since we will never use the full range of the 64bit values
                 // This makes the file format look nicer...
-                Container.m_Properties.emplace_back( pPropertyName, xproperty::any{static_cast<std::int64_t>(Value.getCastValue<std::uint64_t>())} );
+                Container.m_Properties.emplace_back(pPropertyName, xproperty::any{ static_cast<std::int64_t>(Value.getCastValue<std::uint64_t>()) });
+            }
+            else if ( std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant) 
+                      && Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint64_t>::guid_v 
+                      && [&]{ std::uint32_t l = static_cast<std::uint32_t>(std::strlen(pPropertyName)); return pPropertyName[l - 1] == ']' && pPropertyName[l - 2] == '[';}() )
+            {
+                // For array counts let us convert it to int64 since we will never use the full range of the 64bit values
+                // This makes the file format look nicer...
+                Container.m_Properties.emplace_back(pPropertyName, xproperty::any{ static_cast<std::int64_t>(Value.getCastValue<std::uint64_t>()) });
             }
             else
             {

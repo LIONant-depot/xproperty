@@ -65,41 +65,54 @@ void DrawPropertyWindow()
     // Settings
     if constexpr ( true )
     {
-        auto&       I       = Inspector[0];
-        static bool Init    = false;
+        auto&                               I       = Inspector[0];
+        static bool                         Init    = false;
+        static xproperty::ui::undo::system  UndoSystem;
+
         if (Init == false)
         {
             Init = true;
             I.clear();
             I.AppendEntity();
             I.AppendEntityComponent(*xproperty::getObject(I), &I);
-        }
-        I.Show([&]
+            I.AppendEntityComponent(*xproperty::getObject(UndoSystem), &UndoSystem);
+
+            // One way to register the callbacks...
+            // Note that the life time for the call back has to be the same as the undo system itself...
+            I.m_OnChangeEvent.Register< [&](xproperty::inspector& Inspector, const xproperty::ui::undo::cmd& Cmd )
             {
-                if (ImGui::Button("  Undo  ")) I.Undo();
-                ImGui::SameLine(80);
-                if (ImGui::Button("  Redo  ")) I.Redo();
-            });
+                // This is where the undo system should be called
+                UndoSystem.Add(Cmd);
+
+            }>(); 
+        }
+
+        xproperty::settings::context Context;
+        I.Show(Context, [&]
+        {
+            if (ImGui::Button("  Undo  ")) UndoSystem.Undo(Context);
+            ImGui::SameLine(80);
+            if (ImGui::Button("  Redo  ")) UndoSystem.Redo(Context);
+        });
     }
 
     // Show xproperty examples
+    // This example does not have undo/redo system just to show variety of examples
     if constexpr (true)
     {
-        auto&       I           = Inspector[1];
-        static int  iSelection  = -1;
-        I.Show([&]
-            {
-                if (ImGui::Combo("Select example", &iSelection, Examples.m_Names.data(), static_cast<int>(Examples.m_Names.size())))
-                {
-                    I.clear();
-                    I.AppendEntity();
-                    I.AppendEntityComponent(Examples.m_Tables[iSelection].first, Examples.m_Tables[iSelection].second);
-                }
+        auto&                               I           = Inspector[1];
+        static int                          iSelection  = -1;
+        xproperty::settings::context        Context;
 
-                if (ImGui::Button("  Undo  ")) I.Undo();
-                ImGui::SameLine(80);
-                if (ImGui::Button("  Redo  ")) I.Redo();
-            });
+        I.Show(Context, [&]
+        {
+            if (ImGui::Combo("Select example", &iSelection, Examples.m_Names.data(), static_cast<int>(Examples.m_Names.size())))
+            {
+                I.clear();
+                I.AppendEntity();
+                I.AppendEntityComponent(Examples.m_Tables[iSelection].first, Examples.m_Tables[iSelection].second);
+            }
+        });
     }
 }
 

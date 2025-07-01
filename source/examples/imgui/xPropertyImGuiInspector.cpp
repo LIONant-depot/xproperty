@@ -14,6 +14,58 @@
 #pragma comment( lib, "shlwapi.lib") // For PathMatchSpecW
 
 
+namespace xproperty::ui::undo
+{
+    void system::Add(const cmd& Cmd) noexcept
+    {
+        if (m_Index < static_cast<int>(m_lCmds.size()))
+        {
+            m_lCmds.erase(m_lCmds.begin() + m_Index, m_lCmds.end());
+        }
+        m_lCmds.push_back(Cmd);
+        m_Index = static_cast<int>(m_lCmds.size());
+
+        if (m_Index > m_MaxSteps )
+        {
+            auto ToDelete = m_Index - m_MaxSteps;
+            m_lCmds.erase(m_lCmds.begin(), m_lCmds.begin() + ToDelete);
+            m_Index = static_cast<int>(m_lCmds.size());
+        }
+    }
+
+    std::string system::Undo(xproperty::settings::context& Context) noexcept
+    {
+        if (m_Index == 0 || m_lCmds.size() == 0)
+            return {};
+
+        if (m_Index == static_cast<int>(m_lCmds.size() - 1))
+        {
+            if (m_lCmds.back().m_bHasChanged == false)
+            {
+                m_lCmds.pop_back();
+                Undo(Context);
+                return {};
+            }
+        }
+
+        auto& Value = m_lCmds[--m_Index];
+        std::string Error;
+        xproperty::sprop::setProperty(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_Original }, Context);
+        return Error;
+    }
+
+    std::string system::Redo(xproperty::settings::context& Context) noexcept
+    {
+        if (m_Index == static_cast<int>(m_lCmds.size()))
+            return {};
+
+        auto& Value = m_lCmds[m_Index++];
+        std::string Error;
+        xproperty::sprop::setProperty(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_NewValue }, Context);
+        return Error;
+    }
+}
+
 //-----------------------------------------------------------------------------------
 // All the render functions
 //-----------------------------------------------------------------------------------
@@ -1041,7 +1093,7 @@ static std::array<ImColor, 20> s_ColorCategories =
 void xproperty::inspector::clear(void) noexcept
 {
     m_lEntities.clear();
-    m_UndoSystem.clear();
+//    m_UndoSystem.clear();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1051,192 +1103,148 @@ void xproperty::inspector::AppendEntity(void) noexcept
 }
 
 //-------------------------------------------------------------------------------------------------
-void xproperty::inspector::AppendEntityComponent(const xproperty::type::object& Object, void* pBase) noexcept
+void xproperty::inspector::AppendEntityComponent(const xproperty::type::object& Object, void* pBase, void* pUserData ) noexcept
 {
     auto Component = std::make_unique<component>();
 
     // Cache the information
     Component->m_Base = { &Object, pBase };
+    Component->m_pUserData = pUserData;
 
     m_lEntities.back()->m_lComponents.push_back(std::move(Component));
 
 }
 
 //-------------------------------------------------------------------------------------------------
-
-void xproperty::inspector::Undo(void) noexcept
-{
-    if (m_UndoSystem.m_Index == 0 || m_UndoSystem.m_lCmds.size() == 0)
-        return;
-
-    if(m_UndoSystem.m_Index == (m_UndoSystem.m_lCmds.size()-1) )
-    {
-        if( m_UndoSystem.m_lCmds.back().m_bHasChanged == false )
-        {
-            m_UndoSystem.m_lCmds.pop_back();
-            Undo();
-            return;
-        }
-    }
-    auto&               Value = m_UndoSystem.m_lCmds[--m_UndoSystem.m_Index];
-    std::string         Error;
-    xproperty::sprop::io_property<true>(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_Original }, m_Context);
-
-    if (Error.empty() == false)
-    {
-        // Print error...
-    }
-}
-
-//-------------------------------------------------------------------------------------------------
-
-void xproperty::inspector::Redo(void) noexcept
-{
-    if (m_UndoSystem.m_Index == static_cast<int>(m_UndoSystem.m_lCmds.size()))
-        return;
-
-    auto&               Value = m_UndoSystem.m_lCmds[m_UndoSystem.m_Index++];
-    std::string         Error;
-    xproperty::sprop::io_property<true>(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_NewValue }, m_Context);
-
-    if (Error.empty() == false)
-    {
-        // Print error...
-    }
-}
-
-//-------------------------------------------------------------------------------------------------
     
-void xproperty::inspector::RefreshAllProperties( void ) noexcept
+void xproperty::inspector::RefreshAllProperties(component& C) noexcept
 {
-    for ( auto& E : m_lEntities )
+    C.m_List.clear();
+    int         iDimensions = -1;
+    int         myDimension = -1;
+
+    //
+    // Start processing the properties...
+    //
+    xproperty::sprop::collector(C.m_Base.second, *C.m_Base.first, *m_pContext, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members& Member, bool isConst, const void* pInstance )
     {
-        for ( auto& C : E->m_lComponents )
+        std::uint32_t          GUID        = Member.m_GUID;
+        std::uint32_t          GroupGUID   = 0;
+        
+        // Handle the flags
+        xproperty::flags::type Flags = [&]
         {
-            C->m_List.clear();
-            int                    iDimensions = -1;
-            int                    myDimension = -1;
-            xproperty::sprop::collector( C->m_Base.second, *C->m_Base.first, m_Context, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members& Member, bool isConst, const void* pInstance )
+            if(auto* pDynamicFlags = Member.getUserData<xproperty::settings::member_dynamic_flags_t>(); pDynamicFlags)
             {
-                std::uint32_t          GUID        = Member.m_GUID;
-                std::uint32_t          GroupGUID   = 0;
-                
-                // Handle the flags
-                xproperty::flags::type Flags = [&]
-                {
-                    if(auto* pDynamicFlags = Member.getUserData<xproperty::settings::member_dynamic_flags_t>(); pDynamicFlags)
-                    {
-                        return pDynamicFlags->m_pCallback(pInstance, m_Context);
-                    }
-                    else if (auto* pStaticFlags = Member.getUserData<xproperty::settings::member_flags_t>(); pStaticFlags )
-                    {
-                        return pStaticFlags->m_Flags;
-                    }
-                    else
-                    {
-                        return xproperty::flags::type{.m_Value = 0};
-                    }
-                }();
+                return pDynamicFlags->m_pCallback(pInstance, *m_pContext);
+            }
+            else if (auto* pStaticFlags = Member.getUserData<xproperty::settings::member_flags_t>(); pStaticFlags )
+            {
+                return pStaticFlags->m_Flags;
+            }
+            else
+            {
+                return xproperty::flags::type{.m_Value = 0};
+            }
+        }();
 
-                Flags.m_bShowReadOnly |= isConst;
-                bool bScope            =    std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
-                                         || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant);
+        Flags.m_bShowReadOnly |= isConst;
+        bool bScope            =    std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
+                                 || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant);
 
-                const bool bAtomicArray = std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant);
+        const bool bAtomicArray = std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant);
 
-                const bool bDefaultOpen = [&]
-                {
-                    if (auto* pDefaultOpen = Member.getUserData<xproperty::settings::member_ui_open_t>(); pDefaultOpen) return pDefaultOpen->m_bOpen;
-                    return !(bAtomicArray || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant));
-                }();
+        const bool bDefaultOpen = [&]
+        {
+            if (auto* pDefaultOpen = Member.getUserData<xproperty::settings::member_ui_open_t>(); pDefaultOpen) return pDefaultOpen->m_bOpen;
+            return !(bAtomicArray || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant));
+        }();
 
-                if(bScope || std::holds_alternative<xproperty::type::members::var>(Member.m_Variant) )
-                {
-                    iDimensions = -1;
-                    myDimension = -1;
-                }
-
-                if( std::holds_alternative<xproperty::type::members::props>(Member.m_Variant) 
-                 || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant) )
-                {
-                    // GUIDs for groups are marked as u32... vs sizes are mark as u64
-                    if( Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint32_t>::guid_v )
-                    {
-                        GroupGUID = Value.get<std::uint32_t>();
-                    }
-                }
-
-                // Check if we are dealing with atomic types and the size field...
-                if ( std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant)
-                  || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant) )
-                {
-                    auto i = std::strlen(pPropertyName);
-                    if( (pPropertyName[i-1] == ']') && (pPropertyName[i - 2] == '[') )
-                    {
-                        bScope = true;
-
-                        std::visit([&]( auto& List ) constexpr
-                        {
-                            if constexpr (std::is_same_v<decltype(List), const xproperty::type::members::list_props&> ||
-                                          std::is_same_v<decltype(List), const xproperty::type::members::list_var&>  )
-                            {
-                                myDimension = 0;
-                                iDimensions = static_cast<int>(List.m_Table.size());
-                                for (i -= 3; pPropertyName[i] == ']'; --i)
-                                {
-                                    myDimension++;
-
-                                    // Find the matching closing bracket...
-                                    while (pPropertyName[--i] != '[');
-                                }
-                            }
-                            else
-                            {
-                                assert(false);
-                            }
-
-                        }, Member.m_Variant );
-
-                        // We don't deal with zero size arrays...
-                        if (0 == Value.get<std::size_t>())
-                            return;
-                    }
-                    else
-                    {
-                        
-                    }
-                }
-
-                auto* pHelp = Member.getUserData<xproperty::settings::member_help_t>();
-
-                C->m_List.push_back
-                ( std::make_unique<entry>
-                    ( xproperty::sprop::container::prop{ pPropertyName, std::move(Value) }
-                    , pHelp ? pHelp->m_pHelp : "<<No help>>"
-                    , Member.m_pName
-                    , Member.m_GUID
-                    , GroupGUID
-                    , & Member //bScope ? nullptr : &Member
-                    , iDimensions
-                    , myDimension
-                    , Flags
-                    , bScope
-                    , bAtomicArray
-                    , bDefaultOpen
-                    ) 
-                );
-            }, true );
+        if(bScope || std::holds_alternative<xproperty::type::members::var>(Member.m_Variant) )
+        {
+            iDimensions = -1;
+            myDimension = -1;
         }
-    }
 
-    int a = 33;
+        if( std::holds_alternative<xproperty::type::members::props>(Member.m_Variant) 
+         || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant) )
+        {
+            // GUIDs for groups are marked as u32... vs sizes are mark as u64
+            if( Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint32_t>::guid_v )
+            {
+                GroupGUID = Value.get<std::uint32_t>();
+            }
+        }
+
+        // Check if we are dealing with atomic types and the size field...
+        if ( std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant)
+          || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant) )
+        {
+            auto i = std::strlen(pPropertyName);
+            if( (pPropertyName[i-1] == ']') && (pPropertyName[i - 2] == '[') )
+            {
+                bScope = true;
+
+                std::visit([&]( auto& List ) constexpr
+                {
+                    if constexpr (std::is_same_v<decltype(List), const xproperty::type::members::list_props&> ||
+                                  std::is_same_v<decltype(List), const xproperty::type::members::list_var&>  )
+                    {
+                        myDimension = 0;
+                        iDimensions = static_cast<int>(List.m_Table.size());
+                        for (i -= 3; pPropertyName[i] == ']'; --i)
+                        {
+                            myDimension++;
+
+                            // Find the matching closing bracket...
+                            while (pPropertyName[--i] != '[');
+                        }
+                    }
+                    else
+                    {
+                        assert(false);
+                    }
+
+                }, Member.m_Variant );
+
+                // We don't deal with zero size arrays...
+                if (0 == Value.get<std::size_t>())
+                    return;
+            }
+            else
+            {
+                
+            }
+        }
+
+        auto* pHelp = Member.getUserData<xproperty::settings::member_help_t>();
+
+        C.m_List.push_back
+        ( std::make_unique<entry>
+            ( xproperty::sprop::container::prop{ pPropertyName, std::move(Value) }
+            , pHelp ? pHelp->m_pHelp : "<<No help>>"
+            , Member.m_pName
+            , Member.m_GUID
+            , GroupGUID
+            , & Member //bScope ? nullptr : &Member
+            , iDimensions
+            , myDimension
+            , Flags
+            , bScope
+            , bAtomicArray
+            , bDefaultOpen
+            ) 
+        );
+    }, true );
 }
 
 //-------------------------------------------------------------------------------------------------
 
-void xproperty::inspector::Show( std::function<void(void)> Callback ) noexcept
+void xproperty::inspector::Show(xproperty::settings::context& Context, std::function<void(void)> Callback ) noexcept
 {
     if( m_bWindowOpen == false ) return;
+
+    m_pContext = &Context;
 
     //
     // Key styles 
@@ -1605,35 +1613,32 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
             if (Cmd.m_isEditing || Cmd.m_isChange)
             {
-                assert(m_UndoSystem.m_Index <= static_cast<int>(m_UndoSystem.m_lCmds.size()));
-
                 // Set the property value
                 if (Cmd.m_isChange)
                 {
-                    std::string Error;
-                    xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, { Entry.m_Property.m_Path, Cmd.m_NewValue }, m_Context);
-                    assert(Error.empty());
+                    Cmd.m_Name          = Entry.m_Property.m_Path;
+                    Cmd.m_pClassObject  = C.m_Base.second;
+                    Cmd.m_pPropObject   = C.m_Base.first;
+
+                    m_OnRealtimeChangeEvent.NotifyAll(*this, Cmd, *m_pContext );
+
                     Cmd.m_bHasChanged = true;
                 }
 
-
-                // Make sure we reset the undo buffer to current entry
-                if (m_UndoSystem.m_Index < static_cast<int>(m_UndoSystem.m_lCmds.size()))
-                    m_UndoSystem.m_lCmds.erase(m_UndoSystem.m_lCmds.begin() + m_UndoSystem.m_Index, m_UndoSystem.m_lCmds.end());
-
-                // Make sure we don't have more entries than we should
-                while (m_UndoSystem.m_Index >= m_UndoSystem.m_MaxSteps)
+                if (Cmd.m_bHasChanged && Cmd.m_isEditing == false )
                 {
-                    m_UndoSystem.m_lCmds.erase(m_UndoSystem.m_lCmds.begin());
-                    m_UndoSystem.m_Index--;
+                    // Insert the cmd into the list
+                    Cmd.m_Name.assign(Entry.m_Property.m_Path);
+                    Cmd.m_pPropObject = C.m_Base.first;
+                    Cmd.m_pClassObject = C.m_Base.second;
+
+                    m_OnChangeEvent.NotifyAll(*this, Cmd);
+                    m_CmdCurrentEdit = nullptr;
                 }
-
-                // Insert the cmd into the list
-                Cmd.m_Name.assign(Entry.m_Property.m_Path);
-                Cmd.m_pPropObject = C.m_Base.first;
-                Cmd.m_pClassObject = C.m_Base.second;
-
-                m_UndoSystem.m_lCmds.push_back(std::move(Cmd));
+                else
+                {
+                    m_CmdCurrentEdit = Cmd;
+                }
             }
         };
 
@@ -1716,42 +1721,47 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             {
                 for(int i=0; i<n; ++i) [&]( entry& Entry ) // Determine if we are dealing with the same entry we are editing
                 {
-                    // Check if we are editing an entry already
-                    if( m_UndoSystem.m_lCmds.empty() == false && m_UndoSystem.m_Index < static_cast<int>(m_UndoSystem.m_lCmds.size()))
+                    if (std::holds_alternative<ui::undo::cmd>(m_CmdCurrentEdit))
                     {
-                        auto& CmdVariant = m_UndoSystem.m_lCmds[m_UndoSystem.m_Index];
+                        auto& CmdVariant = std::get<ui::undo::cmd>(m_CmdCurrentEdit);
 
                         // Same data type?
-                        if( (Entry.m_Property.m_Value.m_pType && CmdVariant.m_Original.m_pType ) && (Entry.m_Property.m_Value.m_pType->m_GUID == CmdVariant.m_Original.m_pType->m_GUID) )
+                        if ((Entry.m_Property.m_Value.m_pType && CmdVariant.m_Original.m_pType) && (Entry.m_Property.m_Value.m_pType->m_GUID == CmdVariant.m_Original.m_pType->m_GUID))
                         {
                             auto& UndoCmd = CmdVariant;
-                            if( ( UndoCmd.m_isEditing || UndoCmd.m_isChange ) && std::strcmp( UndoCmd.m_Name.c_str(), Entry.m_Property.m_Path.c_str() ) == 0 )
+                            if ((UndoCmd.m_isEditing || UndoCmd.m_isChange) && std::strcmp(UndoCmd.m_Name.c_str(), Entry.m_Property.m_Path.c_str()) == 0)
                             {
-                                if ( E.m_GroupGUID ) 
+                                if (E.m_GroupGUID)
                                 {
                                     xproperty::ui::details::group_render::RenderElement(E, i, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry);
                                 }
                                 else
                                 {
-                                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>( UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags );
+                                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
                                 }
 
                                 if (UndoCmd.m_isChange)
                                 {
-                                    std::string Error;
-                                    xproperty::sprop::setProperty( Error, C.m_Base.second, *C.m_Base.first, { Entry.m_Property.m_Path, UndoCmd.m_NewValue }, m_Context );
-                                    assert(Error.empty());
+                                    UndoCmd.m_Name         = Entry.m_Property.m_Path;
+                                    UndoCmd.m_pClassObject = C.m_Base.second;
+                                    UndoCmd.m_pPropObject  = C.m_Base.first;
+                                    m_OnRealtimeChangeEvent.NotifyAll(*this, UndoCmd, *m_pContext);
+
                                     UndoCmd.m_bHasChanged = true;
                                 }
 
-                                if( UndoCmd.m_isEditing == false )
+                                if (UndoCmd.m_isEditing == false)
                                 {
-                                    if(UndoCmd.m_bHasChanged) m_UndoSystem.m_Index++;
-                                    assert( m_UndoSystem.m_Index <= static_cast<int>(m_UndoSystem.m_lCmds.size()) );
+                                    if (UndoCmd.m_bHasChanged)
+                                    {
+                                        m_OnChangeEvent.NotifyAll(*this, UndoCmd);
+                                        m_CmdCurrentEdit = nullptr;
+                                    }
                                 }
                                 return;
                             }
                         }
+
                     }
 
                     HandleElement(Entry, E, i, true);
@@ -1783,24 +1793,46 @@ void xproperty::inspector::Show( void ) noexcept
         return;
 
     //
-    // Refresh all the properties
+    // get the actual values
     //
-    RefreshAllProperties();
+    for (auto& E : m_lEntities)
+    {
+        for (auto& C : E->m_lComponents)
+        {
+            // Let the user change the base pointer if needed...
+            void* pBackup = C->m_Base.second;
+            m_OnGetComponentPointer.NotifyAll(*this, static_cast<int>(&C - E->m_lComponents.data()), C->m_Base.second, C->m_pUserData);
+
+            // Refresh the actual properties for the given component
+            RefreshAllProperties(*C);
+
+            // Restore the original base pointer
+            C->m_Base.second = pBackup;
+        }
+    }
 
     //
-    // If we have multiple Entities refactor components
-    //
-
-    //
-    // Render each of the components
+    // Render the components
     //
     for ( auto& E : m_lEntities )
     {
         int GlobalIndex = 0;
         for ( auto& C : E->m_lComponents )
         {
+            // Tell ImGui we are going to use 2 columns
             ImGui::Columns( 2 );
+
+            // Let the user change the base pointer if needed...
+            void* pBackup = C->m_Base.second;
+            m_OnGetComponentPointer.NotifyAll(*this, static_cast<int>(&C - E->m_lComponents.data()), C->m_Base.second, C->m_pUserData);
+
+            // Render the actual component
             Render( *C, GlobalIndex );
+
+            // Restore the original base pointer
+            C->m_Base.second = pBackup;
+
+            // Reset back to a single column
             ImGui::Columns( 1 );
         }
     }
