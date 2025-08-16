@@ -72,11 +72,9 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\source\examples\create_documentation\main.cpp">
-      <Filter>CreateDocumentationExample</Filter>
-    </ClCompile>
+    <Text Include="..\..\LICENSE.txt" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="..\..\LICENSE.txt" />
+    <ClCompile Include="..\..\source\examples\create_documentation\main.cpp" />
   </ItemGroup>
 </Project>

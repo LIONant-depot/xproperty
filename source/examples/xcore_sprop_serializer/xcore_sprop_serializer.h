@@ -247,6 +247,9 @@ namespace xproperty::sprop::serializer
             }
             */
 
+            // Pop any irrelevant scopes
+            while (ScopeIndex && ScopeList[ScopeIndex].m_GUID != xproperty::settings::strguid({ pPropertyName, ScopeList[ScopeIndex].m_Length })) ScopeIndex--;
+
             if(bScope || bArray)
             {
                 std::uint32_t l = static_cast<std::uint32_t>(std::strlen(pPropertyName));
@@ -266,11 +269,6 @@ namespace xproperty::sprop::serializer
                 // If it is not a u32 then it is a group other wise it would have been u64 (the size of the array)
                 if (Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint32_t>::guid_v) 
                     return;
-            }
-            else
-            {
-                // Pop any irrelevant scopes
-                while(ScopeIndex && ScopeList[ScopeIndex].m_GUID != xproperty::settings::strguid({ pPropertyName, ScopeList[ScopeIndex].m_Length } )) ScopeIndex--;
             }
 
             // If the user asked us to ignore this then lets us do so...

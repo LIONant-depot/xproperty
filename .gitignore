@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 /build/cmake-build-debug
 /build/cmake-build-debug_clang
+/dependencies
