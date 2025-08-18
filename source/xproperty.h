@@ -880,35 +880,21 @@ namespace xproperty
                 if(m_pType) 
                 {
                     m_pType->m_pDestruct(m_Data);
-                    /*
-                    if( m_pType == &atomic_v<T> ) 
-                    {
-                        if constexpr (settings::var_type<T>::guid_v == 0)
-                            m_pType->m_pDestruct(m_Data);
-                        else
-                            settings::var_type<T>::Destruct(m_Data);
-                    }
-                    else
-                    {
-                        m_pType->m_pDestruct(m_Data);
-                        m_pType = &atomic_v<T>;
-                    }
-                    */
-                }
-                else
-                {
-                    m_pType = &atomic_v<T>;
                 }
 
-                /*
-                if constexpr (settings::var_type<T>::guid_v == 0)
-                    m_pType->m_pVoidConstruct(m_Data);
-                else
-                    settings::var_type<T>::VoidConstruct(m_Data);
-                */
+                m_pType = &atomic_v<T>;
                 m_pType->m_pVoidConstruct(m_Data);
 
                 return reinterpret_cast<T&>(m_Data);
+            }
+
+            constexpr void clear()
+            {
+                if (m_pType)
+                {
+                    m_pType->m_pDestruct(m_Data);
+                }
+                m_pType = nullptr;
             }
 
             template<typename T>
@@ -919,33 +905,9 @@ namespace xproperty
                 if (m_pType)
                 {
                     m_pType->m_pDestruct(m_Data);
-                    /*
-                    if (m_pType == &atomic_v<T>)
-                    {
-                        if constexpr (settings::var_type<T>::guid_v == 0)
-                            m_pType->m_pDestruct(m_Data);
-                        else
-                            settings::var_type<T>::Destruct(m_Data);
-                    }
-                    else
-                    {
-                        m_pType->m_pDestruct(m_Data);
-                        m_pType = &atomic_v<T>;
-                    }
-                    */
-                }
-                else
-                {
-                    m_pType = &atomic_v<T>;
                 }
 
-                /*
-                if constexpr (settings::var_type<T>::guid_v == 0)
-                    m_pType->m_pMoveConstruct(m_Data, std::forward<T&&>(Data) );
-                else
-                    settings::var_type<T>::MoveConstruct(m_Data, std::forward<T&&>(Data) );
-                    */
-
+                m_pType = &atomic_v<T>;
                 m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(reinterpret_cast<settings::data_memory&&>(Data)) );
 
                 return reinterpret_cast<T&>(m_Data);
@@ -959,33 +921,10 @@ namespace xproperty
                 if (m_pType)
                 {
                     m_pType->m_pDestruct(m_Data);
-                    /*
-                    if (m_pType == &atomic_v<T>)
-                    {
-                        if constexpr (settings::var_type<T>::guid_v == 0)
-                            m_pType->m_pDestruct(m_Data);
-                        else
-                            settings::var_type<T>::Destruct(m_Data);
-                    }
-                    else
-                    {
-                        m_pType->m_pDestruct(m_Data);
-                        m_pType = &atomic_v<T>;
-                    }
-                    */
-                }
-                else
-                {
-                    m_pType = &atomic_v<T>;
                 }
 
+                m_pType = &atomic_v<T>;
                 settings::var_type<T>::CopyConstruct(m_Data, Data);
-                /*
-                if constexpr (settings::var_type<T>::guid_v == 0)
-                    m_pType->m_pCopyConstruct(m_Data, Data);
-                else
-                    settings::var_type<T>::CopyConstruct(m_Data, Data);
-                    */
                 return reinterpret_cast<T&>(m_Data);
             }
 
@@ -1060,11 +999,7 @@ namespace xproperty
 
             constexpr ~any() noexcept
             {
-                if (m_pType) 
-                {
-                    m_pType->m_pDestruct(m_Data);
-                    m_pType = nullptr;
-                }
+                clear();
             }
 
             constexpr any() = default;
@@ -1074,10 +1009,8 @@ namespace xproperty
                 if (Any.m_pType)
                 {
                     m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(Any.m_Data));
+                    Any.clear();
                 }
-
-                // destroy the other
-                Any.any::~any();
             }
 
             constexpr any( const any& Any) noexcept
@@ -1117,10 +1050,8 @@ namespace xproperty
                 if (Any.m_pType)
                 {
                     m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(Any.m_Data));
+                    Any.clear();
                 }
-
-                // destroy the other
-                Any.any::~any();
 
                 return *this;
             }
