@@ -364,3 +364,4 @@ FodyWeavers.xsd
 /build/cmake-build-debug
 /build/cmake-build-debug_clang
 /dependencies
+/build/xproperty_unit_test.vs2022
