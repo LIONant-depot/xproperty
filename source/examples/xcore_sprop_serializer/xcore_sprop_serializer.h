@@ -2,12 +2,35 @@
 #define XPROPERTY_XCORE_SERIALIZER_H
 #pragma once
 
-#include "xcore.h"
+#include "dependencies/xtextfile/source/xtextfile.h"
 #include "../imgui/my_properties.h"
 #include "../../sprop/property_sprop.h"
 
 namespace xproperty::sprop::serializer
 {
+    //------------------------------------------------------------------------------------------
+    // Tuple type to index conversion
+    //------------------------------------------------------------------------------------------
+    namespace details
+    {
+        template <class T, class T_ARGS>
+        struct tuple_t2i;
+
+        template <class T, class... T_ARGS>
+        struct tuple_t2i<T, std::tuple<T, T_ARGS...>>
+        {
+            static const std::size_t value = 0;
+        };
+
+        template <class T, class U, class... T_ARGS>
+        struct tuple_t2i<T, std::tuple<U, T_ARGS...>>
+        {
+            static const std::size_t value = 1 + tuple_t2i<T, std::tuple<T_ARGS...>>::value;
+        };
+    }
+    template< typename T_TYPE, typename T_TUPLE >
+    constexpr static auto tuple_t2i_v = details::tuple_t2i< T_TYPE, T_TUPLE >::value;
+
     //----------------------------------------------------------------------------
 
     template< typename T_TYPES_TUPLE >
@@ -16,11 +39,11 @@ namespace xproperty::sprop::serializer
     {
         return std::array
         {
-            xcore::textfile::user_defined_types
+            xtextfile::user_defined_types
             { xproperty::settings::var_type<T>::name_v
             , xproperty::settings::var_type<T>::serialization_type_v
             } ...
-            , xcore::textfile::user_defined_types
+            , xtextfile::user_defined_types
             { "enum"
             , "s"
             }
@@ -31,7 +54,7 @@ namespace xproperty::sprop::serializer
 
     namespace details
     {
-        using fn_type = xcore::err(xcore::textfile::stream& Stream, xproperty::any& Any);
+        using fn_type = xerr(xtextfile::stream& Stream, xproperty::any& Any);
 
         struct hash_entry
         {
@@ -52,11 +75,11 @@ namespace xproperty::sprop::serializer
 
                 ( [&]< typename A>(A*) noexcept
                 {
-                    constexpr auto  CRC        = user_defined_type_table_v<T_TYPES_TUPLE>[xcore::types::tuple_t2i_v<A, tu>].m_CRC;
+                    constexpr auto  CRC        = user_defined_type_table_v<T_TYPES_TUPLE>[tuple_t2i_v<A, tu>].m_CRC;
                     auto            iHashEntry = CRC.m_Value % hash_size_v;
                     while( HashTable[iHashEntry].m_pCallback ) iHashEntry = (iHashEntry+1)% hash_size_v;
                     HashTable[iHashEntry].m_Hash      = CRC.m_Value;
-                    HashTable[iHashEntry].m_pCallback = xproperty::settings::var_type<A>::template XCoreTextFile<xcore::textfile::stream, CRC>;
+                    HashTable[iHashEntry].m_pCallback = xproperty::settings::var_type<A>::template XCoreTextFile<xtextfile::stream, CRC>;
                 }(static_cast<T*>(nullptr)), ... );
 
                 return HashTable;
@@ -73,12 +96,12 @@ namespace xproperty::sprop::serializer
 
                 ( [&]< typename A>(A*) noexcept
                 {
-                    constexpr auto CRC        = user_defined_type_table_v<T_TYPES_TUPLE>[xcore::types::tuple_t2i_v<A, tu>].m_CRC;
+                    constexpr auto CRC        = user_defined_type_table_v<T_TYPES_TUPLE>[tuple_t2i_v<A, tu>].m_CRC;
                     constexpr auto GUID       = xproperty::settings::var_type<A>::guid_v;
                     auto           iHashEntry = GUID % hash_size_v;
                     while( HashTable[iHashEntry].m_pCallback ) iHashEntry = (iHashEntry+1)% hash_size_v;
                     HashTable[iHashEntry].m_Hash      = GUID;
-                    HashTable[iHashEntry].m_pCallback = &xproperty::settings::var_type<A>::template XCoreTextFile<xcore::textfile::stream, CRC>;
+                    HashTable[iHashEntry].m_pCallback = &xproperty::settings::var_type<A>::template XCoreTextFile<xtextfile::stream, CRC>;
                 }(static_cast<T*>(0)), ... );
 
                 return HashTable;
@@ -98,22 +121,20 @@ namespace xproperty::sprop::serializer
 
         //----------------------------------------------------------------------------
         template< typename T_TUPLE_TYPES >
-        xcore::err IO( xcore::textfile::stream& Stream, std::vector<container::prop>& Properties ) noexcept
+        xerr IO( xtextfile::stream& Stream, std::vector<container::prop>& Properties ) noexcept
         {
-            xcore::err Error;
-
-            if(Stream.Record( Error, "xProperties"
-                ,   [&]( std::size_t& C, xcore::err& )
+            if(auto Err = Stream.Record( "xProperties"
+                ,   [&]( std::size_t& C, xerr& )
                     {
                         if(Stream.isReading()) Properties.resize(C);
                         else                   C = Properties.size();
                     }
-                ,   [&]( std::size_t i, xcore::err& Error)
+                ,   [&]( std::size_t i, xerr& Error)
                     {
                         auto& E = Properties[i];
 
                         // Just save some integers to show that we can still safe normal fields at any point
-                        if(Stream.Field( "Name", E.m_Path ).isError(Error) ) return;
+                        if( Error = Stream.Field( "Name", E.m_Path ); Error ) return;
 
                         // CRC for enum types...
                         constexpr auto ENUM_CRC = user_defined_type_table_v<T_TUPLE_TYPES>.back().m_CRC;
@@ -121,18 +142,18 @@ namespace xproperty::sprop::serializer
                         // Handle the data
                         if(Stream.isReading())
                         {
-                            xcore::crc<32> Type;
-                            if( Stream.ReadFieldUserType( Type, "Value:?" ).isError(Error)) return;
+                            xtextfile::crc32 Type;
+                            if( Error = Stream.ReadFieldUserType( Type, "Value:?" ); Error ) return;
 
                             if( Type == ENUM_CRC )
                             {
                                 // Read enums as strings...
-                                Error = xproperty::settings::var_type<std::string>::template XCoreTextFile<xcore::textfile::stream, ENUM_CRC>(Stream, E.m_Value);
+                                Error = xproperty::settings::var_type<std::string>::template XCoreTextFile<xtextfile::stream, ENUM_CRC>(Stream, E.m_Value);
                             }
                             else
                             {
                                 auto pEntry = details::FindEntryInHash(details::file_crc_to_callback_v<T_TUPLE_TYPES>, Type.m_Value);
-                                if (pEntry == nullptr) Error = xerr_code(Error, xcore::textfile::error_state::FIELD_NOT_FOUND, "Unable to find property type while reading the file");
+                                if (pEntry == nullptr) Error = xerr::create<xtextfile::state::FIELD_NOT_FOUND, "Unable to find property type while reading the file">(Error);
                                 else                   Error = pEntry->m_pCallback(Stream, E.m_Value);
                             }
                         }
@@ -145,23 +166,23 @@ namespace xproperty::sprop::serializer
                                 xproperty::any Value;
                                 Value.set<std::string>( E.m_Value.getEnumString() );
 
-                                Error = xproperty::settings::var_type<std::string>::template XCoreTextFile<xcore::textfile::stream, ENUM_CRC>(Stream, Value);
+                                Error = xproperty::settings::var_type<std::string>::template XCoreTextFile<xtextfile::stream, ENUM_CRC>(Stream, Value);
                             }
-                            else if( E.m_Value.m_pType == nullptr ) Error = xerr_code(Error, xcore::textfile::error_state::FIELD_NOT_FOUND, "Trying the serialize a property but it contained no type or value");
+                            else if( E.m_Value.m_pType == nullptr ) Error = xerr::create< xtextfile::state::FIELD_NOT_FOUND, "Trying the serialize a property but it contained no type or value">(Error);
                             else
                             {
                                 auto pEntry = details::FindEntryInHash( details::property_guid_to_callback_v<T_TUPLE_TYPES>, E.m_Value.m_pType->m_GUID );
-                                if (pEntry == nullptr) Error = xerr_code(Error, xcore::textfile::error_state::FIELD_NOT_FOUND, "Trying the serialize a property type by unable to find the type in the list");
+                                if (pEntry == nullptr) Error = xerr::create< xtextfile::state::FIELD_NOT_FOUND, "Trying the serialize a property type by unable to find the type in the list">(Error);
                                 else                   Error = pEntry->m_pCallback(Stream, E.m_Value);
                             }
                         }
                     }
-                ))
+                ); Err )
             {
-                return Error;
+                return Err;
             }
 
-            return Error;
+            return {};
         }
     }
 
@@ -169,7 +190,7 @@ namespace xproperty::sprop::serializer
     // Stream
     //----------------------------------------------------------------------------
     template< typename T_TUPLE_TYPES = xproperty::settings::atomic_types_tuple >
-    xcore::err Stream(xcore::textfile::stream& Stream, void* pObject, const xproperty::type::object& PropertyObj, xproperty::settings::context& Context) noexcept
+    xerr Stream(xtextfile::stream& Stream, void* pObject, const xproperty::type::object& PropertyObj, xproperty::settings::context& Context) noexcept
     {
         xproperty::sprop::container  Container;
 
@@ -302,7 +323,7 @@ namespace xproperty::sprop::serializer
     //----------------------------------------------------------------------------
 
     template< typename T_TUPLE_TYPES = xproperty::settings::atomic_types_tuple, typename T >
-    constexpr xcore::err Stream(xcore::textfile::stream& Stream, T& Object, xproperty::settings::context& Context) noexcept
+    constexpr xerr Stream(xtextfile::stream& Stream, T& Object, xproperty::settings::context& Context) noexcept
     {
         return xproperty::sprop::serializer::Stream<T_TUPLE_TYPES>(Stream, &Object, *xproperty::getObject(Object), Context);
     }

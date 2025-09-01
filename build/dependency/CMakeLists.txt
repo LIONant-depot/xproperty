@@ -1,6 +1,6 @@
 include(${CMAKE_BINARY_DIR}/_deps/xcmake_tools/Common.cmake)
 
-FetchAndPopulate("https://github.com/LIONant-depot/xtextfile.git")
+FetchAndPopulate("https://github.com/LIONant-depot/xtextfile.git" "main")
 
 DefineInterfaceComponent(xproperty "dependencies/xcore"
   "source/xproperty.h"

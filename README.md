@@ -66,7 +66,7 @@ XPROPERTY_REG(common)
 * **Handle any kind of inheritance**
 * **Works on all major compilers**
 * **Examples for all the features and [Documentation](documentation/Main.md)**
-* **Examples on serization and deserialization using [xcore](https://gitlab.com/LIONant/xcore)**
+* **Examples on serization and deserialization using [xtextfile](https://github.com/LIONant-depot/xtextfile)**
 * **Property Inspector Example for [ImGui](https://github.com/ocornut/imgui) with *undo/redo***
 
 ![Inspector](documentation/ImguiPropertyInspector.png "ImGUI Property Inspector Example")
@@ -75,7 +75,7 @@ XPROPERTY_REG(common)
 
 * No dependencies required for the main library
 * Some of the examples may require external libraries such:
-    *  [xcore](https://gitlab.com/LIONant/xcore) for serialization and deserialization example
     *  [ImGui](https://github.com/ocornut/imgui) for the ImGUI example
+    *  [xtextfile](https://github.com/LIONant-depot/xtextfile) for the Serializer example
 
 ---

@@ -316,6 +316,20 @@ namespace xproperty::settings
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::string>());
         }
     };
+    template<>
+    struct var_type<std::wstring> : var_defaults<"wstring", std::wstring >
+    {
+        constexpr static inline char ctype_v = 'S';
+
+        // Serialization Support
+        constexpr static inline auto serialization_type_v = "S";
+        template< typename T, auto CRC_V >
+        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        {
+            if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::wstring>();
+            return FileStream.Field(CRC_V, "Value:?", Any.get<std::wstring>());
+        }
+    };
 #endif
 
 }
@@ -610,6 +624,7 @@ namespace xproperty::settings
     , float
     , double
     , std::string
+    , std::wstring
     , std::uint64_t
     , std::int64_t
     , bool
@@ -713,6 +728,7 @@ namespace xproperty::settings
         case xproperty::settings::var_type<float>::guid_v:           return sprintf_s(String.data(), String.size(), "%f", Value.get<float>());
         case xproperty::settings::var_type<double>::guid_v:          return sprintf_s(String.data(), String.size(), "%f", Value.get<double>());
         case xproperty::settings::var_type<std::string>::guid_v:     return sprintf_s(String.data(), String.size(), "%s", Value.get<std::string>().c_str());
+        case xproperty::settings::var_type<std::wstring>::guid_v:    return sprintf_s(String.data(), String.size(), "%ls", Value.get<std::wstring>().c_str());
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   return sprintf_s(String.data(), String.size(), "%llu", Value.get<std::uint64_t>());
         case xproperty::settings::var_type<std::int64_t>::guid_v:    return sprintf_s(String.data(), String.size(), "%lld", Value.get<std::int64_t>());
         case xproperty::settings::var_type<bool>::guid_v:            return sprintf_s(String.data(), String.size(), "%s", Value.get<bool>() ? "true" : "false");
@@ -720,6 +736,18 @@ namespace xproperty::settings
         }
         return 0;
     }
+
+
+    #pragma warning(push)
+    #pragma warning(disable : 4996)
+    inline
+    std::wstring convert_span_to_wstring(std::span<char> span) {
+        std::wstring wstr(span.size(), L'\0');
+        std::mbstowcs(wstr.data(), span.data(), span.size());
+        return wstr;
+    }
+    // Re-enable warning C4996
+    #pragma warning(pop)
 
     inline bool StringToAny( xproperty::any& Value, std::uint32_t TypeGUID, const std::span<char> String) noexcept
     {
@@ -733,7 +761,8 @@ namespace xproperty::settings
         case xproperty::settings::var_type<std::uint8_t>::guid_v:    Value.set<std::uint8_t>    (static_cast<std::uint8_t>(std::atoi(String.data())));  return true;
         case xproperty::settings::var_type<float>::guid_v:           Value.set<float>           (static_cast<float>(std::stof(String.data())));  return true;
         case xproperty::settings::var_type<double>::guid_v:          Value.set<double>          (static_cast<float>(std::stof(String.data())));  return true;
-        case xproperty::settings::var_type<std::string>::guid_v:     Value.set<std::string>     (String.data());  return true;
+        case xproperty::settings::var_type<std::string>::guid_v:     Value.set<std::string>     (std::string(String.data(), String.size()));  return true;
+        case xproperty::settings::var_type<std::wstring>::guid_v:    Value.set<std::wstring>    (convert_span_to_wstring(String)); return true;
         case xproperty::settings::var_type<std::uint64_t>::guid_v:   Value.set<std::uint64_t>   (static_cast<std::uint64_t>(std::stoull(String.data())));  return true;
         case xproperty::settings::var_type<std::int64_t>::guid_v:    Value.set<std::int64_t>    (static_cast<std::int64_t>(std::stoll(String.data())));  return true;
         case xproperty::settings::var_type<bool>::guid_v:            Value.set<bool>            ((String[0]=='t' || String[0]=='1' || String[0]=='T')?true:false);  return true;
