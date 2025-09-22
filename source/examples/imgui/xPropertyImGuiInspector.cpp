@@ -242,7 +242,8 @@ namespace xproperty::ui::details
     }
 
     //-----------------------------------------------------------------------------------
-    std::array<char, 16 * 1024>   g_ScrachCharBuffer;
+    std::array<char,    16 * 1024>   g_ScrachCharBuffer;
+    std::array<wchar_t, 16 * 1024>   g_WScrachCharBuffer;
 
     template<>
     void draw<std::string, style::defaulted>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
@@ -315,15 +316,103 @@ namespace xproperty::ui::details
         }
     }
 
+    template<>
+    void draw<std::wstring, style::defaulted>::Render(undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    {
+        // auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
+
+        ImVec2 charSize = ImGui::CalcTextSize("A");
+        float f         = ImGui::GetColumnWidth() / charSize.x;
+        float f2        = Value.length() - f;
+
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
+        {
+            const auto              InputLength = Value.length();
+
+            Value.copy(g_WScrachCharBuffer.data(), InputLength);
+            g_ScrachCharBuffer[InputLength] = 0;
+            ImGui::BeginGroup();
+
+            const auto CurPos = ImGui::GetCursorPosX();
+            const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
+            if (WentOver) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
+
+
+            // convert wide string to narrow to display with imgui
+            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
+            WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
+
+            // Let IMGUI handle the actual string...
+            Cmd.m_isChange = ImGui::InputText("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+
+            // convert back to wide
+            size_needed = MultiByteToWideChar(CP_ACP, 0, g_ScrachCharBuffer.data(), -1, nullptr, 0);
+            MultiByteToWideChar(CP_ACP, 0, g_ScrachCharBuffer.data(), -1, g_WScrachCharBuffer.data(), size_needed);
+
+
+            if (ImGui::IsItemActivated())
+            {
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::wstring>(Value);
+                Cmd.m_isEditing = true;
+            }
+            else
+            {
+                if (Cmd.m_isEditing == true && ImGui::IsItemActive() == false)
+                    Cmd.m_isEditing = false;
+            }
+
+            // Draw the symbol to indicated that there is more string on the left
+            if (WentOver)
+            {
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(CurPos - 5);
+                ImGui::ArrowButton("", ImGuiDir_Left);
+            }
+
+            ImGui::EndGroup();
+            if (Cmd.m_isChange)
+            {
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::wstring>(Value);
+                Cmd.m_isEditing = true;
+                Cmd.m_NewValue.set<std::wstring>(g_WScrachCharBuffer.data());
+
+                // Have we really changed anything?
+                if (Cmd.m_Original.get<std::wstring>() == Cmd.m_NewValue.get<std::wstring>())
+                    Cmd.m_isChange = false;
+            }
+            if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit())
+                Cmd.m_isEditing = false;
+        }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+
+        // For strings that are too long... we will show a tooltip with the full string
+        if (f2 > -1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(charSize.x * 100);
+
+            // convert wide string to narrow to display with imgui
+            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, Value.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            std::string utf8_text(size_needed, 0);
+            WideCharToMultiByte(CP_UTF8, 0, Value.c_str(), -1, utf8_text.data(), size_needed, nullptr, nullptr);
+
+            ImGui::TextUnformatted(utf8_text.c_str());
+
+            ImGui::EndTooltip();
+            ImGui::PopStyleVar();
+        }
+    }
+
     //-----------------------------------------------------------------------------------
     // Windows suck... I had to write this stupid class to have a nice looking folder browser
     //-----------------------------------------------------------------------------------
-    bool CheckFolderFilter(const wchar_t* path, const char* pFilter)
+    bool CheckFolderFilter(const wchar_t* path, const wchar_t* pFilter)
     {
         if (pFilter == nullptr) return true;
 
         wchar_t filters[1024] = { 0 }; // Assumes filter string fits in this buffer
-        for (int i = 0; (filters[i] = static_cast<wchar_t>(pFilter[i])) || (filters[i + 1] = static_cast<wchar_t>(pFilter[i + 1])); ++i) {}
+        for (int i = 0; (filters[i] = pFilter[i]) || (filters[i + 1] = pFilter[i + 1]); ++i) {}
 
         wchar_t* spec = filters;
         bool isValid = false;
@@ -372,7 +461,7 @@ namespace xproperty::ui::details
 
     //-----------------------------------------------------------------------------------
 
-    bool SelectFolderWithFilters( const char* pFilers, const wchar_t* pInitialPath )
+    bool SelectFolderWithFilters( const wchar_t* pFilers, const wchar_t* pInitialPath )
     {
         struct CFolderFilter : public IFileDialogEvents
         {
@@ -397,11 +486,11 @@ namespace xproperty::ui::details
             IFACEMETHODIMP OnFileOk(IFileDialog* pfd)    { return UpdateOkButtonState(pfd);}
             IFACEMETHODIMP OnOverwrite(IFileDialog* pfd, IShellItem* psi, FDE_OVERWRITE_RESPONSE* pResponse) { return S_OK; }
             IFACEMETHODIMP OnShareViolation(IFileDialog* pfd, IShellItem* psi, FDE_SHAREVIOLATION_RESPONSE* pResponse) { *pResponse = FDESVR_DEFAULT; return S_OK; }
-            void SetFilter(const char* filter) { m_filter = filter; }
+            void SetFilter(const wchar_t* filter) { m_filter = filter; }
             HWND GetParentWindow(IFileDialog* pfd) { HWND hwnd = FindWindowEx(GetActiveWindow(), nullptr, L"#32770", nullptr); return hwnd; }
 
             ULONG           m_cRef = 1;
-            const char* m_filter = nullptr;
+            const wchar_t*  m_filter = nullptr;
 
 
             IFACEMETHODIMP UpdateOkButtonState(IFileDialog* pfd)
@@ -441,7 +530,7 @@ namespace xproperty::ui::details
         };
 
         // Helper function to create the event handler
-        auto CFolderFilter_CreateInstance = [](REFIID riid, void** ppv, const char* pFilers)->HRESULT
+        auto CFolderFilter_CreateInstance = [](REFIID riid, void** ppv, const wchar_t* pFilers)->HRESULT
         {
             *ppv = nullptr;
             CFolderFilter* pInstance = new (std::nothrow) CFolderFilter();
@@ -522,14 +611,14 @@ namespace xproperty::ui::details
     //-----------------------------------------------------------------------------------
 
     template<>
-    void draw<std::string, style::file_dialog>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<std::wstring, style::file_dialog>::Render(undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
-        auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
+        auto& I = reinterpret_cast<const xproperty::member_ui<std::wstring>::data&>(IB);
 
-        ImVec2 charSize = ImGui::CalcTextSize("A");
-        float ButtonWidth = charSize.x * 3;
-        float f = (ImGui::GetColumnWidth() - ButtonWidth) / charSize.x;
-        float f2 = Value.length() - f;
+        ImVec2 charSize     = ImGui::CalcTextSize("A");
+        float ButtonWidth   = charSize.x * 3;
+        float f             = (ImGui::GetColumnWidth() - ButtonWidth) / charSize.x;
+        float f2            = Value.length() - f;
 
         float ItemWidth = [&]
         {
@@ -545,8 +634,8 @@ namespace xproperty::ui::details
 
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
-            Value.copy(g_ScrachCharBuffer.data(), Value.length());
-            g_ScrachCharBuffer[Value.length()] = 0;
+            Value.copy(g_WScrachCharBuffer.data(), Value.length());
+            g_WScrachCharBuffer[Value.length()] = 0;
             ImGui::BeginGroup();
 
             const auto CurPos = ImGui::GetCursorPosX();
@@ -554,12 +643,24 @@ namespace xproperty::ui::details
             if (WentOver) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
 
             if (Cmd.m_isEditing == false) ImGui::PushItemWidth(ItemWidth);
+
+            // convert wide string to narrow to display with imgui
+            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
+            WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
+
+            // Let IMGUI handle the actual string...
             Cmd.m_isChange = ImGui::InputText("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+
+            // convert back to wide
+            size_needed = MultiByteToWideChar(CP_ACP, 0, g_ScrachCharBuffer.data(), -1, nullptr, 0);
+            MultiByteToWideChar(CP_ACP, 0, g_ScrachCharBuffer.data(), -1, g_WScrachCharBuffer.data(), size_needed);
+
+
             if (Cmd.m_isEditing == false) ImGui::PopItemWidth();
 
             if (ImGui::IsItemActivated())
             {
-                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::string>(Value);
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::wstring>(Value);
                 Cmd.m_isEditing = true;
             }
             else
@@ -573,103 +674,27 @@ namespace xproperty::ui::details
             {
                 // The user can change the path in the dialog... changing the current path.
                 // We want to allow the user to do that because it is more convenient for them...
-                std::string CurrentPath;// = xproperty::member_ui<std::string>::g_CurrentPath;
+                std::wstring CurrentPath;// = xproperty::member_ui<std::string>::g_WCurrentPath;
                 std::array< wchar_t, MAX_PATH > WCurrentPath;
                 {
                     GetCurrentDirectory(static_cast<DWORD>(WCurrentPath.size()), WCurrentPath.data());
                     std::transform(WCurrentPath.begin(), WCurrentPath.end(), std::back_inserter(CurrentPath), [](wchar_t c) {return (char)c; });
                 }
 
-                // Set the scrach file to have nothing on it unless we put something...
+                // Set the scratch file to have nothing on it unless we put something...
                 g_ScrachCharBuffer[0]=0;
                 if (I.m_bFolders)
                 {
                     SelectFolderWithFilters(I.m_pFilter, WCurrentPath.data());
-
-                    /*
-                    TCHAR path[MAX_PATH];
-                    CHAR path2[MAX_PATH];
-
-                    const char* path_param = path2;
-
-                    BROWSEINFO bi = { 0 };
-                    bi.lpszTitle = TEXT("Browse for folder...");
-                    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-                    bi.lpfn = BrowseCallbackProc;
-                    bi.lParam = (LPARAM)path_param;
-
-                    LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
-
-                    if (pidl != 0)
-                    {
-                        //get the name of the folder and put it in path
-                        SHGetPathFromIDList(pidl, path);
-
-                        //free memory used
-                        IMalloc* imalloc = 0;
-                        if (SUCCEEDED(SHGetMalloc(&imalloc)))
-                        {
-                            imalloc->Free(pidl);
-                            imalloc->Release();
-                        }
-                    }
-                    */
-
-                    /*
-                    HRESULT         hr;
-                    IFileDialog*    pfd = nullptr;
-
-                    // Create the FileOpenDialog object.
-                    hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
-
-                    if (SUCCEEDED(hr))
-                    {
-                        DWORD dwOptions;
-
-                        // Get the current options.
-                        hr = pfd->GetOptions(&dwOptions);
-                        if (SUCCEEDED(hr))
-                        {
-                            // Set the FOS_PICKFOLDERS option to allow folder selection.
-                            hr = pfd->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST);
-                        }
-
-                        // No need for filter when selecting folders, so we'll skip this part.
-
-                        // Show the dialog
-                        if (SUCCEEDED(hr))
-                        {
-                            hr = pfd->Show(nullptr);
-                            if (SUCCEEDED(hr))
-                            {
-                                IShellItem* psi;
-                                // Get the folder selected by the user
-                                hr = pfd->GetResult(&psi);
-                                if (SUCCEEDED(hr))
-                                {
-                                    PWSTR pszFilePath = nullptr;
-                                    hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
-                                    if (SUCCEEDED(hr))
-                                    {
-                                        for (int i = 0; g_ScrachCharBuffer[i] = static_cast<char>(pszFilePath[i]); ++i){}
-                                        CoTaskMemFree(pszFilePath);
-                                    }
-                                    psi->Release();
-                                }
-                            }
-                        }
-                        pfd->Release();
-                    }
-                    */
                 }
                 else
                 {
-                    OPENFILENAMEA ofn;
+                    OPENFILENAMEW ofn;
                     ZeroMemory(&ofn, sizeof(ofn));
                     ofn.lStructSize     = sizeof(ofn);
                     ofn.hwndOwner       = GetActiveWindow();
-                    ofn.lpstrFile       = g_ScrachCharBuffer.data();
-                    ofn.lpstrFile[0]    = '\0';
+                    ofn.lpstrFile       = g_WScrachCharBuffer.data();
+                    ofn.lpstrFile[0]    = L'\0';
                     ofn.nMaxFile        = static_cast<std::uint32_t>(g_ScrachCharBuffer.size());
                     ofn.lpstrFilter     = I.m_pFilter;
                     ofn.nFilterIndex    = 1;
@@ -677,13 +702,13 @@ namespace xproperty::ui::details
                     ofn.nMaxFileTitle   = 0;
                     ofn.lpstrInitialDir = CurrentPath.c_str();
                     ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-                    if (GetOpenFileNameA(&ofn) == TRUE)
+                    if (GetOpenFileNameW(&ofn) == TRUE)
                     {
-                        assert(g_ScrachCharBuffer[0]);
+                        assert(g_WScrachCharBuffer[0]);
                     }
                 }
 
-                if (g_ScrachCharBuffer[0])
+                if (g_WScrachCharBuffer[0])
                 {
                     Cmd.m_isChange = true;
 
@@ -692,10 +717,10 @@ namespace xproperty::ui::details
                         int nPops = 1;
 
                         // Set the expected current path
-                        CurrentPath = xproperty::member_ui<std::string>::g_CurrentPath;
+                        CurrentPath = xproperty::member_ui<std::wstring>::g_CurrentPath;
 
                         // Count the paths for the current path
-                        for (const char* p = CurrentPath.c_str(); *p; p++)
+                        for (const wchar_t* p = CurrentPath.c_str(); *p; p++)
                         {
                             if (*p == '\\' || *p == '/') nPops++;
                         }
@@ -704,13 +729,13 @@ namespace xproperty::ui::details
                         nPops -= I.m_RelativeCurrentPathMinusCount;
 
                         // Find our relative path and set the new string
-                        for (const char* p = g_ScrachCharBuffer.data(); *p; p++)
+                        for (const wchar_t* p = g_WScrachCharBuffer.data(); *p; p++)
                         {
-                            if (*p == '\\' || *p == '/') nPops--;
+                            if (*p == L'\\' || *p == L'/') nPops--;
                             if (nPops <= 0)
                             {
                                 ++p;
-                                for (int i = 0; g_ScrachCharBuffer[i] = *p; ++i, ++p) {}
+                                for (int i = 0; g_WScrachCharBuffer[i] = *p; ++i, ++p) {}
                                 break;
                             }
                         }
@@ -729,12 +754,12 @@ namespace xproperty::ui::details
             ImGui::EndGroup();
             if (Cmd.m_isChange)
             {
-                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::string>(Value);
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::wstring>(Value);
                 Cmd.m_isEditing = true;
-                Cmd.m_NewValue.set<std::string>(g_ScrachCharBuffer.data());
+                Cmd.m_NewValue.set<std::wstring>(g_WScrachCharBuffer.data());
 
                 // Have we really changed anything?
-                if (Cmd.m_Original.get<std::string>() == Cmd.m_NewValue.get<std::string>())
+                if (Cmd.m_Original.get<std::wstring>() == Cmd.m_NewValue.get<std::wstring>())
                     Cmd.m_isChange = false;
             }
             if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit())
@@ -749,7 +774,12 @@ namespace xproperty::ui::details
             ImGui::BeginTooltip();
             ImGui::PushTextWrapPos(charSize.x * 100);
 
-            ImGui::TextUnformatted(Value.c_str());
+            // convert wide string to narrow to display with imgui
+            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, Value.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            std::string utf8_text(size_needed, 0);
+            WideCharToMultiByte(CP_UTF8, 0, Value.c_str(), -1, utf8_text.data(), size_needed, nullptr, nullptr);
+
+            ImGui::TextUnformatted(utf8_text.c_str());
 
             ImGui::EndTooltip();
             ImGui::PopStyleVar();
@@ -773,6 +803,32 @@ namespace xproperty::ui::details
                 Cmd.m_NewValue.set<std::string>( Value );
             }
             if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) Cmd.m_isEditing = false;
+        }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+
+    }
+
+    //-----------------------------------------------------------------------------------
+
+    template<>
+    void draw<std::wstring, style::button>::Render(undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    {
+        auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
+
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
+        {
+            // convert wide string to narrow to display with imgui
+            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
+            WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
+
+            Cmd.m_isChange = ImGui::Button(g_ScrachCharBuffer.data(), ImVec2(-1, 0));
+            if (Cmd.m_isChange)
+            {
+                if (Cmd.m_isEditing == false) Cmd.m_Original.set<std::wstring>(Value);
+                Cmd.m_isEditing = true;
+                Cmd.m_NewValue.set<std::wstring>(Value);
+            }
+            if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit()) Cmd.m_isEditing = false;
         }
         if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
@@ -989,6 +1045,7 @@ namespace xproperty::ui::details
                 case xproperty::settings::var_type<double>::guid_v:          return  member_ui<double>       ::defaults::data_v;
                 case xproperty::settings::var_type<std::string>::guid_v:     return  member_ui<std::string>  ::defaults::data_v;
                 case xproperty::settings::var_type<bool>::guid_v:            return  member_ui<bool>         ::defaults::data_v;
+                case xproperty::settings::var_type<std::wstring>::guid_v:    return  member_ui<std::wstring> ::defaults::data_v;
                 default: assert(false); return member_ui<bool>::defaults::data_v;
                 }
             }

@@ -250,7 +250,25 @@ namespace xproperty
         };
 
         template<std::size_t T_SIZE_V>
+        struct fixed_wstring
+        {
+            inline constexpr static uint32_t size_v = T_SIZE_V;
+            consteval fixed_wstring(const wchar_t* const pStr)
+            {
+                for (auto i = 0u; i < T_SIZE_V; ++i) m_Value[i] = pStr[i];
+            }
+
+            consteval auto operator<=>(const fixed_wstring&) const = default;
+            consteval operator const wchar_t* const () const { return m_Value; }
+            consteval static uint32_t size(void) noexcept { return size_v; }
+            wchar_t m_Value[T_SIZE_V];
+        };
+
+        template<std::size_t T_SIZE_V>
         fixed_string(const char(&)[T_SIZE_V])-> fixed_string<T_SIZE_V>;
+
+        template<std::size_t T_SIZE_V>
+        fixed_wstring(const wchar_t(&)[T_SIZE_V]) -> fixed_wstring<T_SIZE_V>;
 
         //--------------------------------------------------------------------------------------------
         // A simple string view

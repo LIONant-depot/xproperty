@@ -62,6 +62,7 @@ namespace xproperty::settings
     using data_memory = details::atomic_type_worse_alignment_and_memory
     <                   // Here we guess our worse properties data sizes
       std::string       // std::string is typically 32 bytes on 32 bit and 64 bit builds
+    , std::wstring      // std::string is typically 40 bytes
     , std::size_t       // std::size_t is 4 bytes on 32 bit and 8 bytes on 64 bit
     , std::uint64_t     // std::uint64_t is always 8 bytes
     >;

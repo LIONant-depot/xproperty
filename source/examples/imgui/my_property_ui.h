@@ -219,16 +219,42 @@ namespace xproperty
     {
         member_ui() = delete;
 
+        using data = ui::details::member_ui_base;
+
+        inline static constexpr auto type_guid_v = xproperty::settings::var_type<std::string>::guid_v;
+
+        template< typename T = ui::details::style::defaulted >
+        struct button : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::button>::Render, .m_TypeGUID = type_guid_v };
+
+            constexpr button() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
+        };
+
+        struct defaults : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v };
+
+            constexpr defaults() : settings::member_ui_t{.m_pUIBase  = &data_v} {}
+        };
+    };
+
+    template<> struct member_ui<std::wstring>
+    {
+        member_ui() = delete;
+
         // This path can be set by the user to indicate what is the current relevant path
         // this is used for the file dialog and the path dialogs
-        inline static std::string g_CurrentPath;
+        inline static std::wstring g_CurrentPath;
 
         struct data : ui::details::member_ui_base
         {
-            const char* m_pFilter                       = {nullptr};
-            bool        m_bMakePathRelative             = { false };
-            int         m_RelativeCurrentPathMinusCount = { 0 };
-            bool        m_bFolders                      = { false }; 
+            const wchar_t*  m_pFilter                       = { nullptr };
+            bool            m_bMakePathRelative             = { false };
+            int             m_RelativeCurrentPathMinusCount = { 0 };
+            bool            m_bFolders                      = { false };
         };
 
         inline static constexpr auto type_guid_v = xproperty::settings::var_type<std::string>::guid_v;
@@ -237,16 +263,16 @@ namespace xproperty
         struct button : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { { .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::button>::Render, .m_TypeGUID = type_guid_v }, {} };
+            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::button>::Render, .m_TypeGUID = type_guid_v }, {} };
 
             constexpr button() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
 
-        template< xproperty::details::fixed_string  T_FILTER = "All\0*.*\0Text\0*.TXT\0", bool T_MAKE_PATH_RELATIVE_V = false, int T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V = 0 >
+        template< xproperty::details::fixed_wstring  T_FILTER = L"All\0*.*\0Text\0*.TXT\0", bool T_MAKE_PATH_RELATIVE_V = false, int T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V = 0 >
         struct file_dialog : settings::member_ui_t
         {
             inline static constexpr data data_v
-            {{ .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
+            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
             , T_FILTER
             , T_MAKE_PATH_RELATIVE_V
             , T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V
@@ -256,11 +282,11 @@ namespace xproperty
             constexpr file_dialog() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
 
-        template< xproperty::details::fixed_string  T_FILTER = "All\0*\0", bool T_MAKE_PATH_RELATIVE_V = false, int T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V = 0 >
+        template< xproperty::details::fixed_wstring  T_FILTER = L"All\0*\0", bool T_MAKE_PATH_RELATIVE_V = false, int T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V = 0 >
         struct folder_dialog : settings::member_ui_t
         {
             inline static constexpr data data_v
-            {{ .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
+            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
             , T_FILTER
             , T_MAKE_PATH_RELATIVE_V
             , T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V
@@ -273,9 +299,9 @@ namespace xproperty
         struct defaults : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<std::string, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v} };
+            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v} };
 
-            constexpr defaults() : settings::member_ui_t{.m_pUIBase  = &data_v} {}
+            constexpr defaults() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
     };
 
