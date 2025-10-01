@@ -2508,9 +2508,12 @@ namespace xproperty
     // - List Variables: List of objects instances that also contain properties
     // - Scopes: This are additional scopes created by the user that may contain properties
     //
+
+
     template< details::fixed_string T_NAME_V, auto T_DATA, typename...T_ARGS >
     struct obj_member : tag<meta::obj_member_tag>
     {
+        static_assert(std::is_pointer_v<decltype(T_DATA)>);
         using meta_t = meta::member<T_NAME_V, decltype(T_DATA), T_DATA, T_ARGS... >;
     };
 

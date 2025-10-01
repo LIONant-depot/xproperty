@@ -1,7 +1,6 @@
-
-#include "xPropertyImGuiInspector.h"
-#include "..\..\sprop\property_sprop_getset.h"
-#include "..\..\sprop\property_sprop_collector.h"
+#include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
+#include "dependencies/xproperty/source/sprop/property_sprop_getset.h"
+#include "dependencies/xproperty/source/sprop/property_sprop_collector.h"
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -11,6 +10,7 @@
 #include <comdef.h>
 #include <shlwapi.h> // For PathMatchSpecW
 #include "calculator.cpp"
+
 #pragma comment( lib, "shlwapi.lib") // For PathMatchSpecW
 
 
