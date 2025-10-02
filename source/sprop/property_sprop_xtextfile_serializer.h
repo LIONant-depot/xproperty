@@ -2,9 +2,12 @@
 #define XPROPERTY_XCORE_SERIALIZER_H
 #pragma once
 
-#include "dependencies/xtextfile/source/xtextfile.h"
-#include "../imgui/my_properties.h"
+#ifndef MY_PROPERTIES_H
+    #include "../imgui/my_properties.h"
+#endif
+
 #include "../../sprop/property_sprop.h"
+#include "dependencies/xtextfile/source/xtextfile.h"
 
 namespace xproperty::sprop::serializer
 {

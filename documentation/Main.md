@@ -37,8 +37,9 @@ This example runs a basic unit-code and generates much of the documentation. Hav
         - **[create_documentation [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/create_documentation)** - Generate most of the documentation found here, and a unitest.
         - **[imgui [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/imgui)** - Example on how to use the library with imgui
         - **[simple_examples [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/simple_examples)** - Simple examples to get started
-        - **[xcore_sprop_serializer [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/examples/xcore_sprop_serializer)** - Examples on how to serialize the properties using [xcore::textfile](https://gitlab.com/LIONant/xcore/-/blob/master/src/xcore_textfile.h)
     - **[sprop [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/sprop)** - Extension to the xproperty library that adds more functionality (very useful)
+        - Includes a serializer / deserializer as well (using xtext file)
+    - **[xcore [Dir]](https://github.com/LIONant-depot/xproperty/tree/master/source/xcore)** Here is a my_property.h file configuration that will work well with all xcore related features 
 
 ## Feedback and Contributions
 
