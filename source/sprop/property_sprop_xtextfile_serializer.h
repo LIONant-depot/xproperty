@@ -6,7 +6,7 @@
     #include "../imgui/my_properties.h"
 #endif
 
-#include "../../sprop/property_sprop.h"
+#include "property_sprop.h"
 #include "dependencies/xtextfile/source/xtextfile.h"
 
 namespace xproperty::sprop::serializer
