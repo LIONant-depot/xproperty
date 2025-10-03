@@ -8,8 +8,10 @@
 #include <olectl.h>
 #include <shobjidl.h>
 #include <comdef.h>
-#include <shlwapi.h> // For PathMatchSpecW
+//#include <shlwapi.h> // For PathMatchSpecW
 #include "calculator.cpp"
+
+#include "imgui_internal.h"
 
 #pragma comment( lib, "shlwapi.lib") // For PathMatchSpecW
 
@@ -240,6 +242,46 @@ namespace xproperty::ui::details
         if (V) ImGui::Text(" True");
         else   ImGui::Text(" False");
     }
+
+    //-----------------------------------------------------------------------------------
+#ifdef XCORE_PROPERTIES_H
+    static xproperty::inspector* g_pInspector{nullptr};
+
+    template<>
+    void draw<xresource::full_guid, style::defaulted>::Render(undo::cmd& Cmd, const xresource::full_guid& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    {
+        auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
+
+        std::string Name;
+        g_pInspector->m_OnResourceNameRemapping.NotifyAll( *g_pInspector, Name, Value);
+
+        bool bOpen = false;
+        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
+        {
+            if (ImGui::Button(Name.c_str(), ImVec2(-1, 0)) && Cmd.m_isEditing == false)
+            {
+                bOpen = true;
+                Cmd.m_isEditing = true;
+            }
+            if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit()) Cmd.m_isEditing = false;
+        }
+        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+
+        xresource::full_guid FullGuid;
+        g_pInspector->m_OnResourceBrowser.NotifyAll(*g_pInspector, &Cmd, bOpen, FullGuid, "Select Resource", {});
+
+        // If it is not open any more we are done editing....
+        Cmd.m_isEditing = bOpen;
+        if (not FullGuid.empty())
+        {
+            if (FullGuid != Value)
+            {
+                Cmd.m_isChange = true;
+                Cmd.m_NewValue.set<xresource::full_guid>(FullGuid);
+            }
+        }
+    }
+#endif
 
     //-----------------------------------------------------------------------------------
     std::array<char,    16 * 1024>   g_ScrachCharBuffer;
@@ -1046,6 +1088,9 @@ namespace xproperty::ui::details
                 case xproperty::settings::var_type<std::string>::guid_v:     return  member_ui<std::string>  ::defaults::data_v;
                 case xproperty::settings::var_type<bool>::guid_v:            return  member_ui<bool>         ::defaults::data_v;
                 case xproperty::settings::var_type<std::wstring>::guid_v:    return  member_ui<std::wstring> ::defaults::data_v;
+#ifdef XCORE_PROPERTIES_H
+                case xproperty::settings::var_type<xresource::full_guid>::guid_v: return  member_ui<xresource::full_guid>::defaults::data_v;
+#endif
                 default: assert(false); return member_ui<bool>::defaults::data_v;
                 }
             }
@@ -1848,6 +1893,10 @@ void xproperty::inspector::Show( void ) noexcept
     // Anything to render?
     if( m_lEntities.size() == 0 ) 
         return;
+
+#ifdef XCORE_PROPERTIES_H
+    xproperty::ui::details::g_pInspector = this;
+#endif
 
     //
     // get the actual values

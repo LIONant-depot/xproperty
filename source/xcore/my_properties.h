@@ -91,7 +91,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'D';
         constexpr static inline auto serialization_type_v   = "D";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::int64_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::int64_t>());
@@ -104,7 +104,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'G';
         constexpr static inline auto serialization_type_v   = "G";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::uint64_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::uint64_t>());
@@ -117,7 +117,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'd';
         constexpr static inline auto serialization_type_v   = "d";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::int32_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::int32_t>());
@@ -130,7 +130,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'g';
         constexpr static inline auto serialization_type_v   = "g";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::uint32_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::uint32_t>());
@@ -143,7 +143,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'C';
         constexpr static inline auto serialization_type_v   = "C";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::int16_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::int16_t>());
@@ -156,7 +156,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'H';
         constexpr static inline auto serialization_type_v   = "H";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::uint16_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::uint16_t>());
@@ -169,7 +169,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'c';
         constexpr static inline auto serialization_type_v   = "c";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::int8_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::int8_t>());
@@ -182,7 +182,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'h';
         constexpr static inline auto serialization_type_v   = "h";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::uint8_t>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::uint8_t>());
@@ -200,7 +200,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'b';
         constexpr static inline auto serialization_type_v   = "c";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<bool>();
             if constexpr (sizeof(bool) == sizeof(std::int8_t)) return FileStream.Field(CRC_V, "Value:?", reinterpret_cast<std::int8_t&>(Any.get<bool>()));
@@ -220,7 +220,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'f';
         constexpr static inline auto serialization_type_v   = "f";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<float>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<float>());
@@ -233,7 +233,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'F';
         constexpr static inline auto serialization_type_v   = "F";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<double>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<double>());
@@ -246,7 +246,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 's';
         constexpr static inline auto serialization_type_v   = "s";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::string>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::string>());
@@ -259,7 +259,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'S';
         constexpr static inline auto serialization_type_v   = "S";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<std::wstring>();
             return FileStream.Field(CRC_V, "Value:?", Any.get<std::wstring>());
@@ -272,7 +272,7 @@ namespace xproperty::settings
         constexpr static inline char ctype_v                = 'X';
         constexpr static inline auto serialization_type_v   = "GG";
         template< typename T, auto CRC_V >
-        constexpr static auto XCoreTextFile(T& FileStream, xproperty::any& Any)
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<xresource::full_guid>();
             auto& G = Any.get<xresource::full_guid>();
@@ -434,7 +434,7 @@ namespace xproperty::settings
 // ------------------------------------------------------------------------------
 namespace xproperty::settings
 {
-    struct member_help_t : xproperty::member_user_data<"help">
+    struct member_help_t : ::xproperty::member_user_data<"help">
     {
         const char* m_pHelp;
     };
@@ -485,20 +485,20 @@ namespace xproperty::settings
     {
         switch (Value.getTypeGuid())
         {
-        case xproperty::settings::var_type<std::int32_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%d",    Value.get<std::int32_t>());
-        case xproperty::settings::var_type<std::uint32_t>::guid_v:          return sprintf_s(String.data(), String.size(), "%u",    Value.get<std::uint32_t>());
-        case xproperty::settings::var_type<std::int16_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%d",    Value.get<std::int16_t>());
-        case xproperty::settings::var_type<std::uint16_t>::guid_v:          return sprintf_s(String.data(), String.size(), "%u",    Value.get<std::uint16_t>());
-        case xproperty::settings::var_type<std::int8_t>::guid_v:            return sprintf_s(String.data(), String.size(), "%d",    Value.get<std::int8_t>());
-        case xproperty::settings::var_type<std::uint8_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%u",    Value.get<std::uint8_t>());
-        case xproperty::settings::var_type<float>::guid_v:                  return sprintf_s(String.data(), String.size(), "%f",    Value.get<float>());
-        case xproperty::settings::var_type<double>::guid_v:                 return sprintf_s(String.data(), String.size(), "%f",    Value.get<double>());
-        case xproperty::settings::var_type<std::string>::guid_v:            return sprintf_s(String.data(), String.size(), "%s",    Value.get<std::string>().c_str());
-        case xproperty::settings::var_type<std::wstring>::guid_v:           return sprintf_s(String.data(), String.size(), "%ls",   Value.get<std::wstring>().c_str());
-        case xproperty::settings::var_type<std::uint64_t>::guid_v:          return sprintf_s(String.data(), String.size(), "%llu",  Value.get<std::uint64_t>());
-        case xproperty::settings::var_type<std::int64_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%lld",  Value.get<std::int64_t>());
-        case xproperty::settings::var_type<bool>::guid_v:                   return sprintf_s(String.data(), String.size(), "%s",    Value.get<bool>() ? "true" : "false");
-        case xproperty::settings::var_type<xresource::full_guid>::guid_v:   return sprintf_s(String.data(), String.size(), "%llX, %llX", Value.get<xresource::full_guid>().m_Instance.m_Value, Value.get<xresource::full_guid>().m_Type.m_Value);
+        case ::xproperty::settings::var_type<std::int32_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%d",    Value.get<std::int32_t>());
+        case ::xproperty::settings::var_type<std::uint32_t>::guid_v:          return sprintf_s(String.data(), String.size(), "%u",    Value.get<std::uint32_t>());
+        case ::xproperty::settings::var_type<std::int16_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%d",    Value.get<std::int16_t>());
+        case ::xproperty::settings::var_type<std::uint16_t>::guid_v:          return sprintf_s(String.data(), String.size(), "%u",    Value.get<std::uint16_t>());
+        case ::xproperty::settings::var_type<std::int8_t>::guid_v:            return sprintf_s(String.data(), String.size(), "%d",    Value.get<std::int8_t>());
+        case ::xproperty::settings::var_type<std::uint8_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%u",    Value.get<std::uint8_t>());
+        case ::xproperty::settings::var_type<float>::guid_v:                  return sprintf_s(String.data(), String.size(), "%f",    Value.get<float>());
+        case ::xproperty::settings::var_type<double>::guid_v:                 return sprintf_s(String.data(), String.size(), "%f",    Value.get<double>());
+        case ::xproperty::settings::var_type<std::string>::guid_v:            return sprintf_s(String.data(), String.size(), "%s",    Value.get<std::string>().c_str());
+        case ::xproperty::settings::var_type<std::wstring>::guid_v:           return sprintf_s(String.data(), String.size(), "%ls",   Value.get<std::wstring>().c_str());
+        case ::xproperty::settings::var_type<std::uint64_t>::guid_v:          return sprintf_s(String.data(), String.size(), "%llu",  Value.get<std::uint64_t>());
+        case ::xproperty::settings::var_type<std::int64_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%lld",  Value.get<std::int64_t>());
+        case ::xproperty::settings::var_type<bool>::guid_v:                   return sprintf_s(String.data(), String.size(), "%s",    Value.get<bool>() ? "true" : "false");
+        case ::xproperty::settings::var_type<xresource::full_guid>::guid_v:   return sprintf_s(String.data(), String.size(), "%llX, %llX", Value.get<xresource::full_guid>().m_Instance.m_Value, Value.get<xresource::full_guid>().m_Type.m_Value);
         default: assert(false); break;
         }
 
@@ -571,20 +571,20 @@ namespace xproperty::settings
     {
         switch (TypeGUID)
         {
-        case xproperty::settings::var_type<std::int32_t>::guid_v:           Value.set<std::int32_t>    (static_cast<std::int32_t>(std::stol(String.data())));       return true;
-        case xproperty::settings::var_type<std::uint32_t>::guid_v:          Value.set<std::uint32_t>   (static_cast<std::uint32_t>(std::stoul(String.data())));     return true;
-        case xproperty::settings::var_type<std::int16_t>::guid_v:           Value.set<std::int16_t>    (static_cast<std::int16_t>(std::atoi(String.data())));       return true;
-        case xproperty::settings::var_type<std::uint16_t>::guid_v:          Value.set<std::uint16_t>   (static_cast<std::uint16_t>(std::atoi(String.data())));      return true;
-        case xproperty::settings::var_type<std::int8_t>::guid_v:            Value.set<std::int8_t>     (static_cast<std::int8_t>(std::atoi(String.data())));        return true;
-        case xproperty::settings::var_type<std::uint8_t>::guid_v:           Value.set<std::uint8_t>    (static_cast<std::uint8_t>(std::atoi(String.data())));       return true;
-        case xproperty::settings::var_type<float>::guid_v:                  Value.set<float>           (static_cast<float>(std::stof(String.data())));              return true;
-        case xproperty::settings::var_type<double>::guid_v:                 Value.set<double>          (static_cast<float>(std::stof(String.data())));              return true;
-        case xproperty::settings::var_type<std::string>::guid_v:            Value.set<std::string>     (std::string(String.data(), String.size()));                 return true;
-        case xproperty::settings::var_type<std::wstring>::guid_v:           Value.set<std::wstring>    (convert_span_to_wstring(String));                           return true;
-        case xproperty::settings::var_type<std::uint64_t>::guid_v:          Value.set<std::uint64_t>   (static_cast<std::uint64_t>(std::stoull(String.data())));    return true;
-        case xproperty::settings::var_type<std::int64_t>::guid_v:           Value.set<std::int64_t>    (static_cast<std::int64_t>(std::stoll(String.data())));      return true;
-        case xproperty::settings::var_type<bool>::guid_v:                   Value.set<bool>            ((String[0]=='t' || String[0]=='1' || String[0]=='T')?true:false);  return true;
-        case xproperty::settings::var_type<xresource::full_guid>::guid_v:   Value.set<xresource::full_guid>(convert_span_to_full_guid(String));                     return true;
+        case ::xproperty::settings::var_type<std::int32_t>::guid_v:           Value.set<std::int32_t>    (static_cast<std::int32_t>(std::stol(String.data())));       return true;
+        case ::xproperty::settings::var_type<std::uint32_t>::guid_v:          Value.set<std::uint32_t>   (static_cast<std::uint32_t>(std::stoul(String.data())));     return true;
+        case ::xproperty::settings::var_type<std::int16_t>::guid_v:           Value.set<std::int16_t>    (static_cast<std::int16_t>(std::atoi(String.data())));       return true;
+        case ::xproperty::settings::var_type<std::uint16_t>::guid_v:          Value.set<std::uint16_t>   (static_cast<std::uint16_t>(std::atoi(String.data())));      return true;
+        case ::xproperty::settings::var_type<std::int8_t>::guid_v:            Value.set<std::int8_t>     (static_cast<std::int8_t>(std::atoi(String.data())));        return true;
+        case ::xproperty::settings::var_type<std::uint8_t>::guid_v:           Value.set<std::uint8_t>    (static_cast<std::uint8_t>(std::atoi(String.data())));       return true;
+        case ::xproperty::settings::var_type<float>::guid_v:                  Value.set<float>           (static_cast<float>(std::stof(String.data())));              return true;
+        case ::xproperty::settings::var_type<double>::guid_v:                 Value.set<double>          (static_cast<float>(std::stof(String.data())));              return true;
+        case ::xproperty::settings::var_type<std::string>::guid_v:            Value.set<std::string>     (std::string(String.data(), String.size()));                 return true;
+        case ::xproperty::settings::var_type<std::wstring>::guid_v:           Value.set<std::wstring>    (convert_span_to_wstring(String));                           return true;
+        case ::xproperty::settings::var_type<std::uint64_t>::guid_v:          Value.set<std::uint64_t>   (static_cast<std::uint64_t>(std::stoull(String.data())));    return true;
+        case ::xproperty::settings::var_type<std::int64_t>::guid_v:           Value.set<std::int64_t>    (static_cast<std::int64_t>(std::stoll(String.data())));      return true;
+        case ::xproperty::settings::var_type<bool>::guid_v:                   Value.set<bool>            ((String[0]=='t' || String[0]=='1' || String[0]=='T')?true:false);  return true;
+        case ::xproperty::settings::var_type<xresource::full_guid>::guid_v:   Value.set<xresource::full_guid>(convert_span_to_full_guid(String));                     return true;
         default: assert(false); break;
         }
         return false; 

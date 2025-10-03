@@ -335,6 +335,11 @@ public:
     using on_realtime_change_event  = ui::details::delegate<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
     using on_get_component_pointer  = ui::details::delegate<inspector&, const int, void*&, void*>;
 
+#ifdef XCORE_PROPERTIES_H
+    using on_resource_browser       = ui::details::delegate<inspector&, const void*, bool&, xresource::full_guid&, const char*, std::span<const xresource::type_guid>>;
+    using on_resource_get_name      = ui::details::delegate<inspector&, std::string&, const xresource::full_guid&>;
+#endif
+
     settings                    m_Settings {};
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
     on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
@@ -348,6 +353,10 @@ public:
                                                             // void*      - In, The user data given when the component was registered
                                                             // The system uses this event when it needs to display the component
 
+#ifdef XCORE_PROPERTIES_H
+    on_resource_browser         m_OnResourceBrowser;        // When the user needs to adquire a resource the system will isssue a event here...
+    on_resource_get_name        m_OnResourceNameRemapping;  // This callback is used to collect the name of the resource
+#endif
 
 
 protected:

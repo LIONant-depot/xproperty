@@ -426,8 +426,10 @@ namespace xproperty
                 switch (key.size() & 3)
                 {
                 case 3: k1 ^= key.tail(2) << 16;
+                    [[fallthrough]];
                 case 2: k1 ^= key.tail(1) << 8;
-                case 1: k1 ^= key.tail(0);
+                    [[fallthrough]];
+                case 1: k1 ^= key.tail(0);      
                     k1 *= c1;
                     k1 = (k1 << 15) | (k1 >> (32 - 15));
                     k1 *= c2;
@@ -1074,7 +1076,7 @@ namespace xproperty
                 return *this;
             }
 
-            settings::data_memory       m_Data;
+            settings::data_memory       m_Data  = {};
             const atomic*               m_pType = nullptr;
         };
 
@@ -1082,8 +1084,8 @@ namespace xproperty
         {
             using fn = void*(void* pArgs);
 
-            fn*                                     m_pCallConstructor;
-            std::span< const xproperty::basic_type > m_ArgumentList;
+            fn*                                      m_pCallConstructor = {};
+            std::span< const xproperty::basic_type > m_ArgumentList     = {};
         };
 
         using reference_fn = std::tuple<void*, const object*>(void* pClassInstance);
@@ -1319,7 +1321,7 @@ namespace xproperty
         //
         // MEMBERS
         //
-        template< details::fixed_string T_NAME_V, typename T_DATA, auto T_DATA_V, typename... T_ARGS >
+        template< xproperty::details::fixed_string T_NAME_V, typename T_DATA, auto T_DATA_V, typename... T_ARGS >
         struct member;
 
         namespace details
@@ -2438,12 +2440,12 @@ namespace xproperty
         template< xproperty::details::fixed_string T_NAME_V, typename T_OBJECT_TYPE, typename...T_ARGS >
         struct object
         {
-            using                        members                 = xproperty::details::filter_by_tag_t< meta::obj_member_tag, T_ARGS... >;
-            using                        group_t                 = xproperty::details::filter_by_tag_t< meta::obj_group_tag, T_ARGS... >;
-            using                        scope_t                 = meta::scope< T_NAME_V, members >;
-            using                        obj_bases               = xproperty::details::filter_by_tag_t< meta::obj_base_tag, T_ARGS... >;
+            using                        members                 = ::xproperty::details::filter_by_tag_t< meta::obj_member_tag, T_ARGS... >;
+            using                        group_t                 = ::xproperty::details::filter_by_tag_t< meta::obj_group_tag, T_ARGS... >;
+            using                        scope_t                 = ::xproperty::meta::scope< T_NAME_V, members >;
+            using                        obj_bases               = ::xproperty::details::filter_by_tag_t< meta::obj_base_tag, T_ARGS... >;
             inline constexpr static auto obj_bases_list_v        = bases<T_OBJECT_TYPE, obj_bases>::getArray();
-            using                        constructors            = xproperty::details::filter_by_tag_t< meta::obj_constructor_tag, T_ARGS... >;
+            using                        constructors            = ::xproperty::details::filter_by_tag_t< meta::obj_constructor_tag, T_ARGS... >;
             inline constexpr static auto constructor_list_v      = []() consteval
             {
                 if constexpr (std::tuple_size_v<constructors>) return [&]<typename...ARGS>(std::tuple<ARGS...>*) constexpr
@@ -2468,8 +2470,8 @@ namespace xproperty
                 return
                 { { scope_t::getInfoScope() }
                 , scope_t::name_v
-                , xproperty::settings::strguid(scope_t::name_v)
-                , details::getGroupGuid< group_t>()
+                , ::xproperty::settings::strguid(scope_t::name_v)
+                , ::xproperty::meta::details::getGroupGuid< group_t>()
                 , [](void* p) constexpr noexcept { delete static_cast<T_OBJECT_TYPE*>(p); }
                 , constructor_list_v
                 , obj_bases_list_v

@@ -325,6 +325,27 @@ namespace xproperty
         };
     };
 
+#ifdef XCORE_PROPERTIES_H
+    template<> struct member_ui<xresource::full_guid>
+    {
+        member_ui() = delete;
+
+        using data = ui::details::member_ui_base;
+        inline static constexpr auto type_guid_v = xproperty::settings::var_type<xresource::full_guid>::guid_v;
+
+        struct defaults : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { .m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v };
+
+            constexpr defaults() : settings::member_ui_t{ .m_pUIBase = &data_v }
+            {
+                static_assert(type_guid_v == data_v.m_TypeGUID, "What the hells...");
+            }
+        };
+    };
+#endif
+
     struct member_ui_list_size
     {
         template<  std::uint64_t               T_MIN   = std::numeric_limits<std::uint64_t>::lowest()
