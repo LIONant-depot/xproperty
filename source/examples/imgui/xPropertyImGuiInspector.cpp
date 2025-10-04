@@ -1666,7 +1666,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 }
                 else
                 {
-                    PushTree( Name.data(), E.m_Property.m_Path, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow);
+                    // First entry of the array?
+                    PushTree( Name.data(), E.m_Property.m_Path, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
 
                     bRenderBlankRight = true;
 
