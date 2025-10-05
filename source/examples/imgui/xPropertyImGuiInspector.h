@@ -336,7 +336,7 @@ public:
     using on_get_component_pointer  = ui::details::delegate<inspector&, const int, void*&, void*>;
 
 #ifdef XCORE_PROPERTIES_H
-    using on_resource_browser       = ui::details::delegate<inspector&, const void*, bool&, xresource::full_guid&, const char*, std::span<const xresource::type_guid>>;
+    using on_resource_browser       = ui::details::delegate<inspector&, const void*, bool&, xresource::full_guid&, std::span<const xresource::type_guid>>;
     using on_resource_get_name      = ui::details::delegate<inspector&, std::string&, const xresource::full_guid&>;
 #endif
 

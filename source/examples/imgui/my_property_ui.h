@@ -330,13 +330,26 @@ namespace xproperty
     {
         member_ui() = delete;
 
-        using data = ui::details::member_ui_base;
+        struct data : ui::details::member_ui_base
+        {
+            std::span<const xresource::type_guid> m_FilerTypes = {};
+        };
+
         inline static constexpr auto type_guid_v = xproperty::settings::var_type<xresource::full_guid>::guid_v;
+
+        template< auto& T_TYPES_SPAN_V >
+        struct type_filters : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { {.m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v}, T_TYPES_SPAN_V };
+
+            constexpr type_filters() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
+        };
 
         struct defaults : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { .m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v };
+            { {.m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v} };
 
             constexpr defaults() : settings::member_ui_t{ .m_pUIBase = &data_v }
             {

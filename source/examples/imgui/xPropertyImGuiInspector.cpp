@@ -250,7 +250,7 @@ namespace xproperty::ui::details
     template<>
     void draw<xresource::full_guid, style::defaulted>::Render(undo::cmd& Cmd, const xresource::full_guid& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
-        auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
+        auto& I = reinterpret_cast<const xproperty::member_ui<xresource::full_guid>::data&>(IB);
 
         std::string Name;
         g_pInspector->m_OnResourceNameRemapping.NotifyAll( *g_pInspector, Name, Value);
@@ -267,17 +267,20 @@ namespace xproperty::ui::details
         }
         if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
-        xresource::full_guid FullGuid;
-        g_pInspector->m_OnResourceBrowser.NotifyAll(*g_pInspector, &Cmd, bOpen, FullGuid, "Select Resource", {});
-
-        // If it is not open any more we are done editing....
-        Cmd.m_isEditing = bOpen;
-        if (not FullGuid.empty())
+        if (not Flags.m_bShowReadOnly)
         {
-            if (FullGuid != Value)
+            xresource::full_guid FullGuid;
+            g_pInspector->m_OnResourceBrowser.NotifyAll(*g_pInspector, &Cmd, bOpen, FullGuid, I.m_FilerTypes);
+
+            // If it is not open any more we are done editing....
+            Cmd.m_isEditing = bOpen;
+            if (not FullGuid.empty())
             {
-                Cmd.m_isChange = true;
-                Cmd.m_NewValue.set<xresource::full_guid>(FullGuid);
+                if (FullGuid != Value)
+                {
+                    Cmd.m_isChange = true;
+                    Cmd.m_NewValue.set<xresource::full_guid>(FullGuid);
+                }
             }
         }
     }
