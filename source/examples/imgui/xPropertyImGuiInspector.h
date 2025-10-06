@@ -15,6 +15,8 @@
 
 #include "../../sprop/property_sprop.h"
 
+#include "dependencies/xdelegate/source/xdelegate.h"
+
 // Microsoft and its macros....
 #undef max
 
@@ -136,7 +138,11 @@ namespace xproperty
         };
         XPROPERTY_REG(system)
     }
-
+    namespace ui::details
+    {
+        struct group_render;
+    }
+/*
     namespace ui::details
     {
         struct group_render;
@@ -215,6 +221,7 @@ namespace xproperty
             std::vector<info>   m_Delegates{};
         };
     }
+*/
 }
 
 //-----------------------------------------------------------------------------------
@@ -331,13 +338,13 @@ public:
     constexpr   bool        isWindowOpen            ( void )                                        const   noexcept { return m_bWindowOpen; }
 
 
-    using on_change_event           = ui::details::delegate<inspector&, const xproperty::ui::undo::cmd& >;
-    using on_realtime_change_event  = ui::details::delegate<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
-    using on_get_component_pointer  = ui::details::delegate<inspector&, const int, void*&, void*>;
+    using on_change_event           = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd& >;
+    using on_realtime_change_event  = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
+    using on_get_component_pointer  = xdelegate::thread_unsafe<inspector&, const int, void*&, void*>;
 
 #ifdef XCORE_PROPERTIES_H
-    using on_resource_browser       = ui::details::delegate<inspector&, const void*, bool&, xresource::full_guid&, std::span<const xresource::type_guid>>;
-    using on_resource_get_name      = ui::details::delegate<inspector&, std::string&, const xresource::full_guid&>;
+    using on_resource_browser       = xdelegate::thread_unsafe<inspector&, const void*, bool&, xresource::full_guid&, std::span<const xresource::type_guid>>;
+    using on_resource_wigzmos       = xdelegate::thread_unsafe<inspector&, bool&, const xresource::full_guid&>;
 #endif
 
     settings                    m_Settings {};
@@ -355,7 +362,7 @@ public:
 
 #ifdef XCORE_PROPERTIES_H
     on_resource_browser         m_OnResourceBrowser;        // When the user needs to adquire a resource the system will isssue a event here...
-    on_resource_get_name        m_OnResourceNameRemapping;  // This callback is used to collect the name of the resource
+    on_resource_wigzmos         m_OnResourceWigzmos;        // This callback is used to collect the name of the resource
 #endif
 
 

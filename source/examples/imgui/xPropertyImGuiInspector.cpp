@@ -252,15 +252,12 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<xresource::full_guid>::data&>(IB);
 
-        std::string Name;
-        g_pInspector->m_OnResourceNameRemapping.NotifyAll( *g_pInspector, Name, Value);
-
         bool bOpen = false;
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
-            if (ImGui::Button(Name.c_str(), ImVec2(-1, 0)) && Cmd.m_isEditing == false)
+            g_pInspector->m_OnResourceWigzmos.NotifyAll(*g_pInspector, bOpen, Value);
+            if (bOpen && Cmd.m_isEditing == false)
             {
-                bOpen = true;
                 Cmd.m_isEditing = true;
             }
             if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit()) Cmd.m_isEditing = false;
