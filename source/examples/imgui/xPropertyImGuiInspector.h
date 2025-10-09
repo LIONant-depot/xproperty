@@ -325,7 +325,14 @@ public:
         m_OnGetComponentPointer.Register < [](xproperty::inspector& Inspector, const int Index, void*& pBase, void* pUserData)
         {
             // We are not replacing anything....
-        }>(); 
+        }>();
+
+        m_OnResourceLeftSize.Register < [](xproperty::inspector& Inspector, void* pID, ImGuiTreeNodeFlags flags, const char* pName, bool& Open)
+        {
+            Inspector.RenderBackground();
+            if (pID) Open = ImGui::TreeNodeEx(pID, flags, "%s", pName);
+            else     Open = ImGui::TreeNodeEx(pName, flags);
+        } > ();
     }
     virtual                ~inspector               ( void )                                                noexcept = default;
                 void        clear                   ( void )                                                noexcept;
@@ -346,6 +353,7 @@ public:
     using on_resource_browser       = xdelegate::thread_unsafe<inspector&, const void*, bool&, xresource::full_guid&, std::span<const xresource::type_guid>>;
     using on_resource_wigzmos       = xdelegate::thread_unsafe<inspector&, bool&, const xresource::full_guid&>;
 #endif
+    using on_resource_leftside = xdelegate::thread_unsafe<inspector&, void*, ImGuiTreeNodeFlags, const char*, bool&>;
 
     settings                    m_Settings {};
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
@@ -364,7 +372,15 @@ public:
     on_resource_browser         m_OnResourceBrowser;        // When the user needs to adquire a resource the system will isssue a event here...
     on_resource_wigzmos         m_OnResourceWigzmos;        // This callback is used to collect the name of the resource
 #endif
+    on_resource_leftside        m_OnResourceLeftSize;       // Gets the height of the 
 
+    void RenderBackground()
+    {
+        if (m_Settings.m_bRenderLeftBackground)
+        {
+            DrawBackground(m_SimpleDrawBk.m_iDepth, m_SimpleDrawBk.m_GlobalIndex);
+        }
+    }
 
 protected:
 
@@ -396,6 +412,13 @@ protected:
         std::vector<std::unique_ptr<component>>     m_lComponents {};
     };
 
+    struct simple_draw_background
+    {
+        bool m_bRenderLeftBackground;
+        int  m_iDepth;
+        int  m_GlobalIndex;
+    };
+
 protected:
 
     void        RefreshAllProperties                ( component& C )                                noexcept;
@@ -416,6 +439,7 @@ protected:
     bool                                        m_bWindowOpen   { true };
     xproperty::settings::context*               m_pContext      {nullptr};
     cmd_variant                                 m_CmdCurrentEdit{ nullptr };
+    simple_draw_background                      m_SimpleDrawBk  {};
 
     friend struct ui::details::group_render;
 

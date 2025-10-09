@@ -1463,13 +1463,16 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         return Open;
     };
 
-    const auto PushTree = [&]( const char* pTreeName, std::string_view Path, int myDimension, bool bDefaultOpen, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
+    const auto PushTree = [&]( const char* pTreeName, bool bCustomDraw, std::string_view Path, int myDimension, bool bDefaultOpen, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
     {
         bool Open = iDepth<0? true : Tree[ iDepth ].m_isOpen;
         if( Open )
         {
             if ( iDepth >0 && Tree[iDepth-1].m_OpenAll ) ImGui::SetNextItemOpen( Tree[iDepth-1].m_OpenAll > 0 );
-            Open = ImGui::TreeNodeEx(pTreeName, (bDefaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0) | ((iDepth == -1) ? ImGuiTreeNodeFlags_Framed : 0));
+
+            const ImGuiTreeNodeFlags flags = (bDefaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0) | ((iDepth == -1) ? ImGuiTreeNodeFlags_Framed : 0);
+            if (bCustomDraw) m_OnResourceLeftSize.NotifyAll( *this, 0, flags, pTreeName, Open );
+            else             Open = ImGui::TreeNodeEx(pTreeName, flags);
         }
 
         PushTreeStruct(Open, Path, myDimension, bDefaultOpen, isReadOnly, isHidden, bArray, bAtomic);
@@ -1498,7 +1501,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImGui::AlignTextToFramePadding();
 
         // If the main tree is Close then forget about it
-        PushTree(C.m_Base.first->m_pName, C.m_Base.first->m_pName, -1, true, false, false);
+        PushTree(C.m_Base.first->m_pName, false, C.m_Base.first->m_pName, -1, true, false, false);
 
         ImGui::NextColumn();
         ImGui::AlignTextToFramePadding();
@@ -1595,9 +1598,44 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         auto CRA = ImGui::GetContentRegionAvail();
         if( Tree[iDepth].m_iArray >= 0 ) ImGui::PushID( E.m_GUID + Tree[iDepth].m_iArray + iDepth * 1000 + Tree[iDepth].m_MyDimension * 1000000 );
         else                             ImGui::PushID( E.m_GUID + iDepth * 1000 );
-        if ( m_Settings.m_bRenderLeftBackground ) DrawBackground( iDepth, GlobalIndex );
 
         bool bRenderBlankRight = false;
+
+#ifdef XCORE_PROPERTIES_H
+        const bool bCustomRender = E.m_Property.m_Value.m_pType && E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v;
+
+        if (bCustomRender)
+        {
+            m_SimpleDrawBk.m_iDepth         = iDepth;
+            m_SimpleDrawBk.m_GlobalIndex    = GlobalIndex;
+        }
+        else
+        {
+            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+        }
+
+        /*
+        if (E.m_Property.m_Value.m_pType && E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v)
+        {
+            ImGuiStyle& style = ImGui::GetStyle();
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 18.0f));
+            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+            // Get the bounding box of the last item (the tree node)
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0.2f));
+            ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, "  %s", E.m_pName);
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+            goto SKIP_TO_NEXTHINGS;
+        }
+        else
+        {
+            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+        }
+        */
+#else
+        const bool bCustomRender = false;
+        if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+#endif
 
         // Handle property groups
         if (E.m_GroupGUID != 0)
@@ -1625,7 +1663,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 {
                     std::array<char, 128> Name;
                     snprintf(Name.data(), Name.size(), "%s[%dd] ", E.m_pName, E.m_Dimensions );
-                    PushTree(Name.data(), E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray );
+                    PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray );
 
                     if (Tree[iDepth].m_isAtomicArray == false)
                         bArrayMustInsertIndex = true;
@@ -1643,12 +1681,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     }
 
                     stroffset += snprintf(&Name.data()[stroffset], Name.size() - stroffset, "[%dd]", E.m_Dimensions - E.m_MyDimension);
-                    PushTree(Name.data(), E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
+                    PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
                 }
             }
             else
             {
-                PushTree( E.m_pName, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow );
+                PushTree( E.m_pName, bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow );
             }
         }
         else
@@ -1662,12 +1700,15 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 // Atomic array
                 if ( Tree[iDepth].m_isAtomicArray || E.m_GroupGUID )
                 {
-                    ImGui::TreeNodeEx( reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", Name.data() );
+                    bool Open;
+                    const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, Name.data(), Open);
+                    else               ImGui::TreeNodeEx( reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data() );
                 }
                 else
                 {
                     // First entry of the array?
-                    PushTree( Name.data(), E.m_Property.m_Path, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
+                    PushTree( Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
 
                     bRenderBlankRight = true;
 
@@ -1679,7 +1720,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             }
             else
             {
-                ImGui::TreeNodeEx( reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", E.m_pName );
+                bool Open;
+                const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, E.m_pName, Open);
+                else               ImGui::TreeNodeEx( reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", E.m_pName );
             }
         }
 
