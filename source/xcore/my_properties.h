@@ -276,7 +276,7 @@ namespace xproperty::settings
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<xresource::full_guid>();
             auto& G = Any.get<xresource::full_guid>();
-            assert(FileStream.isReading() || (not FileStream.isReading() && G.m_Instance.isPointer() == false));
+            assert(FileStream.isReading() || (not FileStream.isReading() && (G.m_Instance.empty() || not G.m_Instance.isPointer())));
             return FileStream.Field(CRC_V, "Value:?", G.m_Instance.m_Value, G.m_Type.m_Value );
         }
     };
