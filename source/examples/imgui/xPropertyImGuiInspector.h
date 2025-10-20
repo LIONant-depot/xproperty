@@ -343,7 +343,7 @@ public:
     inline      void        setupWindowSize         ( int Width, int Height )                               noexcept { m_Width = Width; m_Height = Height; }
     inline      void        setOpenWindow           ( bool b )                                              noexcept { m_bWindowOpen = b; }
     constexpr   bool        isWindowOpen            ( void )                                        const   noexcept { return m_bWindowOpen; }
-
+    inline      auto        getComponent            ( int iEntity, int iComponent )                 const   noexcept { return m_lEntities[iEntity]->m_lComponents[iComponent]->m_Base; }
 
     using on_change_event           = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd& >;
     using on_realtime_change_event  = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
@@ -386,6 +386,8 @@ protected:
 
     struct entry
     {
+        int                                             m_LeftUIGUID;
+        int                                             m_RightUIGUID;
         xproperty::sprop::container::prop               m_Property;
         const char*                                     m_pHelp;
         const char*                                     m_pName;

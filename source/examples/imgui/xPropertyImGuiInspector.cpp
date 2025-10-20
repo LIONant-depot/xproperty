@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 #include "dependencies/xproperty/source/sprop/property_sprop_getset.h"
 #include "dependencies/xproperty/source/sprop/property_sprop_collector.h"
@@ -14,7 +15,6 @@
 #include "imgui_internal.h"
 
 #pragma comment( lib, "shlwapi.lib") // For PathMatchSpecW
-
 
 namespace xproperty::ui::undo
 {
@@ -173,41 +173,41 @@ namespace xproperty::ui::details
     // 64 bits int
     //-----------------------------------------------------------------------------------
 
-    template<> void draw<std::int64_t, style::scroll_bar> ::Render( undo::cmd& Cmd, const std::int64_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S64>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int64_t, style::drag_bar>   ::Render( undo::cmd& Cmd, const std::int64_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S64>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int64_t, style::edit_box>   ::Render( undo::cmd& Cmd, const std::int64_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S64>( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint64_t, style::scroll_bar>::Render( undo::cmd& Cmd, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U64>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint64_t, style::drag_bar>  ::Render( undo::cmd& Cmd, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U64>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint64_t, style::edit_box>  ::Render( undo::cmd& Cmd, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U64>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int64_t, style::scroll_bar> ::Render( int GUID, undo::cmd& Cmd, const std::int64_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S64>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int64_t, style::drag_bar>   ::Render( int GUID, undo::cmd& Cmd, const std::int64_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S64>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int64_t, style::edit_box>   ::Render( int GUID, undo::cmd& Cmd, const std::int64_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S64>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint64_t, style::scroll_bar>::Render( int GUID, undo::cmd& Cmd, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U64>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint64_t, style::drag_bar>  ::Render( int GUID, undo::cmd& Cmd, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U64>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint64_t, style::edit_box>  ::Render( int GUID, undo::cmd& Cmd, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U64>( Cmd, Value, I, Flags ); }
 
-    template<> void draw<std::int32_t, style::scroll_bar> ::Render( undo::cmd& Cmd, const std::int32_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S32>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int32_t, style::drag_bar>   ::Render( undo::cmd& Cmd, const std::int32_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S32>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int32_t, style::edit_box>   ::Render( undo::cmd& Cmd, const std::int32_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S32>( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint32_t, style::scroll_bar>::Render( undo::cmd& Cmd, const std::uint32_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U32>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint32_t, style::drag_bar>  ::Render( undo::cmd& Cmd, const std::uint32_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U32>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint32_t, style::edit_box>  ::Render( undo::cmd& Cmd, const std::uint32_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U32>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int32_t, style::scroll_bar> ::Render( int GUID, undo::cmd& Cmd, const std::int32_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S32>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int32_t, style::drag_bar>   ::Render( int GUID, undo::cmd& Cmd, const std::int32_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S32>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int32_t, style::edit_box>   ::Render( int GUID, undo::cmd& Cmd, const std::int32_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S32>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint32_t, style::scroll_bar>::Render( int GUID, undo::cmd& Cmd, const std::uint32_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U32>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint32_t, style::drag_bar>  ::Render( int GUID, undo::cmd& Cmd, const std::uint32_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U32>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint32_t, style::edit_box>  ::Render( int GUID, undo::cmd& Cmd, const std::uint32_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U32>( Cmd, Value, I, Flags ); }
 
-    template<> void draw<std::int16_t, style::scroll_bar> ::Render( undo::cmd& Cmd, const std::int16_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S16>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int16_t, style::drag_bar>   ::Render( undo::cmd& Cmd, const std::int16_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S16>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int16_t, style::edit_box>   ::Render( undo::cmd& Cmd, const std::int16_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S16>( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint16_t, style::scroll_bar>::Render( undo::cmd& Cmd, const std::uint16_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U16>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint16_t, style::drag_bar>  ::Render( undo::cmd& Cmd, const std::uint16_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U16>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint16_t, style::edit_box>  ::Render( undo::cmd& Cmd, const std::uint16_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U16>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int16_t, style::scroll_bar> ::Render( int GUID, undo::cmd& Cmd, const std::int16_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S16>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int16_t, style::drag_bar>   ::Render( int GUID, undo::cmd& Cmd, const std::int16_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S16>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int16_t, style::edit_box>   ::Render( int GUID, undo::cmd& Cmd, const std::int16_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S16>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint16_t, style::scroll_bar>::Render( int GUID, undo::cmd& Cmd, const std::uint16_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U16>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint16_t, style::drag_bar>  ::Render( int GUID, undo::cmd& Cmd, const std::uint16_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U16>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint16_t, style::edit_box>  ::Render( int GUID, undo::cmd& Cmd, const std::uint16_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U16>( Cmd, Value, I, Flags ); }
 
-    template<> void draw<std::int8_t, style::scroll_bar> ::Render( undo::cmd& Cmd, const std::int8_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S8>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int8_t, style::drag_bar>   ::Render( undo::cmd& Cmd, const std::int8_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S8>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::int8_t, style::edit_box>   ::Render( undo::cmd& Cmd, const std::int8_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S8>( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint8_t, style::scroll_bar>::Render( undo::cmd& Cmd, const std::uint8_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U8>   ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint8_t, style::drag_bar>  ::Render( undo::cmd& Cmd, const std::uint8_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U8>  ( Cmd, Value, I, Flags ); }
-    template<> void draw<std::uint8_t, style::edit_box>  ::Render( undo::cmd& Cmd, const std::uint8_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U8>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int8_t, style::scroll_bar> ::Render( int GUID, undo::cmd& Cmd, const std::int8_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_S8>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int8_t, style::drag_bar>   ::Render( int GUID, undo::cmd& Cmd, const std::int8_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_S8>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::int8_t, style::edit_box>   ::Render( int GUID, undo::cmd& Cmd, const std::int8_t&  Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_S8>( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint8_t, style::scroll_bar>::Render( int GUID, undo::cmd& Cmd, const std::uint8_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { DragRenderNumbers<ImGuiDataType_U8>   ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint8_t, style::drag_bar>  ::Render( int GUID, undo::cmd& Cmd, const std::uint8_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { SlideRenderNumbers<ImGuiDataType_U8>  ( Cmd, Value, I, Flags ); }
+    template<> void draw<std::uint8_t, style::edit_box>  ::Render( int GUID, undo::cmd& Cmd, const std::uint8_t& Value, const member_ui_base& I, xproperty::flags::type Flags ) noexcept { EditBoxRenderNumbers<ImGuiDataType_U8>( Cmd, Value, I, Flags ); }
 
-    template<> void draw<float, style::scroll_bar>::Render(undo::cmd& Cmd, const float& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { DragRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
-    template<> void draw<float, style::drag_bar>  ::Render(undo::cmd& Cmd, const float& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { SlideRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
-    template<> void draw<float, style::edit_box>  ::Render(undo::cmd& Cmd, const float& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { EditBoxRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
+    template<> void draw<float, style::scroll_bar>::Render(int GUID, undo::cmd& Cmd, const float& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { DragRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
+    template<> void draw<float, style::drag_bar>  ::Render(int GUID, undo::cmd& Cmd, const float& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { SlideRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
+    template<> void draw<float, style::edit_box>  ::Render(int GUID, undo::cmd& Cmd, const float& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { EditBoxRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
 
-    template<> void draw<double, style::scroll_bar>::Render(undo::cmd& Cmd, const double& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { DragRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
-    template<> void draw<double, style::drag_bar>  ::Render(undo::cmd& Cmd, const double& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { SlideRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
-    template<> void draw<double, style::edit_box>  ::Render(undo::cmd& Cmd, const double& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { EditBoxRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
+    template<> void draw<double, style::scroll_bar>::Render(int GUID, undo::cmd& Cmd, const double& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { DragRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
+    template<> void draw<double, style::drag_bar>  ::Render(int GUID, undo::cmd& Cmd, const double& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { SlideRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
+    template<> void draw<double, style::edit_box>  ::Render(int GUID, undo::cmd& Cmd, const double& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept { EditBoxRenderNumbers<ImGuiDataType_Float>(Cmd, Value, I, Flags); }
 
 
     //-----------------------------------------------------------------------------------
@@ -215,7 +215,7 @@ namespace xproperty::ui::details
     //-----------------------------------------------------------------------------------
 
     template<>
-    void draw<bool, style::defaulted>::Render(undo::cmd& Cmd, const bool& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<bool, style::defaulted>::Render(int GUID, undo::cmd& Cmd, const bool& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
@@ -248,7 +248,7 @@ namespace xproperty::ui::details
     static xproperty::inspector* g_pInspector{nullptr};
 
     template<>
-    void draw<xresource::full_guid, style::defaulted>::Render(undo::cmd& Cmd, const xresource::full_guid& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<xresource::full_guid, style::defaulted>::Render(int GUID, undo::cmd& Cmd, const xresource::full_guid& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<xresource::full_guid>::data&>(IB);
 
@@ -267,7 +267,8 @@ namespace xproperty::ui::details
         if (not Flags.m_bShowReadOnly)
         {
             xresource::full_guid FullGuid;
-            g_pInspector->m_OnResourceBrowser.NotifyAll(*g_pInspector, &Cmd, bOpen, FullGuid, I.m_FilerTypes);
+            FullGuid.m_Type = Value.m_Type;
+            g_pInspector->m_OnResourceBrowser.NotifyAll(*g_pInspector, (void*)static_cast<std::uint64_t>(GUID), bOpen, FullGuid, I.m_FilerTypes);
 
             // If it is not open any more we are done editing....
             Cmd.m_isEditing = bOpen;
@@ -288,7 +289,7 @@ namespace xproperty::ui::details
     std::array<wchar_t, 16 * 1024>   g_WScrachCharBuffer;
 
     template<>
-    void draw<std::string, style::defaulted>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<std::string, style::defaulted>::Render(int GUID, undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
        // auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
 
@@ -359,7 +360,7 @@ namespace xproperty::ui::details
     }
 
     template<>
-    void draw<std::wstring, style::defaulted>::Render(undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<std::wstring, style::defaulted>::Render(int GUID, undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         // auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
 
@@ -653,7 +654,7 @@ namespace xproperty::ui::details
     //-----------------------------------------------------------------------------------
 
     template<>
-    void draw<std::wstring, style::file_dialog>::Render(undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<std::wstring, style::file_dialog>::Render(int GUID, undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<std::wstring>::data&>(IB);
 
@@ -831,7 +832,7 @@ namespace xproperty::ui::details
     //-----------------------------------------------------------------------------------
 
     template<>
-    void draw<std::string, style::button>::Render(undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<std::string, style::button>::Render(int GUID, undo::cmd& Cmd, const std::string& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
@@ -853,7 +854,7 @@ namespace xproperty::ui::details
     //-----------------------------------------------------------------------------------
 
     template<>
-    void draw<std::wstring, style::button>::Render(undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
+    void draw<std::wstring, style::button>::Render(int GUID, undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<bool>::data&>(IB);
 
@@ -1030,9 +1031,9 @@ namespace xproperty::ui::details
     */
 
     template< typename T_UI_TAG >
-    static void onRender( xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags) noexcept
+    static void onRender(int GUID, xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags) noexcept
     {
-        using generic = void(xproperty::ui::undo::cmd&, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
+        using generic = void(int, xproperty::ui::undo::cmd&, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
 
         //
         // Enums are handle special... 
@@ -1113,7 +1114,7 @@ namespace xproperty::ui::details
         assert(StyleBase.m_pDrawFn);
 
         //ImGui::PushID(&Entry);
-        reinterpret_cast<generic*>(StyleBase.m_pDrawFn)(Cmd, *reinterpret_cast<const std::uint64_t*>(&Value), StyleBase, Flags);
+        reinterpret_cast<generic*>(StyleBase.m_pDrawFn)(GUID, Cmd, *reinterpret_cast<const std::uint64_t*>(&Value), StyleBase, Flags);
         //ImGui::PopID();
     }
 
@@ -1151,7 +1152,7 @@ namespace xproperty::ui::details
 
 
                 ImGui::PushID(Entry.m_GUID);
-                onRender<xproperty::settings::member_ui_t>(Cmd, Value, Entry, Flags);
+                onRender<xproperty::settings::member_ui_t>(Entry.m_GUID, Cmd, Value, Entry, Flags);
                 ImGui::PopID();
 
                 if( iElement == (MaxElemens-1) ) ImGui::PopItemWidth();
@@ -1323,7 +1324,8 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
 
         C.m_List.push_back
         ( std::make_unique<entry>
-            ( xproperty::sprop::container::prop{ pPropertyName, std::move(Value) }
+            ( 0,0
+            , xproperty::sprop::container::prop{ pPropertyName, std::move(Value) }
             , pHelp ? pHelp->m_pHelp : "<<No help>>"
             , Member.m_pName
             , Member.m_GUID
@@ -1596,8 +1598,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImGui::AlignTextToFramePadding();
         ImVec2 lpos = ImGui::GetCursorScreenPos();
         auto CRA = ImGui::GetContentRegionAvail();
-        if( Tree[iDepth].m_iArray >= 0 ) ImGui::PushID( E.m_GUID + Tree[iDepth].m_iArray + iDepth * 1000 + Tree[iDepth].m_MyDimension * 1000000 );
-        else                             ImGui::PushID( E.m_GUID + iDepth * 1000 );
+        if( Tree[iDepth].m_iArray >= 0 ) E.m_LeftUIGUID = E.m_GUID + Tree[iDepth].m_iArray + iDepth * 1000 + Tree[iDepth].m_MyDimension * 1000000;
+        else                             E.m_LeftUIGUID = E.m_GUID + iDepth * 1000;
+        ImGui::PushID(E.m_LeftUIGUID);
+        E.m_RightUIGUID = static_cast<int>(std::hash<size_t>{}(static_cast<size_t>(E.m_LeftUIGUID)) % std::numeric_limits<int>::max());
 
         bool bRenderBlankRight = false;
 
@@ -1754,8 +1758,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             }
             else
             {
-                if(bElementTag) xproperty::ui::details::onRender<xproperty::settings::member_ui_t>          (Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
-                else            xproperty::ui::details::onRender<xproperty::settings::member_ui_list_size_t>(Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+                if(bElementTag) xproperty::ui::details::onRender<xproperty::settings::member_ui_t>          (Entry.m_RightUIGUID, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+                else            xproperty::ui::details::onRender<xproperty::settings::member_ui_list_size_t>(Entry.m_RightUIGUID, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
             }
 
             if (Cmd.m_isEditing || Cmd.m_isChange)
@@ -1857,7 +1861,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 }
                 else
                 {
-                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(Cmd, E.m_Property.m_Value, *E.m_pUserData, E.m_Flags);
+                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(E.m_RightUIGUID, Cmd, E.m_Property.m_Value, *E.m_pUserData, E.m_Flags);
                     assert(Cmd.m_isChange == false);
                     assert(Cmd.m_isEditing == false);
                 }
@@ -1884,7 +1888,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 }
                                 else
                                 {
-                                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
+                                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(Entry.m_RightUIGUID, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags);
                                 }
 
                                 if (UndoCmd.m_isChange)

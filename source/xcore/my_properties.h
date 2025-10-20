@@ -266,6 +266,8 @@ namespace xproperty::settings
         }
     };
 
+    xresource::instance_guid ResourcePointerToGUID(const xresource::full_guid& FullGuid);
+
     template<>
     struct var_type<xresource::full_guid> : var_defaults<"full_guid", xresource::full_guid >
     {
@@ -275,9 +277,95 @@ namespace xproperty::settings
         constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
         {
             if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<xresource::full_guid>();
-            auto& G = Any.get<xresource::full_guid>();
+            auto G = Any.get<xresource::full_guid>();
+
+            if (not FileStream.isReading() && G.m_Instance.isPointer())
+            {
+                G.m_Instance = ResourcePointerToGUID(G);
+            }
+
             assert(FileStream.isReading() || (not FileStream.isReading() && (G.m_Instance.empty() || not G.m_Instance.isPointer())));
-            return FileStream.Field(CRC_V, "Value:?", G.m_Instance.m_Value, G.m_Type.m_Value );
+            auto Err = FileStream.Field(CRC_V, "Value:?", G.m_Instance.m_Value, G.m_Type.m_Value);
+
+            if (not Err && FileStream.isReading()) Any.get<atomic_type>() = G;
+
+            return Err;
+        }
+    };
+
+    template< xresource::type_guid T_GUID_V >
+    struct var_type<xresource::def_guid<T_GUID_V>> : var_defaults<"full_guid", xresource::def_guid<T_GUID_V>>
+    {
+        using type                                          = xresource::def_guid<T_GUID_V>;
+        using atomic_type                                   = xresource::full_guid;
+        using specializing_t                                = atomic_type;
+
+        // Share guid_v with full_guid
+        inline constexpr static auto guid_v                 = var_type<xresource::full_guid>::guid_v;
+        inline constexpr static bool is_pointer_v           = false;
+        inline constexpr static auto ctype_v                = var_type<xresource::full_guid>::ctype_v;
+        inline constexpr static auto serialization_type_v   = var_type<xresource::full_guid>::serialization_type_v;
+
+        // Help deal with conversions between full_guid and def_guid
+        thread_local static atomic_type temp;
+
+        constexpr static specializing_t* getObject(type& MemberVar, context&) noexcept
+        {
+            temp = MemberVar;
+            return &temp;
+        }
+
+        constexpr static atomic_type* getAtomic(type& MemberVar, context& C) noexcept
+        {
+            return getObject(MemberVar, C);
+        }
+
+        constexpr static void Write(type& MemberVar, const atomic_type& Data, context&) noexcept
+        {
+            assert(Data.m_Type == T_GUID_V); // Runtime check
+            MemberVar.m_Instance = Data.m_Instance;
+        }
+
+        constexpr static void Read(const type& MemberVar, atomic_type& Data, context&) noexcept
+        {
+            Data.m_Instance = MemberVar.m_Instance;
+            Data.m_Type     = T_GUID_V;
+        }
+
+        constexpr static void VoidConstruct     (data_memory& Data)                     noexcept { new(&Data) type{}; }
+        constexpr static void Destruct          (data_memory& Data)                     noexcept { reinterpret_cast<type&>(Data).~type(); }
+        constexpr static void MoveConstruct     (data_memory& Data1, type&& Data2)      noexcept { new(&Data1) type{ std::move(Data2) }; }
+        constexpr static void CopyConstruct     (data_memory& Data1, const type& Data2) noexcept { new(&Data1) type{ Data2 }; }
+
+        // Use same serialization as full_guid
+        template< typename T, auto CRC_V >
+        constexpr static auto XCoreTextFile(T& FileStream, ::xproperty::any& Any)
+        {
+            if (Any.m_pType == nullptr || Any.m_pType->m_GUID != guid_v) Any.Reset<atomic_type>();
+            auto G = Any.get<atomic_type>();
+
+            if (not FileStream.isReading() && G.m_Instance.isPointer()) 
+            {
+                G.m_Instance = ResourcePointerToGUID(G);
+            }
+
+            assert(FileStream.isReading() || (!FileStream.isReading() && (G.m_Instance.empty() || !G.m_Instance.isPointer()) && G.m_Type == T_GUID_V));
+            auto Err = FileStream.Field(CRC_V, "Value:?", G.m_Instance.m_Value, G.m_Type.m_Value);
+
+            if (not Err && FileStream.isReading())
+            {
+                if(G.m_Type == T_GUID_V) 
+                {
+                    Any.get<atomic_type>() = G;
+                }
+                else
+                {
+                    printf("There is a resource type missmatch!\n");
+                    assert(false);
+                }
+            }
+
+            return Err;
         }
     };
 }

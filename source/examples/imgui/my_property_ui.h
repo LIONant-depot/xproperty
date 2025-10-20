@@ -131,7 +131,7 @@ namespace xproperty
         template< typename T_TYPE, typename T_STYLE>
         struct draw
         {
-            static void Render(ui::undo::cmd& Cmd, const T_TYPE& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
+            static void Render(int GUID, ui::undo::cmd& Cmd, const T_TYPE& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
         };
 
         template<typename T, xproperty::details::fixed_string T_FORMAT_MAIN>
@@ -355,6 +355,33 @@ namespace xproperty
             {
                 static_assert(type_guid_v == data_v.m_TypeGUID, "What the hells...");
             }
+        };
+    };
+
+    template< xresource::type_guid T_GUID_V >
+    struct member_ui<xresource::def_guid<T_GUID_V>>
+    {
+        member_ui() = delete;
+        inline static constexpr auto type_guid_v = xproperty::settings::var_type<xresource::def_guid<T_GUID_V>>::guid_v;
+
+        // Static filter span with only the fixed T_GUID_V
+        inline static constexpr std::array<xresource::type_guid, 1> filter_span_v = { T_GUID_V };
+
+        using data = member_ui<xresource::full_guid>::data;
+
+        // Reuse full_guid's type_filters with the auto-generated span
+        template< auto& T_TYPES_SPAN_V = filter_span_v >
+        struct type_filters : settings::member_ui_t
+        {
+            inline static constexpr data data_v
+            { {.m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v}, T_TYPES_SPAN_V };
+            constexpr type_filters() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
+        };
+
+        // Default to the filtered version
+        struct defaults : type_filters<>
+        {
+            // Inherits the filtered draw behavior
         };
     };
 #endif
