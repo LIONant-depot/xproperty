@@ -1344,29 +1344,29 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
 
 //-------------------------------------------------------------------------------------------------
 
-void xproperty::inspector::Show(xproperty::settings::context& Context, std::function<void(void)> Callback ) noexcept
+void xproperty::inspector::Show(xproperty::settings::context& Context, std::function<void(void)> Callback) noexcept
 {
-    if( m_bWindowOpen == false ) return;
+    if (m_bWindowOpen == false) return;
 
     m_pContext = &Context;
 
     //
     // Key styles 
     //
-    ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding,   m_Settings.m_WindowPadding );
-    ImGui::PushStyleVar( ImGuiStyleVar_FramePadding,    m_Settings.m_FramePadding );
-    ImGui::PushStyleVar( ImGuiStyleVar_ItemSpacing,     m_Settings.m_ItemSpacing );
-    ImGui::PushStyleVar( ImGuiStyleVar_IndentSpacing,   m_Settings.m_IndentSpacing );
-    ImGui::PushStyleVar( ImGuiStyleVar_FrameRounding, 0 );
-    ImGui::PushStyleVar( ImGuiStyleVar_WindowBorderSize, 0 );
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, m_Settings.m_WindowPadding);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, m_Settings.m_FramePadding);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_Settings.m_ItemSpacing);
+    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, m_Settings.m_IndentSpacing);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
 
     //
     // Open the window
     //
-    ImGui::SetNextWindowSize( ImVec2( static_cast<float>(m_Width), static_cast<float>(m_Height) ), ImGuiCond_FirstUseEver );
-    if ( !ImGui::Begin( m_pName, &m_bWindowOpen ) )
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(m_Width), static_cast<float>(m_Height)), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(m_pName, &m_bWindowOpen))
     {
-        ImGui::PopStyleVar( 5 );
+        ImGui::PopStyleVar(6);
         ImGui::End();
         return;
     }
@@ -1379,14 +1379,14 @@ void xproperty::inspector::Show(xproperty::settings::context& Context, std::func
     //
     // Display the properties
     //
-    ImGui::Columns( 2 );
+    ImGui::Columns(2);
     ImGui::Separator();
 
     Show();
 
-    ImGui::Columns( 1 );
+    ImGui::Columns(1);
     ImGui::Separator();
-    ImGui::PopStyleVar( 6 );
+    ImGui::PopStyleVar(6);
     ImGui::End();
 }
 
