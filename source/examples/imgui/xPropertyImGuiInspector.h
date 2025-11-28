@@ -344,6 +344,7 @@ public:
     inline      void        setOpenWindow           ( bool b )                                              noexcept { m_bWindowOpen = b; }
     constexpr   bool        isWindowOpen            ( void )                                        const   noexcept { return m_bWindowOpen; }
     inline      auto        getComponent            ( int iEntity, int iComponent )                 const   noexcept { return m_lEntities[iEntity]->m_lComponents[iComponent]->m_Base; }
+    inline      auto        getName                 ( void )                                        const   noexcept { return m_pName; }
 
     using on_change_event           = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd& >;
     using on_realtime_change_event  = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
