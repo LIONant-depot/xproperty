@@ -1557,7 +1557,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ++GlobalIndex;
         ImGui::NextColumn();
         ImGui::AlignTextToFramePadding();
-        ImVec2 lpos = ImGui::GetCursorScreenPos();
+    //    ImVec2 lpos = ImGui::GetCursorScreenPos();
         auto CRA = ImGui::GetContentRegionAvail();
         if( Tree[iDepth].m_iArray >= 0 ) E.m_LeftUIGUID = E.m_GUID + Tree[iDepth].m_iArray + iDepth * 1000 + Tree[iDepth].m_MyDimension * 1000000;
         else                             E.m_LeftUIGUID = E.m_GUID + iDepth * 1000;
@@ -1942,6 +1942,8 @@ void xproperty::inspector::Show( void ) noexcept
         }
     }
 
+
+
     //
     // Render the components
     //
@@ -1950,6 +1952,8 @@ void xproperty::inspector::Show( void ) noexcept
         int GlobalIndex = 0;
         for ( auto& C : E->m_lComponents )
         {
+            ImGui::PushID(&C);
+
             // Tell ImGui we are going to use 2 columns
             ImGui::Columns( 2 );
 
@@ -1965,6 +1969,7 @@ void xproperty::inspector::Show( void ) noexcept
 
             // Reset back to a single column
             ImGui::Columns( 1 );
+            ImGui::PopID();
         }
     }
 }
