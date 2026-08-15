@@ -375,7 +375,16 @@ Derived2/var2 = 40
 
 There are two main groups of variables that we support. Variables that hold values and
 variables that hold more properties. The first group is the most common and is the one,
-but sometimes you want to have a list of objects that have properties. 
+but sometimes you want to have a list of objects that have properties.
+
+**A note on exception safety:** every registered atomic type must be nothrow default-constructible,
+nothrow move-constructible, and nothrow destructible - xproperty enforces this with a
+`static_assert` at registration time, so a violation is a compile error, not a surprise at runtime.
+Copy-construction is deliberately the one exception: it's left unconstrained (`std::string` and any
+other heap-allocating type can't promise `noexcept` on copy), and in exchange `xproperty::any`'s own
+copy paths give you a strong exception guarantee instead - the replacement value is built in a
+temporary first, and the original is only destroyed once that succeeds, so a throwing copy leaves
+the property exactly as it was rather than half-destroyed.
 
 ```cpp
 struct common_types
@@ -475,6 +484,87 @@ CommonTypes/m_ReadOnlyValue = ERROR: Fail to set a constant xproperty! CommonTyp
 CommonTypes/m_ReadOnlyProps/var = ERROR: Fail to set a constant xproperty! CommonTypes/m_ReadOnlyProps/var Location 28
 CommonTypes/ForceReadOnlyVar = ERROR: Fail to set a constant xproperty! CommonTypes/ForceReadOnlyVar Location 29
 CommonTypes/ForceReadOnlyProps/var = ERROR: Fail to set a constant xproperty! CommonTypes/ForceReadOnlyProps/var Location 31
+~~~
+</details>
+
+<br>
+
+# Foreign Types
+
+## <a name="Example3.2"></a> Example 1 - Reflecting a type you don't own
+
+Sometimes the type you want to reflect isn't yours to modify - it might come from a third-party
+library (ImGui's `ImVec2`, a math library's vector type, a GUID type from another package, ...),
+so you can't inject `XPROPERTY_DEF` into it directly. The fix is a sibling *wrapper* struct that
+inherits from the foreign type and carries the reflection instead, plus an explicit
+`xproperty::settings::reflected_type<T>` specialization linking the foreign type to its wrapper -
+that's the one piece xproperty can't infer on its own, since there's no general way to discover
+"the base class that happens to have `PropertiesDefinition()`" for an arbitrary type.
+
+```cpp
+namespace third_party
+{
+    // Imagine this struct comes from a library we don't own the source of - we can't add
+    // XPROPERTY_DEF to it directly.
+    struct point2d
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+}
+
+// A sibling wrapper that DOES carry the reflection, by inheriting from the foreign type.
+struct point2d_friend : third_party::point2d
+{
+    XPROPERTY_DEF
+    ( "point2d", third_party::point2d
+    , obj_member<"X", &third_party::point2d::x>
+    , obj_member<"Y", &third_party::point2d::y>
+    )
+};
+XPROPERTY_REG(point2d_friend)
+
+// The explicit link xproperty looks for whenever a member is declared with the raw foreign type -
+// both the compile-time validation and the runtime object lookup key off this.
+template<> struct xproperty::settings::reflected_type<third_party::point2d> { using type = point2d_friend; };
+
+struct foreign_type_example
+{
+    // Declared with the plain, foreign type - not the wrapper.
+    third_party::point2d m_Position = { 1.0f, 2.0f };
+
+    void setValues()         { m_Position = { 3.0f, 4.0f }; }
+    void CheckValues() const { assert(m_Position.x == 3.0f && m_Position.y == 4.0f); }
+
+    XPROPERTY_DEF
+    ( "Foreign Type Example", foreign_type_example
+    , obj_member<"Position",    &foreign_type_example::m_Position>
+    , obj_member<"setValues",   &foreign_type_example::setValues>
+    , obj_member<"CheckValues", &foreign_type_example::CheckValues>
+    )
+};
+XPROPERTY_REG(foreign_type_example)
+
+ ```
+
+<details><summary><i><b>Printing Output </b>(Click to open) </i></summary>
+
+~~~
+OBJECT[ Foreign Type Example ]
+    MEMBER_PROPS[ Position ] = OBJECT[ point2d ]
+        MEMBER_VARS[ X ] = ( type: f32, value: 3.000000 )
+        MEMBER_VARS[ Y ] = ( type: f32, value: 4.000000 )
+    MEMBER_FUNCTION[ setValues ]
+    MEMBER_FUNCTION[ CheckValues ]
+~~~
+</details>
+
+
+<details><summary><i><b>SProps Output </b>(Click to open) </i></summary>
+
+~~~
+Foreign Type Example/Position/X = 3.000000
+Foreign Type Example/Position/Y = 4.000000
 ~~~
 </details>
 
@@ -695,9 +785,9 @@ struct enums_registered
                             , member_enum_span<unreg_enum_list_v>
                             >
 
-    // Here we would need to repeat the enum again... but since 
-    // it is a const and can only really have one value 
-    , obj_member<"m_CValue", &enums_registered::m_CValue02
+    // Here we would need to repeat the enum again... but since
+    // it is a const and can only really have one value
+    , obj_member<"m_CValue02", &enums_registered::m_CValue02
                            , member_enum_span<unreg_enum_list_v>
                            >
 
@@ -717,7 +807,7 @@ OBJECT[ Enum Registered ]
     MEMBER_VARS[ m_Value01 ] = ( type: example, value: { VALID_VALUE_2, (2) } )
     MEMBER_VARS[ m_CValue ] = ( type: const example, value: { VALID_VALUE_1, (1) } )
     MEMBER_VARS[ m_Value02 ] = ( type: Unregistered Enum, value: { V3, (2) } )
-    MEMBER_VARS[ m_CValue ] = ( type: const Unregistered Enum, value: { V2, (1) } )
+    MEMBER_VARS[ m_CValue02 ] = ( type: const Unregistered Enum, value: { V2, (1) } )
     MEMBER_FUNCTION[ setValues ]
     MEMBER_FUNCTION[ CheckValues ]
 ~~~
@@ -730,7 +820,7 @@ OBJECT[ Enum Registered ]
 Enum Registered/m_Value01 = VALID_VALUE_2
 Enum Registered/m_CValue = ERROR: Fail to set a constant xproperty! Enum Registered/m_CValue Location 25
 Enum Registered/m_Value02 = V3
-Enum Registered/m_CValue = ERROR: Fail to set a constant xproperty! Enum Registered/m_CValue Location 25
+Enum Registered/m_CValue02 = ERROR: Fail to set a constant xproperty! Enum Registered/m_CValue02 Location 27
 ~~~
 </details>
 

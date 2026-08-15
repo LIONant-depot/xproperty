@@ -45,9 +45,9 @@ int main()
     xproperty::settings::context Context{};  // Context is used for more advance features, and not always required
 
     // Create a property to set
-    xproperty::container::prop Property{};
-    property.m_Path  = "MyClass/IntValue";   // Note that it needs to be the full name (which looks like a file path)
-    property.m_Value.set<int>(100);          // Value can handle any of the atomic types provided in the xproperty::settings
+    xproperty::sprop::container::prop Property{};
+    Property.m_Path  = "MyClass/IntValue";   // Note that it needs to be the full name (which looks like a file path)
+    Property.m_Value.set<int>(100);          // Value can handle any of the atomic types provided in the xproperty::settings
 
     // Set the property using setProperty
     xproperty::sprop::setProperty(Error, Obj, Property, Context);

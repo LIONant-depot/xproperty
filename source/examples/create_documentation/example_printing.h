@@ -43,7 +43,7 @@ namespace xproperty::example::printing
 
             // Read the actual value
             xproperty::any Value;
-            Info.m_pReadUnchecked(pClass, Value, Info.m_UnregisteredEnumSpan, Context);
+            (void)Info.m_pReadUnchecked(pClass, Value, Info.m_UnregisteredEnumSpan, Context);
 
             // Print the type
             MemFile.print

@@ -101,6 +101,7 @@ void ExecuteExamples(xproperty_doc::example_group& ExampleGroup)
         printf("GROUP: %s\n", ExampleGroup.m_GroupName.c_str());
         printf("------------------------------------------------------------------\n");
         if (true) DoExample< TT, common_types>                          (Examples.emplace_back());
+        if (true) DoExample< TT, foreign_type_example>                  (Examples.emplace_back());
         if (true) DoExample< TT, enums_unregistered>                    (Examples.emplace_back());
         if (true) DoExample< TT, enums_registered>                      (Examples.emplace_back());
         if (true) DoExample< TT, pointer_and_reference_c_style_values>  (Examples.emplace_back());
@@ -196,6 +197,13 @@ int main()
         xproperty_doc::Generate
         ( "../../documentation/SimpleExample02.md"
         , "../../source/examples/simple_examples/simple_examples_02.h"
+        , Examples
+        );
+
+        // Example 03
+        xproperty_doc::Generate
+        ( "../../documentation/SimpleExample03.md"
+        , "../../source/examples/simple_examples/simple_examples_03.h"
         , Examples
         );
 
