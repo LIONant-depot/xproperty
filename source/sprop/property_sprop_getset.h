@@ -109,8 +109,8 @@ namespace xproperty::sprop
                             return false;
                         }
 
-                        if constexpr (IS_SET_V) Arg.m_pWrite(pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
-                        else                    Arg.m_pRead (pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
+                        if constexpr (IS_SET_V) Arg.m_pWriteUnchecked(pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
+                        else                    Arg.m_pReadUnchecked (pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
 
                         return true;
                     }
@@ -158,8 +158,8 @@ namespace xproperty::sprop
                                 return false;
                             }
 
-                            if constexpr (IS_SET_V) Arg.m_pWrite( pObject, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
-                            else                    Arg.m_pRead ( pObject, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
+                            if constexpr (IS_SET_V) Arg.m_pWriteUnchecked( pObject, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
+                            else                    Arg.m_pReadUnchecked ( pObject, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
                         }
                         return true;
                     }

@@ -91,14 +91,14 @@ namespace xproperty::sprop
         , const void*                       pParentClass
         )
         {
-            if (Info.m_pWrite == nullptr) assert( isConst == true );
+            if (Info.m_pWriteUnchecked == nullptr) assert( isConst == true );
 
             // if we don't have a write function we can't write anything
-            if (Info.m_pRead == nullptr) return;
+            if (Info.m_pReadUnchecked == nullptr) return;
 
             // Read the actual value
             xproperty::any Value;
-            Info.m_pRead(pClass, Value, Info.m_UnregisteredEnumSpan, *m_pContext);
+            Info.m_pReadUnchecked(pClass, Value, Info.m_UnregisteredEnumSpan, *m_pContext);
 
             // Let the user know that we got properties
             CallBack( m_CurrentPath.data(), std::move(Value), Members, isConst, pParentClass);
@@ -116,8 +116,16 @@ namespace xproperty::sprop
         , const bool                        isConst
         )
         {
-            xproperty::begin_iterator        StartIterator(pClass, List.m_Table[iDimension], *m_pContext);
-            const xproperty::end_iterator    EndIterator  (pClass, List.m_Table[iDimension], *m_pContext);
+            xproperty::type::begin_iterator_holder  StartHolder;
+            xproperty::type::end_iterator_holder    EndHolder;
+            {
+                const auto BeginResult = List.m_Table[iDimension].TryBegin(pClass, *m_pContext, StartHolder);
+                assert(BeginResult);
+                const auto EndResult   = List.m_Table[iDimension].TryEnd  (pClass, *m_pContext, EndHolder);
+                assert(EndResult);
+            }
+            auto&           StartIterator = StartHolder.value();
+            const auto&     EndIterator   = EndHolder.value();
 
             // If a size is 0 we completely ignore this xproperty
  //           if ( const auto Count = EndIterator.getSize(); Count == 0) return;

@@ -1033,7 +1033,6 @@ namespace xproperty::ui::details
     template< typename T_UI_TAG >
     static void onRender(int GUID, xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags) noexcept
     {
-        using generic = void(int, xproperty::ui::undo::cmd&, const std::uint64_t& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
 
         //
         // Enums are handle special... 
@@ -1103,7 +1102,6 @@ namespace xproperty::ui::details
             }
         }();
 
-        auto a = xproperty::settings::var_type<float>::guid_v;
 
         // Check to make sure that the user did not made a mistake...
         // the actual type of the property must match the type of the UI style..
@@ -1114,7 +1112,7 @@ namespace xproperty::ui::details
         assert(StyleBase.m_pDrawFn);
 
         //ImGui::PushID(&Entry);
-        reinterpret_cast<generic*>(StyleBase.m_pDrawFn)(GUID, Cmd, *reinterpret_cast<const std::uint64_t*>(&Value), StyleBase, Flags);
+        StyleBase.m_pDrawFn(GUID, Cmd, Value, StyleBase, Flags);
         //ImGui::PopID();
     }
 

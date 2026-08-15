@@ -34,8 +34,8 @@ namespace xproperty::example::printing
         template< typename T >
         inline void DumpAtomicTypes( xproperty_doc::memfile& MemFile, void* pClass, const T& Info, xproperty::settings::context& Context, const bool isConst )
         {
-            if (Info.m_pWrite == nullptr) assert( isConst == true );
-            if (Info.m_pRead == nullptr)
+            if (Info.m_pWriteUnchecked == nullptr) assert( isConst == true );
+            if (Info.m_pReadUnchecked == nullptr)
             {
                 MemFile.print("( type: %s (has no read function) )", Info.m_AtomicType.m_pName );
                 return;
@@ -43,7 +43,7 @@ namespace xproperty::example::printing
 
             // Read the actual value
             xproperty::any Value;
-            Info.m_pRead(pClass, Value, Info.m_UnregisteredEnumSpan, Context);
+            Info.m_pReadUnchecked(pClass, Value, Info.m_UnregisteredEnumSpan, Context);
 
             // Print the type
             MemFile.print
@@ -84,8 +84,16 @@ namespace xproperty::example::printing
         , const bool                    isConst
         )
         {
-            xproperty::begin_iterator        StartIterator(pClass, List.m_Table[iDimension], Context);
-            const xproperty::end_iterator    EndIterator  (pClass, List.m_Table[iDimension], Context);
+            xproperty::type::begin_iterator_holder  StartHolder;
+            xproperty::type::end_iterator_holder    EndHolder;
+            {
+                const auto BeginResult = List.m_Table[iDimension].TryBegin(pClass, Context, StartHolder);
+                assert(BeginResult);
+                const auto EndResult   = List.m_Table[iDimension].TryEnd  (pClass, Context, EndHolder);
+                assert(EndResult);
+            }
+            auto&           StartIterator = StartHolder.value();
+            const auto&     EndIterator   = EndHolder.value();
 
             if( EndIterator.getSize() == 0 )
             {

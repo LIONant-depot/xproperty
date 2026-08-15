@@ -749,6 +749,12 @@ namespace xproperty::settings
 // ------------------------------------------------------------------------------
 #include "dependencies\xproperty\source\examples\imgui\my_property_ui.h"
 
+namespace xprop_ui
+{
+    template<xproperty::details::fixed_string T_HELP_V>
+    using help = xproperty::member_help<T_HELP_V>;
+}
+
 /////////////////////////////////////////////////////////////////
 // DONE
 /////////////////////////////////////////////////////////////////

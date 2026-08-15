@@ -234,6 +234,8 @@ public:
 
     struct v2 : ImVec2
     {
+        using ImVec2::ImVec2;
+
         XPROPERTY_DEF
         ( "ImVec2", ImVec2, xproperty::settings::vector2_group
         , obj_member<"X", &ImVec2::x, member_ui<float>::scroll_bar<0.0f, 20.0f>, member_help<"X element of a vector"> >
@@ -243,11 +245,11 @@ public:
 
     struct settings
     {
-        ImVec2      m_WindowPadding             { 0, 3 };
-        ImVec2      m_FramePadding              { 1, 3.5 };
-        ImVec2      m_ItemSpacing               { 0.5f, 1.5f };
+        v2          m_WindowPadding             { 0, 3 };
+        v2          m_FramePadding              { 1, 3.5 };
+        v2          m_ItemSpacing               { 0.5f, 1.5f };
         float       m_IndentSpacing             { 3.5 };
-        ImVec2      m_TableFramePadding         { 2, 6 };
+        v2          m_TableFramePadding         { 2, 6 };
 
         bool        m_bRenderLeftBackground     { true };
         bool        m_bRenderRightBackground    { true };
@@ -256,7 +258,7 @@ public:
         float       m_ColorVScalar2             { 0.4f };
         float       m_ColorSScalar              { 0.4f };
 
-        ImVec2      m_HelpWindowPadding         { 10, 10 };
+        v2          m_HelpWindowPadding         { 10, 10 };
         int         m_HelpWindowSizeInChars     { 50 };
 
         XPROPERTY_DEF

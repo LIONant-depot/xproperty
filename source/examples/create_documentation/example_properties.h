@@ -522,9 +522,9 @@ struct enums_registered
                             , member_enum_span<unreg_enum_list_v>
                             >
 
-    // Here we would need to repeat the enum again... but since 
-    // it is a const and can only really have one value 
-    , obj_member<"m_CValue", &enums_registered::m_CValue02
+    // Here we would need to repeat the enum again... but since
+    // it is a const and can only really have one value
+    , obj_member<"m_CValue02", &enums_registered::m_CValue02
                            , member_enum_span<unreg_enum_list_v>
                            >
 

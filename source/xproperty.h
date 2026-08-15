@@ -8,9 +8,97 @@
 #include<assert.h>
 #include<variant>
 #include<format>
+#include<functional>
+#include<bit>
+#include<limits>
+#include<optional>
+
+#if defined(XPROPERTY_DEPRECATE_LEGACY_NAMES)
+    #define XPROPERTY_LEGACY_API(MSG) [[deprecated(MSG)]]
+#else
+    #define XPROPERTY_LEGACY_API(MSG)
+#endif
 
 namespace xproperty
 {
+    // Core operations report machine-readable failures. Upper layers own formatting and policy.
+    enum class error_code : std::uint8_t
+    {
+        none,
+        member_not_found,
+        type_mismatch,
+        read_only,
+        null_object,
+        invalid_index,
+        invalid_key,
+        invalid_enum_value,
+        unsupported_operation,
+        constructor_not_found,
+        invalid_path
+    };
+
+    struct error
+    {
+        error_code      m_Code         { error_code::none };
+        std::uint32_t   m_PathOffset   { 0 };
+        std::uint32_t   m_ExpectedType { 0 };
+        std::uint32_t   m_ActualType   { 0 };
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return m_Code != error_code::none;
+        }
+    };
+
+    namespace details
+    {
+        [[nodiscard]] constexpr error makeTypeMismatch(std::uint32_t Expected = 0, std::uint32_t Actual = 0) noexcept
+        { return { .m_Code = error_code::type_mismatch, .m_ExpectedType = Expected, .m_ActualType = Actual }; }
+        [[nodiscard]] constexpr error makeReadOnly(std::uint32_t Expected = 0, std::uint32_t Actual = 0) noexcept
+        { return { .m_Code = error_code::read_only, .m_ExpectedType = Expected, .m_ActualType = Actual }; }
+        [[nodiscard]] constexpr error makeInvalidKey(std::uint32_t Expected = 0, std::uint32_t Actual = 0) noexcept
+        { return { .m_Code = error_code::invalid_key, .m_ExpectedType = Expected, .m_ActualType = Actual }; }
+        [[nodiscard]] constexpr error makeUnsupportedOperation(std::uint32_t Expected = 0) noexcept
+        { return { .m_Code = error_code::unsupported_operation, .m_ExpectedType = Expected }; }
+        [[nodiscard]] constexpr error makeNullObject() noexcept
+        { return { .m_Code = error_code::null_object }; }
+    }
+
+    template<typename T>
+    class [[nodiscard]] result
+    {
+    public:
+        constexpr result(T Value) noexcept(std::is_nothrow_move_constructible_v<T>)
+            : m_Value{ std::move(Value) }
+        {}
+        constexpr result(error Error) noexcept : m_Error{ Error } {}
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept { return m_Value.has_value(); }
+        [[nodiscard]] constexpr bool hasValue() const noexcept { return m_Value.has_value(); }
+        [[nodiscard]] constexpr const error& getError() const noexcept { return m_Error; }
+        [[nodiscard]] constexpr T& value() & noexcept { assert(m_Value); return *m_Value; }
+        [[nodiscard]] constexpr const T& value() const& noexcept { assert(m_Value); return *m_Value; }
+        [[nodiscard]] constexpr T&& value() && noexcept { assert(m_Value); return std::move(*m_Value); }
+
+    private:
+        std::optional<T> m_Value;
+        error            m_Error{};
+    };
+
+    template<>
+    class [[nodiscard]] result<void>
+    {
+    public:
+        constexpr result() noexcept = default;
+        constexpr result(error Error) noexcept : m_Error{ Error } {}
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept { return !m_Error; }
+        [[nodiscard]] constexpr bool hasValue() const noexcept { return !m_Error; }
+        [[nodiscard]] constexpr const error& getError() const noexcept { return m_Error; }
+
+    private:
+        error m_Error{};
+    };
     //
     // Dependent type which is always is false
     //
@@ -244,7 +332,7 @@ namespace xproperty
             }
 
             consteval auto operator<=>(const fixed_string&) const = default;
-            consteval operator const char* const () const { return m_Value; }
+            consteval operator const char* () const { return m_Value; }
             consteval static uint32_t size ( void ) noexcept { return size_v; }
             char m_Value[T_SIZE_V];
         };
@@ -259,7 +347,7 @@ namespace xproperty
             }
 
             consteval auto operator<=>(const fixed_wstring&) const = default;
-            consteval operator const wchar_t* const () const { return m_Value; }
+            consteval operator const wchar_t* () const { return m_Value; }
             consteval static uint32_t size(void) noexcept { return size_v; }
             wchar_t m_Value[T_SIZE_V];
         };
@@ -367,6 +455,76 @@ namespace xproperty
         inline static constexpr void const* value = &size;
         consteval type_meta() : basic_type{ value }{}
     };
+
+    namespace details
+    {
+        template<typename T_TUPLE, std::size_t... I>
+        [[nodiscard]] consteval auto make_argument_type_list_impl(std::index_sequence<I...>)
+        {
+            return std::array<xproperty::basic_type, sizeof...(I)>{ xproperty::type_meta<std::tuple_element_t<I, T_TUPLE>>{}... };
+        }
+
+        template<typename T_TUPLE>
+        [[nodiscard]] consteval auto make_argument_type_list()
+        {
+            return make_argument_type_list_impl<T_TUPLE>(std::make_index_sequence<std::tuple_size_v<T_TUPLE>>{});
+        }
+
+        template<typename T_TUPLE, std::size_t... I>
+        [[nodiscard]] constexpr bool tuple_types_match_impl(std::span<const xproperty::basic_type> Types, std::index_sequence<I...>) noexcept
+        {
+            return Types.size() == sizeof...(I)
+                && ((xproperty::type_meta<std::tuple_element_t<I, T_TUPLE>>::value == Types[I].m_Value) && ...);
+        }
+
+        template<typename T_TUPLE>
+        [[nodiscard]] constexpr bool tuple_types_match(std::span<const xproperty::basic_type> Types) noexcept
+        {
+            return tuple_types_match_impl<T_TUPLE>(Types, std::make_index_sequence<std::tuple_size_v<T_TUPLE>>{});
+        }
+
+        template<typename T_CALLABLE, typename T_TUPLE>
+        constexpr decltype(auto) invoke_from_tuple(T_CALLABLE&& Callable, T_TUPLE&& Arguments)
+        {
+            return std::apply(std::forward<T_CALLABLE>(Callable), std::forward<T_TUPLE>(Arguments));
+        }
+
+        template<typename T_CLASS, typename T_TUPLE>
+        [[nodiscard]] T_CLASS* construct_from_tuple(T_TUPLE&& Arguments)
+        {
+            return invoke_from_tuple([]<typename... T_ARGS>(T_ARGS&&... Args) -> T_CLASS*
+            {
+                return new T_CLASS{ std::forward<T_ARGS>(Args)... };
+            }, std::forward<T_TUPLE>(Arguments));
+        }
+
+        template<std::size_t T_ENTRY_COUNT, std::uint32_t T_EMPTY_INDEX>
+        struct static_guid_map
+        {
+            inline constexpr static std::size_t table_size_v =
+                T_ENTRY_COUNT == 0 ? 0 : std::bit_ceil(T_ENTRY_COUNT * 2);
+            using table_type = std::array<std::uint32_t, table_size_v>;
+
+            template<typename T_ENTRIES>
+            [[nodiscard]] static consteval table_type build(const T_ENTRIES& Entries)
+            {
+                table_type Lookup{};
+                if constexpr (T_ENTRY_COUNT > 0)
+                {
+                    Lookup.fill(T_EMPTY_INDEX);
+                    constexpr std::size_t Mask = table_size_v - 1;
+                    for (std::uint32_t Index = 0; Index < T_ENTRY_COUNT; ++Index)
+                    {
+                        std::size_t Bucket = Entries[Index].m_GUID & Mask;
+                        while (Lookup[Bucket] != T_EMPTY_INDEX)
+                            Bucket = (Bucket + 1) & Mask;
+                        Lookup[Bucket] = Index;
+                    }
+                }
+                return Lookup;
+            }
+        };
+    }
 
     namespace type
     {
@@ -539,8 +697,26 @@ namespace xproperty
 
         namespace details
         {
+            template<typename T_ADAPTER>
+            consteval void validate_pointer_adapter()
+            {
+                using pointer_t = typename T_ADAPTER::type;
+                using pointee_t = typename T_ADAPTER::specializing_t;
+                using atomic_t  = typename T_ADAPTER::atomic_type;
+                static_assert(T_ADAPTER::is_pointer_v && !T_ADAPTER::is_list_v,
+                    "XPROP027: pointer adapter must declare is_pointer_v=true and is_list_v=false");
+                static_assert(requires(pointer_t& Pointer, settings::context& Context)
+                { { T_ADAPTER::getObject(Pointer, Context) } -> std::convertible_to<pointee_t*>; },
+                    "XPROP028: pointer adapter getObject(pointer, context) must return a compatible pointee pointer");
+                static_assert(requires(pointer_t& Pointer, settings::context& Context)
+                { { T_ADAPTER::getAtomic(Pointer, Context) } -> std::convertible_to<atomic_t*>; },
+                    "XPROP029: pointer adapter getAtomic(pointer, context) must return a compatible atomic pointer");
+                static_assert(!std::is_const_v<std::remove_reference_t<decltype(*std::declval<pointer_t&>())>> || std::is_const_v<pointee_t>,
+                    "XPROP030: pointer adapter must preserve pointee constness");
+            }
+
             template<typename T>
-            using specializing_t = xproperty::details::remove_all_const_t<std::remove_reference_t<std::invoke_result_t<decltype([](T&& A)->auto&& { return *A; }), T >>>;
+            using specializing_t = xproperty::details::remove_all_const_t<std::remove_reference_t<decltype(*std::declval<T>())>>;
 
             template< typename T >
             consteval auto&& Resolve(T&& a)
@@ -563,7 +739,7 @@ namespace xproperty
 
 
             template<typename T>
-            using specializing_t2 = std::remove_reference_t< std::invoke_result_t<decltype([](T&& A)->auto&& { return *A; }), T >>;
+            using specializing_t2 = std::remove_reference_t<decltype(*std::declval<T>())>;
 
             template< typename T >
             consteval auto HasConstResolve(T&& a)
@@ -601,6 +777,10 @@ namespace xproperty
         template<xproperty::details::fixed_string T_NAME_V, typename T >
         struct var_defaults
         {
+            static_assert(sizeof(T) <= sizeof(data_memory),
+                "XPROP009: registered atomic type does not fit in settings::data_memory");
+            static_assert(alignof(T) <= alignof(data_memory),
+                "XPROP010: registered atomic type alignment exceeds settings::data_memory alignment");
             static_assert(std::is_const_v<T> == false, "Please don't define types that are const");
 
             inline constexpr static bool is_list_v      = false;
@@ -633,10 +813,10 @@ namespace xproperty
                 type m_X;
             };
 
-            constexpr static void              VoidConstruct   ( data_memory& Data )                            noexcept  { reinterpret_cast<builder&>(Data).builder::builder(); }  //std::construct_at(&reinterpret_cast<type&>(Data) ); }
-            constexpr static void              Destruct        ( data_memory& Data )                            noexcept  { reinterpret_cast<builder&>(Data).builder::~builder(); }//std::destroy_at(&reinterpret_cast<type&>(Data) ); }
-            constexpr static void              MoveConstruct   ( data_memory& Data1,       type&& Data2 )       noexcept  { reinterpret_cast<builder&>(Data1).builder::builder(std::forward<type&&>(Data2)); }//new(&Data1) type{ Data2 }; }
-            constexpr static void              CopyConstruct   ( data_memory& Data1, const type&  Data2 )       noexcept  { reinterpret_cast<builder&>(Data1).builder::builder(Data2); } //new(&Data1) type{ Data2 }; }
+            constexpr static void              VoidConstruct   ( data_memory& Data )                            noexcept  { std::construct_at(reinterpret_cast<builder*>(&Data)); }  //std::construct_at(&reinterpret_cast<type&>(Data) ); }
+            constexpr static void              Destruct        ( data_memory& Data )                            noexcept  { std::destroy_at(reinterpret_cast<builder*>(&Data)); }//std::destroy_at(&reinterpret_cast<type&>(Data) ); }
+            constexpr static void              MoveConstruct   ( data_memory& Data1,       type&& Data2 )       noexcept  { std::construct_at(reinterpret_cast<builder*>(&Data1), std::forward<type>(Data2)); }//new(&Data1) type{ Data2 }; }
+            constexpr static void              CopyConstruct   ( data_memory& Data1, const type&  Data2 )       noexcept  { std::construct_at(reinterpret_cast<builder*>(&Data1), Data2); } //new(&Data1) type{ Data2 }; }
 
         };
 
@@ -772,6 +952,29 @@ namespace xproperty
             destruct*                   m_pDestruct;
             move_construct*             m_pMoveConstruct;
             copy_construct*             m_pCopyConstruct;
+
+            [[nodiscard]] constexpr std::span<const enum_item> enumItems(std::span<const enum_item> Override = {}) const noexcept
+            {
+                return Override.empty() ? m_RegisteredEnumSpan : Override;
+            }
+
+            [[nodiscard]] xproperty::result<const enum_item*> TryFindEnumByName(
+                std::string_view Name, std::span<const enum_item> Override = {}) const noexcept
+            {
+                if (!m_IsEnum) return xproperty::details::makeUnsupportedOperation(m_GUID);
+                for (const auto& Item : enumItems(Override))
+                    if (Name == Item.m_pName) return &Item;
+                return xproperty::error{ .m_Code = error_code::invalid_enum_value, .m_ExpectedType = m_GUID };
+            }
+
+            [[nodiscard]] xproperty::result<const enum_item*> TryFindEnumByValue(
+                std::uint64_t Value, std::span<const enum_item> Override = {}) const noexcept
+            {
+                if (!m_IsEnum) return xproperty::details::makeUnsupportedOperation(m_GUID);
+                for (const auto& Item : enumItems(Override))
+                    if (static_cast<std::uint64_t>(Item.m_Value) == Value) return &Item;
+                return xproperty::error{ .m_Code = error_code::invalid_enum_value, .m_ExpectedType = m_GUID };
+            }
         };
 
         template<typename T>
@@ -799,6 +1002,9 @@ namespace xproperty
 
         namespace details
         {
+            struct uninitialized_iterator_t { explicit constexpr uninitialized_iterator_t() noexcept = default; };
+            inline constexpr uninitialized_iterator_t uninitialized_iterator{};
+
             template< typename T >
             struct iterator_data
             {
@@ -806,7 +1012,7 @@ namespace xproperty
 
                 iterator_data() = delete;
                 iterator_data( void* pData, const table& Table, settings::context& C ) noexcept
-                : m_Data    { reinterpret_cast<settings::iterator_memory&>(pData) }
+                : m_Data    {}
                 , m_Table   { Table }
                 , m_pObject { pData }
                 , m_Context { C }
@@ -827,16 +1033,20 @@ namespace xproperty
                 using table  = typename parent::table;
 
                 end_iterator() = delete;
-                end_iterator(void* pData, const table& Table, settings::context& C) noexcept
+                end_iterator(void* pData, const table& Table, settings::context& C, uninitialized_iterator_t) noexcept
                     : parent(pData, Table, C)
-                {
-                    parent::m_Table.m_pEnd(parent::m_pObject, *this, parent::m_Context);
-                }
+                {}
+
+                [[nodiscard]] constexpr bool isInitialized() const noexcept { return m_Initialized; }
+                constexpr void markInitialized() noexcept { m_Initialized = true; }
 
                 ~end_iterator()
                 {
-                    if(parent::m_pObject) parent::m_Table.m_pDestroyEndIterator(*this, parent::m_Context);
+                    if (m_Initialized && parent::m_Table.m_pDestroyEndIterator)
+                        parent::m_Table.m_pDestroyEndIterator(*this, parent::m_Context);
                 }
+
+                bool m_Initialized = false;
             };
 
             template< typename T >
@@ -846,26 +1056,56 @@ namespace xproperty
                 using table  = typename parent::table;
 
                 begin_iterator() = delete;
-                begin_iterator( void* pData, const table& Table, settings::context& C ) noexcept
-                    : parent(pData, Table, C )
+                begin_iterator(void* pData, const table& Table, settings::context& C, uninitialized_iterator_t) noexcept
+                    : parent(pData, Table, C)
+                {}
+
+                [[nodiscard]] constexpr bool isInitialized() const noexcept { return m_Initialized; }
+                constexpr void markInitialized() noexcept { m_Initialized = true; }
+
+                [[nodiscard]] xproperty::result<void*> TryGetObject() noexcept
                 {
-                    parent::m_Table.m_pStart(parent::m_pObject, *this, parent::m_Context);
+                    if (!m_Initialized) return xproperty::details::makeUnsupportedOperation();
+                    if (!parent::m_Table.m_pIteratorToObject) return xproperty::details::makeUnsupportedOperation();
+                    if (void* Object = parent::m_Table.m_pIteratorToObject(parent::m_pObject, *this, parent::m_Context)) return Object;
+                    return xproperty::error{ .m_Code = error_code::invalid_index };
                 }
 
+                [[nodiscard]] xproperty::result<void> TryGetKey(any& Key) const noexcept
+                {
+                    if (!m_Initialized || !parent::m_Table.m_pIteratorToKey)
+                        return xproperty::details::makeUnsupportedOperation();
+                    if (!parent::m_Table.m_pIteratorToKey(parent::m_pObject, *this, Key, parent::m_Context))
+                        return xproperty::details::makeInvalidKey();
+                    return {};
+                }
+
+                [[nodiscard]] xproperty::result<bool> TryNext(const end_iterator<T>& End) noexcept
+                {
+                    if (!m_Initialized || !End.isInitialized() || !parent::m_Table.m_pNext)
+                        return xproperty::details::makeUnsupportedOperation();
+                    ++m_Index;
+                    return parent::m_Table.m_pNext(parent::m_pObject, *this, End, parent::m_Context);
+                }
+
+                XPROPERTY_LEGACY_API("Use TryGetObject instead")
                 constexpr void* getObject( void ) noexcept
                 {
-                    return parent::m_Table.m_pIteratorToObject(parent::m_pObject, *this, parent::m_Context);
+                    auto Result = TryGetObject();
+                    return Result ? Result.value() : nullptr;
                 }
 
+                XPROPERTY_LEGACY_API("Use TryGetKey instead")
                 constexpr bool getKey( any& Key ) const noexcept
                 {
-                    return parent::m_Table.m_pIteratorToKey(parent::m_pObject, *this, Key, parent::m_Context);
+                    return static_cast<bool>(TryGetKey(Key));
                 }
 
+                XPROPERTY_LEGACY_API("Use TryNext instead")
                 constexpr bool Next( const end_iterator<T>& End ) noexcept
                 {
-                    m_Index++;
-                    return parent::m_Table.m_pNext(parent::m_pObject, *this, End, parent::m_Context);
+                    auto Result = TryNext(End);
+                    return Result ? Result.value() : false;
                 }
 
                 constexpr int getIndex() const noexcept
@@ -875,18 +1115,168 @@ namespace xproperty
 
                 ~begin_iterator()
                 {
-                    if (parent::m_pObject) parent::m_Table.m_pDestroyBeginIterator(*this, parent::m_Context);
+                    if (m_Initialized && parent::m_Table.m_pDestroyBeginIterator)
+                        parent::m_Table.m_pDestroyBeginIterator(*this, parent::m_Context);
                 }
 
-                int m_Index = 0;
+                int  m_Index = 0;
+                bool m_Initialized = false;
             };
+
+            template<typename T_VALUE, typename T_ITERATOR>
+            [[nodiscard]] constexpr T_VALUE& iteratorStorageAs(T_ITERATOR& Iterator) noexcept
+            {
+                static_assert(sizeof(T_VALUE) <= sizeof(settings::iterator_memory),
+                    "XPROP017: iterator type exceeds settings::iterator_memory size");
+                static_assert(alignof(T_VALUE) <= alignof(settings::iterator_memory),
+                    "XPROP018: iterator alignment exceeds settings::iterator_memory alignment");
+                return *std::launder(reinterpret_cast<T_VALUE*>(&Iterator.m_Data));
+            }
+
+            template<typename T_VALUE, typename T_ITERATOR>
+            [[nodiscard]] constexpr const T_VALUE& iteratorStorageAs(const T_ITERATOR& Iterator) noexcept
+            {
+                static_assert(sizeof(T_VALUE) <= sizeof(settings::iterator_memory),
+                    "XPROP017: iterator type exceeds settings::iterator_memory size");
+                static_assert(alignof(T_VALUE) <= alignof(settings::iterator_memory),
+                    "XPROP018: iterator alignment exceeds settings::iterator_memory alignment");
+                return *std::launder(reinterpret_cast<const T_VALUE*>(&Iterator.m_Data));
+            }
+
+            template<typename T_ITERATOR, typename T_CALLBACK>
+            [[nodiscard]] xproperty::result<void> TryInitializeIterator(
+                void* Object,
+                settings::context& Context,
+                const list_table& Table,
+                std::optional<T_ITERATOR>& Out,
+                T_CALLBACK Callback) noexcept
+            {
+                Out.reset();
+                if (!Object) return xproperty::details::makeNullObject();
+                if (!Callback) return xproperty::details::makeUnsupportedOperation();
+
+                Out.emplace(Object, Table, Context, uninitialized_iterator);
+                auto Construction = Callback(Object, *Out, Context);
+                if (!Construction)
+                {
+                    Out.reset();
+                    return Construction.getError();
+                }
+
+                Out->markInitialized();
+                return {};
+            }
         }
 
         using begin_iterator = details::begin_iterator<int>;
         using end_iterator   = details::end_iterator<int>;
 
+        class begin_iterator_holder
+        {
+        public:
+            begin_iterator_holder() = default;
+            begin_iterator_holder(const begin_iterator_holder&) = delete;
+            begin_iterator_holder& operator=(const begin_iterator_holder&) = delete;
+            begin_iterator_holder(begin_iterator_holder&&) = delete;
+            begin_iterator_holder& operator=(begin_iterator_holder&&) = delete;
+
+            [[nodiscard]] bool hasValue() const noexcept { return m_Value.has_value(); }
+            [[nodiscard]] begin_iterator& value() noexcept { assert(m_Value); return *m_Value; }
+            [[nodiscard]] const begin_iterator& value() const noexcept { assert(m_Value); return *m_Value; }
+            void reset() noexcept { m_Value.reset(); }
+
+        private:
+            friend struct list_table;
+            std::optional<begin_iterator> m_Value;
+        };
+
+        class end_iterator_holder
+        {
+        public:
+            end_iterator_holder() = default;
+            end_iterator_holder(const end_iterator_holder&) = delete;
+            end_iterator_holder& operator=(const end_iterator_holder&) = delete;
+            end_iterator_holder(end_iterator_holder&&) = delete;
+            end_iterator_holder& operator=(end_iterator_holder&&) = delete;
+
+            [[nodiscard]] bool hasValue() const noexcept { return m_Value.has_value(); }
+            [[nodiscard]] end_iterator& value() noexcept { assert(m_Value); return *m_Value; }
+            [[nodiscard]] const end_iterator& value() const noexcept { assert(m_Value); return *m_Value; }
+            void reset() noexcept { m_Value.reset(); }
+
+        private:
+            friend struct list_table;
+            std::optional<end_iterator> m_Value;
+        };
+
         struct any
         {
+            template<typename T>
+            [[nodiscard]] constexpr T& storageAs() noexcept
+            {
+                static_assert(sizeof(T) <= sizeof(settings::data_memory),
+                    "XPROP031: atomic value exceeds settings::data_memory size");
+                static_assert(alignof(T) <= alignof(settings::data_memory),
+                    "XPROP032: atomic value alignment exceeds settings::data_memory alignment");
+                return *std::launder(reinterpret_cast<T*>(&m_Data));
+            }
+
+            template<typename T>
+            [[nodiscard]] constexpr const T& storageAs() const noexcept
+            {
+                static_assert(sizeof(T) <= sizeof(settings::data_memory),
+                    "XPROP031: atomic value exceeds settings::data_memory size");
+                static_assert(alignof(T) <= alignof(settings::data_memory),
+                    "XPROP032: atomic value alignment exceeds settings::data_memory alignment");
+                return *std::launder(reinterpret_cast<const T*>(&m_Data));
+            }
+
+            constexpr void destroyValue() noexcept
+            {
+                if (m_pType) m_pType->m_pDestruct(m_Data);
+            }
+
+            constexpr void copyValueFrom(const any& Source) noexcept
+            {
+                m_pType = Source.m_pType;
+                if (m_pType) m_pType->m_pCopyConstruct(m_Data, Source.m_Data);
+            }
+
+            constexpr void moveValueFrom(any& Source) noexcept
+            {
+                m_pType = Source.m_pType;
+                if (m_pType)
+                {
+                    m_pType->m_pMoveConstruct(m_Data, std::move(Source.m_Data));
+                    Source.clear();
+                }
+            }
+
+            [[nodiscard]] constexpr bool hasValue() const noexcept { return m_pType != nullptr; }
+            [[nodiscard]] constexpr const atomic* getType() const noexcept { return m_pType; }
+
+            template<typename T>
+            [[nodiscard]] constexpr bool is() const noexcept
+            {
+                return m_pType == &atomic_v<T>;
+            }
+
+            template<typename T>
+            [[nodiscard]] constexpr xproperty::result<T*> tryGet() noexcept
+            {
+                if (!m_pType) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID);
+                if (m_pType != &atomic_v<T>) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID, m_pType->m_GUID);
+                return &storageAs<T>();
+            }
+
+            template<typename T>
+            [[nodiscard]] constexpr xproperty::result<const T*> tryGet() const noexcept
+            {
+                if (!m_pType) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID);
+                if (m_pType != &atomic_v<T>) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID, m_pType->m_GUID);
+                return &storageAs<T>();
+            }
+
             constexpr std::uint32_t getTypeGuid() const noexcept
             {
                 return m_pType ? m_pType->m_GUID : 0;
@@ -897,23 +1287,17 @@ namespace xproperty
             {
                 static_assert(xproperty::details::has_const_v<T> == false);
                 static_assert( std::is_enum_v<T> || settings::var_type<T>::guid_v != 0 );
-                if(m_pType) 
-                {
-                    m_pType->m_pDestruct(m_Data);
-                }
+                destroyValue();
 
                 m_pType = &atomic_v<T>;
                 m_pType->m_pVoidConstruct(m_Data);
 
-                return reinterpret_cast<T&>(m_Data);
+                return storageAs<T>();
             }
 
             constexpr void clear()
             {
-                if (m_pType)
-                {
-                    m_pType->m_pDestruct(m_Data);
-                }
+                destroyValue();
                 m_pType = nullptr;
             }
 
@@ -922,15 +1306,12 @@ namespace xproperty
             {
                 static_assert(xproperty::details::has_const_v<T> == false);
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
-                if (m_pType)
-                {
-                    m_pType->m_pDestruct(m_Data);
-                }
+                destroyValue();
 
                 m_pType = &atomic_v<T>;
                 m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(reinterpret_cast<settings::data_memory&&>(Data)) );
 
-                return reinterpret_cast<T&>(m_Data);
+                return storageAs<T>();
             }
 
             template<typename T>
@@ -938,14 +1319,11 @@ namespace xproperty
             {
                 static_assert(xproperty::details::has_const_v<T> == false);
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
-                if (m_pType)
-                {
-                    m_pType->m_pDestruct(m_Data);
-                }
+                destroyValue();
 
                 m_pType = &atomic_v<T>;
                 settings::var_type<T>::CopyConstruct(m_Data, Data);
-                return reinterpret_cast<T&>(m_Data);
+                return storageAs<T>();
             }
 
             template<typename T>
@@ -963,7 +1341,7 @@ namespace xproperty
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
                 assert(m_pType);
                 assert(m_pType == &atomic_v<T>);
-                return reinterpret_cast<T&>(m_Data);
+                return storageAs<T>();
             }
 
             template< typename T >
@@ -971,10 +1349,10 @@ namespace xproperty
             {
                 switch (m_pType->m_Size)
                 {
-                case 1: return static_cast<T>(reinterpret_cast<const std::uint8_t&>(m_Data));
-                case 2: return static_cast<T>(reinterpret_cast<const std::uint16_t&>(m_Data));
-                case 4: return static_cast<T>(reinterpret_cast<const std::uint32_t&>(m_Data));
-                case 8: return static_cast<T>(reinterpret_cast<const std::uint64_t&>(m_Data));
+                case 1: return static_cast<T>(storageAs<std::uint8_t>());
+                case 2: return static_cast<T>(storageAs<std::uint16_t>());
+                case 4: return static_cast<T>(storageAs<std::uint32_t>());
+                case 8: return static_cast<T>(storageAs<std::uint64_t>());
                 default: assert(false); return 0;
                 }
             }
@@ -1009,7 +1387,7 @@ namespace xproperty
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
                 assert(m_pType);
                 assert(m_pType == &atomic_v<T>);
-                return reinterpret_cast<const T&>(m_Data);
+                return storageAs<T>();
             }
 
             constexpr bool isEnum(void) const noexcept
@@ -1023,20 +1401,14 @@ namespace xproperty
             }
 
             constexpr any() = default;
-            constexpr any( any&& Any ) noexcept
+            constexpr any(any&& Any) noexcept
             {
-                m_pType = Any.m_pType;
-                if (Any.m_pType)
-                {
-                    m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(Any.m_Data));
-                    Any.clear();
-                }
+                moveValueFrom(Any);
             }
 
-            constexpr any( const any& Any) noexcept
+            constexpr any(const any& Any) noexcept
             {
-                m_pType = Any.m_pType;
-                if (Any.m_pType) m_pType->m_pCopyConstruct(m_Data, Any.m_Data);
+                copyValueFrom(Any);
             }
 
             template< typename T>
@@ -1055,24 +1427,21 @@ namespace xproperty
                 m_pType->m_pMoveConstruct( m_Data, reinterpret_cast<settings::data_memory&&>(Data) );
             }
 
-            constexpr any& operator = (const any& Any) noexcept
+            constexpr any& operator=(const any& Any) noexcept
             {
-                if(m_pType) m_pType->m_pDestruct(m_Data);
-                m_pType = Any.m_pType;
-                if (Any.m_pType) m_pType->m_pCopyConstruct(m_Data, Any.m_Data);
+                if (this == &Any) return *this;
+                destroyValue();
+                m_pType = nullptr;
+                copyValueFrom(Any);
                 return *this;
             }
 
-            constexpr  any& operator = (any&& Any) noexcept
+            constexpr any& operator=(any&& Any) noexcept
             {
-                if (m_pType) m_pType->m_pDestruct(m_Data);
-                m_pType = Any.m_pType;
-                if (Any.m_pType)
-                {
-                    m_pType->m_pMoveConstruct(m_Data, std::forward<settings::data_memory&&>(Any.m_Data));
-                    Any.clear();
-                }
-
+                if (this == &Any) return *this;
+                destroyValue();
+                m_pType = nullptr;
+                moveValueFrom(Any);
                 return *this;
             }
 
@@ -1094,8 +1463,8 @@ namespace xproperty
         {
             using get_size_fn               = std::size_t (void* pClass, settings::context&);
             using set_size_fn               = void ( void*           pClass,       std::size_t,                                         settings::context&);
-            using start_fn                  = void ( void*           pClass,       begin_iterator&  Iterator,                           settings::context&);
-            using end_fn                    = void ( void*           pClass,       end_iterator&    End,                                settings::context&);
+            using start_fn                  = xproperty::result<void>(void* pClass, begin_iterator& Iterator, settings::context&);
+            using end_fn                    = xproperty::result<void>(void* pClass, end_iterator& End, settings::context&);
             using next_fn                   = bool ( void*           pClass,       begin_iterator&  Iterator, const end_iterator& End,  settings::context&);
             using iterator_to_key_fn        = bool ( void*           pClass, const begin_iterator&  Iterator, any&                Key,  settings::context&);
             using iterator_to_object_fn     = void*( void*           pClass,       begin_iterator&  Iterator,                           settings::context&);
@@ -1114,6 +1483,52 @@ namespace xproperty
             destroy_begin_iterator_fn*  const m_pDestroyBeginIterator;
             destroy_end_iterator_fn*    const m_pDestroyEndIterator;
             const atomic&                     m_KeyAtomicType;
+
+            [[nodiscard]] xproperty::result<void> TryBegin(
+                void* Object, settings::context& Context, begin_iterator_holder& Out) const
+            {
+                Out.reset();
+                if (!m_pDestroyBeginIterator)
+                    return Object ? xproperty::details::makeUnsupportedOperation()
+                                  : xproperty::details::makeNullObject();
+                return details::TryInitializeIterator(Object, Context, *this, Out.m_Value, m_pStart);
+            }
+
+            [[nodiscard]] xproperty::result<void> TryEnd(
+                void* Object, settings::context& Context, end_iterator_holder& Out) const
+            {
+                Out.reset();
+                if (!m_pDestroyEndIterator)
+                    return Object ? xproperty::details::makeUnsupportedOperation()
+                                  : xproperty::details::makeNullObject();
+                return details::TryInitializeIterator(Object, Context, *this, Out.m_Value, m_pEnd);
+            }
+
+            [[nodiscard]] xproperty::result<std::size_t> TryGetSize(void* Object, settings::context& Context) const
+            {
+                if (!Object) return xproperty::details::makeNullObject();
+                if (!m_pGetSize) return xproperty::details::makeUnsupportedOperation();
+                return m_pGetSize(Object, Context);
+            }
+
+            [[nodiscard]] xproperty::result<void> TrySetSize(void* Object, std::size_t Size, settings::context& Context) const
+            {
+                if (!Object) return xproperty::details::makeNullObject();
+                if (!m_pSetSize) return xproperty::details::makeUnsupportedOperation();
+                m_pSetSize(Object, Size, Context);
+                return {};
+            }
+
+            [[nodiscard]] xproperty::result<void*> TryGetObject(void* Object, const any& Key, settings::context& Context) const
+            {
+                if (!Object) return xproperty::details::makeNullObject();
+                if (!m_pGetObject) return xproperty::details::makeUnsupportedOperation();
+                if (!Key.hasValue()) return xproperty::details::makeInvalidKey(m_KeyAtomicType.m_GUID);
+                if (Key.getTypeGuid() != m_KeyAtomicType.m_GUID)
+                    return xproperty::details::makeTypeMismatch(m_KeyAtomicType.m_GUID, Key.getTypeGuid());
+                if (void* Value = m_pGetObject(Object, Key, Context)) return Value;
+                return xproperty::details::makeInvalidKey(m_KeyAtomicType.m_GUID, Key.getTypeGuid());
+            }
         };
 
         struct members
@@ -1126,19 +1541,32 @@ namespace xproperty
 
             struct scope
             {
+                inline constexpr static std::uint32_t invalid_index_v = std::numeric_limits<std::uint32_t>::max();
+
                 const std::span<const members>          m_Members;
+                const std::span<const std::uint32_t>    m_Lookup;
 
                 [[nodiscard]] inline const members* findMember( std::uint32_t GUID ) const noexcept
                 {
-                    if(GUID)
-                    {
-                        for (auto& E : m_Members)
-                        {
-                            if (E.m_GUID == GUID) return &E;
-                        }
-                    }
+                    if (GUID == 0 || m_Lookup.empty()) return nullptr;
 
+                    const std::size_t Mask = m_Lookup.size() - 1;
+                    std::size_t Bucket = GUID & Mask;
+                    for (std::size_t Probe = 0; Probe < m_Lookup.size(); ++Probe)
+                    {
+                        const std::uint32_t Index = m_Lookup[Bucket];
+                        if (Index == invalid_index_v) return nullptr;
+                        assert(Index < m_Members.size());
+                        if (m_Members[Index].m_GUID == GUID) return &m_Members[Index];
+                        Bucket = (Bucket + 1) & Mask;
+                    }
                     return nullptr;
+                }
+
+                [[nodiscard]] inline xproperty::result<const members*> requireMember(std::uint32_t GUID) const noexcept
+                {
+                    if (const auto* Member = findMember(GUID)) return Member;
+                    return xproperty::error{ .m_Code = error_code::member_not_found };
                 }
             };
 
@@ -1147,10 +1575,54 @@ namespace xproperty
                 using read_fn           = void( const void* pClass,       any& DataOut, const std::span<const atomic::enum_item>& S, settings::context& );
                 using write_fn          = void(       void* pClass, const any& DataIn,  const std::span<const atomic::enum_item>& S, settings::context& );
 
-                read_fn*  const                          m_pRead;
-                write_fn* const                          m_pWrite;
+                read_fn*  const                          m_pReadUnchecked;
+                write_fn* const                          m_pWriteUnchecked;
                 const atomic&                            m_AtomicType;
                 const std::span<const atomic::enum_item> m_UnregisteredEnumSpan;
+
+                [[nodiscard]] xproperty::result<void> TryRead(const void* Object, any& Out, settings::context& Context) const
+                {
+                    if (!Object) return xproperty::details::makeNullObject();
+                    if (!m_pReadUnchecked) return xproperty::details::makeUnsupportedOperation();
+                    m_pReadUnchecked(Object, Out, m_UnregisteredEnumSpan, Context);
+                    return {};
+                }
+
+                template<typename T_STRING = std::string>
+                [[nodiscard]] xproperty::result<void> TryWrite(void* Object, const any& In, settings::context& Context) const
+                {
+                    if (!Object) return xproperty::details::makeNullObject();
+                    if (!m_pWriteUnchecked) return xproperty::details::makeReadOnly(m_AtomicType.m_GUID, In.getTypeGuid());
+                    if (!In.hasValue()) return xproperty::details::makeTypeMismatch(m_AtomicType.m_GUID);
+
+                    if (In.getTypeGuid() != m_AtomicType.m_GUID)
+                    {
+                        if (!(m_AtomicType.m_IsEnum && In.getTypeGuid() == xproperty::settings::var_type<T_STRING>::guid_v))
+                            return xproperty::details::makeTypeMismatch(m_AtomicType.m_GUID, In.getTypeGuid());
+
+                        const auto* String = In.tryGet<T_STRING>().value();
+                        const auto Found = m_AtomicType.TryFindEnumByName(*String, m_UnregisteredEnumSpan);
+                        if (!Found) return xproperty::error{ .m_Code = error_code::invalid_enum_value, .m_ExpectedType = m_AtomicType.m_GUID, .m_ActualType = In.getTypeGuid() };
+                    }
+
+                    m_pWriteUnchecked(Object, In, m_UnregisteredEnumSpan, Context);
+                    return {};
+                }
+
+                XPROPERTY_LEGACY_API("Use TryRead instead")
+                void Read(const void* Object, any& Out, settings::context& Context) const
+                {
+                    const auto Result = TryRead(Object, Out, Context);
+                    assert(Result);
+                }
+
+                template<typename T_STRING = std::string>
+                XPROPERTY_LEGACY_API("Use TryWrite instead")
+                void Write(void* Object, const any& In, settings::context& Context) const
+                {
+                    const auto Result = TryWrite<T_STRING>(Object, In, Context);
+                    assert(Result);
+                }
             };
 
             struct list_var
@@ -1158,16 +1630,52 @@ namespace xproperty
                 using read_fn               = void( const void* pClass,       any& DataOut, const std::span<const atomic::enum_item>& S, settings::context&);
                 using write_fn              = void(       void* pClass, const any& DataIn,  const std::span<const atomic::enum_item>& S, settings::context&);
 
-                read_fn*  const                          m_pRead;
-                write_fn* const                          m_pWrite;
+                read_fn*  const                          m_pReadUnchecked;
+                write_fn* const                          m_pWriteUnchecked;
                 const std::span<const list_table>        m_Table;
                 const atomic&                            m_AtomicType;
                 const std::span<const atomic::enum_item> m_UnregisteredEnumSpan;
+
+                [[nodiscard]] xproperty::result<std::size_t> TryGetSize(void* Object, std::size_t Dimension, settings::context& Context) const
+                {
+                    if (Dimension >= m_Table.size()) return xproperty::error{ .m_Code = error_code::invalid_index };
+                    return m_Table[Dimension].TryGetSize(Object, Context);
+                }
+
+                [[nodiscard]] xproperty::result<void> TrySetSize(void* Object, std::size_t Dimension, std::size_t Size, settings::context& Context) const
+                {
+                    if (Dimension >= m_Table.size()) return xproperty::error{ .m_Code = error_code::invalid_index };
+                    return m_Table[Dimension].TrySetSize(Object, Size, Context);
+                }
+
+                [[nodiscard]] xproperty::result<void*> TryGetObject(void* Object, std::size_t Dimension, const any& Key, settings::context& Context) const
+                {
+                    if (Dimension >= m_Table.size()) return xproperty::error{ .m_Code = error_code::invalid_index };
+                    return m_Table[Dimension].TryGetObject(Object, Key, Context);
+                }
             };
 
             struct list_props : props
             {
                 const std::span<const list_table>        m_Table;
+
+                [[nodiscard]] xproperty::result<std::size_t> TryGetSize(void* Object, std::size_t Dimension, settings::context& Context) const
+                {
+                    if (Dimension >= m_Table.size()) return xproperty::error{ .m_Code = error_code::invalid_index };
+                    return m_Table[Dimension].TryGetSize(Object, Context);
+                }
+
+                [[nodiscard]] xproperty::result<void> TrySetSize(void* Object, std::size_t Dimension, std::size_t Size, settings::context& Context) const
+                {
+                    if (Dimension >= m_Table.size()) return xproperty::error{ .m_Code = error_code::invalid_index };
+                    return m_Table[Dimension].TrySetSize(Object, Size, Context);
+                }
+
+                [[nodiscard]] xproperty::result<void*> TryGetObject(void* Object, std::size_t Dimension, const any& Key, settings::context& Context) const
+                {
+                    if (Dimension >= m_Table.size()) return xproperty::error{ .m_Code = error_code::invalid_index };
+                    return m_Table[Dimension].TryGetObject(Object, Key, Context);
+                }
             };
 
             struct function
@@ -1178,18 +1686,25 @@ namespace xproperty
                 const std::span< const xproperty::basic_type>  m_ArgumentList;
 
                 template<typename T, typename...TARGS >
-                constexpr void CallFunction(T& Class, TARGS&&...Args) const noexcept
+                [[nodiscard]] constexpr xproperty::result<void> TryCallFunction(T& Class, TARGS&&...Args) const noexcept
                 {
-                    using col = std::tuple<TARGS...>;
-                    (([&]
-                        {
-                            auto v1 = type_meta< std::decay_t<TARGS> >::value;
-                            auto v2 = m_ArgumentList[xproperty::details::tuple_t2i_v<TARGS, col>].m_Value;
-                            assert(v1 == v2);
-                        }()), ...);
+                    using col = std::tuple<std::decay_t<TARGS>...>;
+                    if (m_ArgumentList.size() != sizeof...(TARGS))
+                        return xproperty::details::makeTypeMismatch();
+                    const bool Compatible = xproperty::details::tuple_types_match<col>(m_ArgumentList);
+                    if (!Compatible) return xproperty::details::makeTypeMismatch();
 
                     col Arguments{ std::forward<TARGS>(Args)... };
                     m_pCallFunction(&Class, &Arguments);
+                    return {};
+                }
+
+                template<typename T, typename...TARGS >
+                XPROPERTY_LEGACY_API("Use TryCallFunction instead")
+                constexpr void CallFunction(T& Class, TARGS&&...Args) const noexcept
+                {
+                    const auto Result = TryCallFunction(Class, std::forward<TARGS>(Args)...);
+                    assert(Result);
                 }
             };
 
@@ -1216,6 +1731,35 @@ namespace xproperty
             const mix_variant       m_Variant;
             const bool              m_bConst;   // Should this be here stead in each type?
             fn_get_user_data* const m_pGetUserData;
+
+            [[nodiscard]] xproperty::result<void> TryRead(const void* Object, any& Out, settings::context& Context) const
+            {
+                if (const auto* Value = std::get_if<var>(&m_Variant)) return Value->TryRead(Object, Out, Context);
+                if (const auto* Value = std::get_if<list_var>(&m_Variant))
+                {
+                    if (!Object) return xproperty::details::makeNullObject();
+                    if (!Value->m_pReadUnchecked) return xproperty::details::makeUnsupportedOperation();
+                    Value->m_pReadUnchecked(Object, Out, Value->m_UnregisteredEnumSpan, Context);
+                    return {};
+                }
+                return xproperty::details::makeUnsupportedOperation();
+            }
+
+            template<typename T_STRING = std::string>
+            [[nodiscard]] xproperty::result<void> TryWrite(void* Object, const any& In, settings::context& Context) const
+            {
+                if (const auto* Value = std::get_if<var>(&m_Variant)) return Value->TryWrite<T_STRING>(Object, In, Context);
+                if (const auto* Value = std::get_if<list_var>(&m_Variant))
+                {
+                    if (!Object) return xproperty::details::makeNullObject();
+                    if (!Value->m_pWriteUnchecked) return xproperty::details::makeReadOnly(Value->m_AtomicType.m_GUID, In.getTypeGuid());
+                    if (!In.hasValue() || In.getTypeGuid() != Value->m_AtomicType.m_GUID)
+                        return xproperty::details::makeTypeMismatch(Value->m_AtomicType.m_GUID, In.getTypeGuid());
+                    Value->m_pWriteUnchecked(Object, In, Value->m_UnregisteredEnumSpan, Context);
+                    return {};
+                }
+                return xproperty::details::makeUnsupportedOperation();
+            }
         };
 
         struct base : members::props
@@ -1248,29 +1792,32 @@ namespace xproperty
             const std::span<const base>                 m_BaseList;
 
             template< typename...T_ARGS>
-            std::unique_ptr<void, deleter> CreateInstance(T_ARGS&&... Args) const
+            [[nodiscard]] xproperty::result<std::unique_ptr<void, deleter>> TryCreateInstance(T_ARGS&&... Args) const
             {
-                using col = std::tuple<T_ARGS...>;
-
+                using col = std::tuple<std::decay_t<T_ARGS>...>;
                 for (auto& E : m_Constructors)
                 {
-                    bool bCompatible = sizeof...(T_ARGS) == E.m_ArgumentList.size();
-                    if constexpr (sizeof...(T_ARGS) > 0) bCompatible = bCompatible &&
-                        (([&]
-                            {
-                                auto v1 = type_meta< std::decay_t<T_ARGS> >::value;
-                                auto v2 = E.m_ArgumentList[xproperty::details::tuple_t2i_v<T_ARGS, col>].m_Value;
-                                return (v1 == v2);
-                            }()) || ...);
-
-                    if (bCompatible)
+                    bool Compatible = sizeof...(T_ARGS) == E.m_ArgumentList.size();
+                    if (Compatible)
+                    {
+                        Compatible = xproperty::details::tuple_types_match<col>(E.m_ArgumentList);
+                    }
+                    if (Compatible)
                     {
                         col Arguments{ std::forward<T_ARGS>(Args)... };
-                        return { E.m_pCallConstructor(&Arguments), deleter{m_pDestroyInstance} };
+                        return std::unique_ptr<void, deleter>{ E.m_pCallConstructor(&Arguments), deleter{m_pDestroyInstance} };
                     }
                 }
+                return xproperty::error{ .m_Code = error_code::constructor_not_found };
+            }
 
-                return { nullptr, {} };
+            template< typename...T_ARGS>
+            XPROPERTY_LEGACY_API("Use TryCreateInstance instead")
+            std::unique_ptr<void, deleter> CreateInstance(T_ARGS&&... Args) const
+            {
+                auto Result = TryCreateInstance(std::forward<T_ARGS>(Args)...);
+                if (!Result) return { nullptr, {} };
+                return std::move(Result).value();
             }
         };
 
@@ -1321,8 +1868,17 @@ namespace xproperty
         //
         // MEMBERS
         //
+        template<typename...>
+        inline constexpr bool dependent_false_v = false;
+
         template< xproperty::details::fixed_string T_NAME_V, typename T_DATA, auto T_DATA_V, typename... T_ARGS >
-        struct member;
+        struct member
+        {
+            static_assert(dependent_false_v<T_DATA>,
+                "XPROP002: unsupported property callback or member signature. "
+                "Use a data-member pointer, member-function pointer, or a captureless callback "
+                "matching one of the documented xproperty contracts");
+        };
 
         namespace details
         {
@@ -1365,7 +1921,10 @@ namespace xproperty
                             type::atomic_v<atomic_t>.m_RegisteredEnumSpan = S;
                         else
                             assert(S.size() == type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size());
+                    }
 
+                    if constexpr (std::is_enum_v<atomic_t>)
+                    {
                         // This forces to have std::string as part of its atomic types... which is not ideal...
                         if( Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v )
                         {
@@ -1392,9 +1951,8 @@ namespace xproperty
                         }
                     }
 
-                    if (Any.m_pType->m_GUID != type::var_t<t>::guid_v )
+                    if (Any.m_pType->m_GUID != type::var_t<atomic_t>::guid_v )
                     {
-                        printf("[ERROR]: Trying to set properties of the wrong types, from type [%s] to type [%s]\n", Any.m_pType->m_pName, type::var_t<t>::name_v.m_Value);
                         return;
                     }
 
@@ -1491,6 +2049,18 @@ namespace xproperty
                 }
             };
 
+            template<typename T>
+            [[nodiscard]] constexpr T* objectAs(void* Object) noexcept
+            {
+                return static_cast<T*>(Object);
+            }
+
+            template<typename T>
+            [[nodiscard]] constexpr const T* objectAs(const void* Object) noexcept
+            {
+                return static_cast<const T*>(Object);
+            }
+
             template< typename T_MEMBER_TYPE >
             struct cast_scope_list
             {
@@ -1505,13 +2075,13 @@ namespace xproperty
                     if constexpr (type::var_t<T_MEMBER_TYPE>::is_pointer_v)
                     {
                         using ft = xproperty::details::function_traits<std::remove_const_t<decltype(type::var_t<T_MEMBER_TYPE>::getAtomic)>>;
-                             if constexpr (std::tuple_size_v<typename ft::args> == 1) pA = type::var_t<T_MEMBER_TYPE>::getAtomic( *reinterpret_cast<T_MEMBER_TYPE*>(pClass)   );
-                        else if constexpr (std::tuple_size_v<typename ft::args> == 2) pA = type::var_t<T_MEMBER_TYPE>::getAtomic( *reinterpret_cast<T_MEMBER_TYPE*>(pClass), C);
+                             if constexpr (std::tuple_size_v<typename ft::args> == 1) pA = type::var_t<T_MEMBER_TYPE>::getAtomic( *objectAs<T_MEMBER_TYPE>(pClass)   );
+                        else if constexpr (std::tuple_size_v<typename ft::args> == 2) pA = type::var_t<T_MEMBER_TYPE>::getAtomic( *objectAs<T_MEMBER_TYPE>(pClass), C);
                         else static_assert(always_false<ft>::value, "The getAtomic function for the given list type must have at least 1 parameters => atomic_type* getAtomic( type& MemberVar )");
                     }
                     else
                     {
-                        pA = reinterpret_cast<atomic_t*>(pClass);
+                        pA = objectAs<atomic_t>(pClass);
                     }
 
                     if constexpr (std::is_base_of_v< xproperty::base, atomic_t >)
@@ -1554,6 +2124,52 @@ namespace xproperty
 
             namespace details
             {
+                template<typename T_ADAPTER, typename T_CONTAINER>
+                consteval void validate_list_adapter()
+                {
+                    using begin_iterator_t = typename T_ADAPTER::begin_iterator;
+                    using end_iterator_t   = typename T_ADAPTER::end_iterator;
+                    using key_t            = typename T_ADAPTER::atomic_key;
+                    using container_t      = typename T_ADAPTER::type;
+
+                    static_assert(requires(container_t& Container, settings::context& Context)
+                    {
+                        { T_ADAPTER::getSize(Container, Context) } -> std::convertible_to<std::size_t>;
+                    }, "XPROP020: list adapter is missing getSize(container, context), or its result is not convertible to std::size_t");
+
+                    static_assert(requires(container_t& Container, begin_iterator_t& Iterator, settings::context& Context)
+                    {
+                        { T_ADAPTER::Start(Container, Iterator, Context) } -> std::same_as<void>;
+                    }, "XPROP021: list adapter Start(container, begin_iterator, context) contract is invalid");
+
+                    static_assert(requires(container_t& Container, end_iterator_t& Iterator, settings::context& Context)
+                    {
+                        { T_ADAPTER::End(Container, Iterator, Context) } -> std::same_as<void>;
+                    }, "XPROP022: list adapter End(container, end_iterator, context) contract is invalid");
+
+                    static_assert(requires(begin_iterator_t& Begin, end_iterator_t& End, settings::context& Context)
+                    {
+                        { T_ADAPTER::DestroyBeginIterator(Begin, Context) } -> std::same_as<void>;
+                        { T_ADAPTER::DestroyEndIterator(End, Context) } -> std::same_as<void>;
+                    }, "XPROP023: list adapter iterator destruction contract is invalid");
+
+                    static_assert(type::var_t<key_t>::guid_v != 1,
+                        "XPROP024: list adapter key type is not registered as an atomic type");
+
+                    static_assert(requires(container_t& Container, begin_iterator_t& Begin, const end_iterator_t& End, settings::context& Context)
+                    {
+                        { T_ADAPTER::Next(Container, Begin, End, Context) } -> std::convertible_to<bool>;
+                    }, "XPROP025: list adapter Next(container, begin, end, context) contract is invalid");
+
+                    static_assert(requires(container_t& Container, const typename T_ADAPTER::any_t& Key, settings::context& Context)
+                    {
+                        T_ADAPTER::getObject(Container, Key, Context);
+                    }, "XPROP026: list adapter getObject(container, any-key, context) contract is invalid");
+
+                    static_assert(std::same_as<std::remove_cv_t<container_t>, std::remove_cv_t<T_CONTAINER>>,
+                        "XPROP034: list adapter container type does not match the reflected member type");
+                }
+
                 template< typename T_CLASS, typename T_MEMBER_TYPE, auto T_LAMBDA_V, typename... T_ARGS >
                 consteval static type::list_table getListTable()
                 {
@@ -1563,6 +2179,17 @@ namespace xproperty
 //                    using atomic_type       = typename t::atomic_type;
                     using begin_iterator_t  = typename t::begin_iterator;
                     using end_iterator_t    = typename t::end_iterator;
+
+                    validate_list_adapter<t, T_MEMBER_TYPE>();
+
+                    static_assert(sizeof(begin_iterator_t) <= sizeof(settings::iterator_memory),
+                        "XPROP011: begin iterator does not fit in settings::iterator_memory");
+                    static_assert(sizeof(end_iterator_t) <= sizeof(settings::iterator_memory),
+                        "XPROP011: end iterator does not fit in settings::iterator_memory");
+                    static_assert(alignof(begin_iterator_t) <= alignof(settings::iterator_memory),
+                        "XPROP033: begin iterator alignment exceeds settings::iterator_memory alignment");
+                    static_assert(alignof(end_iterator_t) <= alignof(settings::iterator_memory),
+                        "XPROP033: end iterator alignment exceeds settings::iterator_memory alignment");
 
                     using  overwrite_list_size_tuple_t = xproperty::details::filter_by_tag_t< meta::member_overwrite_list_size_tag, T_ARGS... >;
 
@@ -1606,33 +2233,33 @@ namespace xproperty
                                 else                              callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size, C);
                             }
                         }
-                    , .m_pStart = []( void* pClass, xproperty::type::begin_iterator& Iterator, settings::context& C ) constexpr
+                    , .m_pStart = [](void* pClass, xproperty::type::begin_iterator& Iterator, settings::context& C) constexpr -> xproperty::result<void>
                         {
                             T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
-                            if(pA ==nullptr) return;
-
-                            t::Start(const_cast<type&>(*pA), reinterpret_cast<begin_iterator_t&>(Iterator.m_Data), C);
+                            if (pA == nullptr) return xproperty::details::makeNullObject();
+                            t::Start(const_cast<type&>(*pA), xproperty::type::details::iteratorStorageAs<begin_iterator_t>(Iterator), C);
+                            return {};
                         }
-                    , .m_pEnd = [](void* pClass, xproperty::type::end_iterator& Iterator, settings::context& C) constexpr
+                    , .m_pEnd = [](void* pClass, xproperty::type::end_iterator& Iterator, settings::context& C) constexpr -> xproperty::result<void>
                         {
                             T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
-                            if (pA == nullptr) return;
-
-                            t::End(const_cast<type&>(*pA), reinterpret_cast<end_iterator_t&>(Iterator.m_Data), C);
+                            if (pA == nullptr) return xproperty::details::makeNullObject();
+                            t::End(const_cast<type&>(*pA), xproperty::type::details::iteratorStorageAs<end_iterator_t>(Iterator), C);
+                            return {};
                         }
                     , .m_pNext = [](void* pClass, xproperty::type::begin_iterator& Iterator, const xproperty::type::end_iterator& End, settings::context& C) constexpr ->bool
                         {
                             T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
                             if (pA == nullptr) return false;
 
-                            return t::Next(*pA, reinterpret_cast<begin_iterator_t&>(Iterator.m_Data), reinterpret_cast<const end_iterator_t&>(End.m_Data), C);
+                            return t::Next(*pA, xproperty::type::details::iteratorStorageAs<begin_iterator_t>(Iterator), xproperty::type::details::iteratorStorageAs<end_iterator_t>(End), C);
                         }
                     , .m_pIteratorToKey = [](void* pClass, const xproperty::type::begin_iterator& Iterator, xproperty::type::any& Key, settings::context& C) constexpr -> bool
                         {
                             T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
                             if (pA == nullptr) return false;
 
-                            t::IteratorToKey(*pA, Key, reinterpret_cast<const begin_iterator_t&>(Iterator.m_Data), C);
+                            t::IteratorToKey(*pA, Key, xproperty::type::details::iteratorStorageAs<begin_iterator_t>(Iterator), C);
 
                             return true;
                         }
@@ -1641,7 +2268,7 @@ namespace xproperty
                             T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass, C);
                             if (pA == nullptr) return nullptr;
 
-                            return t::IteratorToObject(const_cast<type&>(*pA), reinterpret_cast<begin_iterator_t&>(I.m_Data), C );
+                            return t::IteratorToObject(const_cast<type&>(*pA), xproperty::type::details::iteratorStorageAs<begin_iterator_t>(I), C );
                         }
                     , .m_pGetObject = [](void* pClass, const xproperty::type::any& Key, settings::context& C ) constexpr -> void*
                         {
@@ -1652,11 +2279,11 @@ namespace xproperty
                         }
                     , .m_pDestroyBeginIterator = [](xproperty::type::begin_iterator& Iterator, settings::context& C) constexpr
                         {
-                            t::DestroyBeginIterator(reinterpret_cast<begin_iterator_t&>(Iterator.m_Data), C);
+                            t::DestroyBeginIterator(xproperty::type::details::iteratorStorageAs<begin_iterator_t>(Iterator), C);
                         }
                     , .m_pDestroyEndIterator = [](xproperty::type::end_iterator& Iterator, settings::context& C) constexpr
                         {
-                            t::DestroyEndIterator(reinterpret_cast<end_iterator_t&>(Iterator.m_Data), C);
+                            t::DestroyEndIterator(xproperty::type::details::iteratorStorageAs<end_iterator_t>(Iterator), C);
                         }
                     , .m_KeyAtomicType = xproperty::type::atomic_v<typename t::atomic_key>
                     };
@@ -1738,9 +2365,23 @@ namespace xproperty
                 }();
             };
 
+            template<typename...T>
+            consteval bool unique_user_data_guids(std::tuple<T...>*)
+            {
+                constexpr std::array<std::uint32_t, sizeof...(T)> guids{ T::type_guid_v... };
+                for (std::size_t i = 0; i < guids.size(); ++i)
+                    for (std::size_t j = i + 1; j < guids.size(); ++j)
+                        if (guids[i] == guids[j]) return false;
+                return true;
+            }
+
             template< typename T_USER_DATA >
             const void* GetUserData(std::uint32_t GUID)
             {
+                static_assert(unique_user_data_guids(static_cast<T_USER_DATA*>(nullptr)),
+                    "XPROP007: duplicate user-data GUIDs are attached to the same property. "
+                    "Remove the duplicate metadata or assign distinct member_user_data GUIDs");
+
                 if constexpr (std::tuple_size_v<T_USER_DATA>)
                 {
                     return[]<typename...T>(std::uint32_t GUID, std::tuple<T...>*) constexpr -> const void*
@@ -1791,8 +2432,40 @@ namespace xproperty
         }
 
         //
+        namespace details
+        {
+            template<xproperty::details::fixed_string T_NAME_V, typename T_VARIANT, typename T_USER_DATA>
+            [[nodiscard]] consteval xproperty::type::members make_member_descriptor(
+                T_VARIANT Variant,
+                bool IsConst)
+            {
+                return
+                { .m_GUID = xproperty::settings::strguid(T_NAME_V)
+                , .m_pName = T_NAME_V
+                , .m_Variant = Variant
+                , .m_bConst = IsConst
+                , .m_pGetUserData = GetUserData<T_USER_DATA>
+                };
+            }
+        }
+
         // Helper to enable and disable our different types
         //
+        template<typename T>
+        concept reflected_object_type = requires
+        {
+            { std::remove_cvref_t<T>::PropertiesDefinition() };
+        };
+
+        template<typename T>
+        consteval void validate_reflected_object_type()
+        {
+            static_assert(reflected_object_type<T>,
+                "XPROP004: property type is not a registered atomic and has no xproperty definition. "
+                "Register it with var_type<T> for an atomic value, or add XPROPERTY_DEF/XPROPERTY_VDEF "
+                "and XPROPERTY_REG for a reflected object");
+        }
+
         template< bool T_IS_VAR_V, bool T_IS_LIST_V, typename T_MEMBER_TYPE >
         inline constexpr bool meets_requirements_v = []() consteval
         {
@@ -1826,18 +2499,12 @@ namespace xproperty
                 using            memc_t          = xproperty::details::remove_all_const_t<T_MEMBER_TYPE>;
                 using            atomic_t        = typename type::var_t<T_MEMBER_TYPE>::atomic_type;
                 constexpr bool   is_ready_only_v = details::is_read_only_v<T_CLASS, T_MEMBER_TYPE, T_ARGS...>;
-                return
-                { .m_GUID           = xproperty::settings::strguid(T_NAME_V)
-                , .m_pName          = T_NAME_V
-                , .m_Variant        = xproperty::type::members::var
-                    { .m_pRead                = details::var_io< T_CLASS,memc_t,T_LAMBDA_V, T_ARGS... >::Read
-                    , .m_pWrite               = is_ready_only_v ? nullptr : details::var_io< T_CLASS,memc_t,T_LAMBDA_V, T_ARGS... >::Write
-                    , .m_AtomicType           = xproperty::type::atomic_v<atomic_t>
+                return details::make_member_descriptor<T_NAME_V, xproperty::type::members::var, user_data_t>(
+                    { .m_pReadUnchecked = details::var_io<T_CLASS, memc_t, T_LAMBDA_V, T_ARGS...>::Read
+                    , .m_pWriteUnchecked = is_ready_only_v ? nullptr : details::var_io<T_CLASS, memc_t, T_LAMBDA_V, T_ARGS...>::Write
+                    , .m_AtomicType = xproperty::type::atomic_v<atomic_t>
                     , .m_UnregisteredEnumSpan = details::unregistered_enum_array<details::is_unregistered_enum_v<atomic_t>, T_ARGS...>::value
-                    }
-                , .m_bConst = is_ready_only_v
-                , .m_pGetUserData = details::GetUserData<user_data_t>
-                };
+                    }, is_ready_only_v);
             }
         };
 
@@ -1878,7 +2545,7 @@ namespace xproperty
                 { .m_GUID           = xproperty::settings::strguid(T_NAME_V)
                 , .m_pName          = T_NAME_V
                 , .m_Variant        = xproperty::type::members::var
-                    { .m_pRead      = (std::is_const_v<T_MEMBER_TYPE>) ? nullptr : +[]( const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    { .m_pReadUnchecked      = (std::is_const_v<T_MEMBER_TYPE>) ? nullptr : +[]( const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
                     {
                         if constexpr (std::is_const_v<T_MEMBER_TYPE> == false)
                         {
@@ -1902,7 +2569,7 @@ namespace xproperty
                                 );
                         }
                     }
-                    , .m_pWrite     = is_ready_only_v ? nullptr : +[](void* pClass, const type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    , .m_pWriteUnchecked     = is_ready_only_v ? nullptr : +[](void* pClass, const type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
                     {
                         if constexpr ( is_ready_only_v == false )
                         {
@@ -1913,7 +2580,7 @@ namespace xproperty
 
                             if constexpr (sizeof...(T_ADDITIONAL) == 0)
                             {
-                                if constexpr (std::is_enum_v<t> && type::var_t<t>::guid_v == 1)
+                                if constexpr (std::is_enum_v<t>)
                                 {
                                     if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
                                     {
@@ -2013,16 +2680,21 @@ namespace xproperty
 
             static consteval xproperty::type::members getInfo()
             {
+                // NOTE: deliberately not calling validate_reflected_object_type() here.
+                // The engine has an established pattern of giving foreign/third-party types
+                // (ImVec2, xresource::type_guid, etc.) their reflection via a sibling wrapper
+                // struct ("W : T { XPROPERTY_DEF(...) }") rather than injecting
+                // PropertiesDefinition() into T itself, and members are still declared with
+                // the plain T. A compile-time check on T here can't see that wrapper, so it
+                // false-positives on every such member across the engine. cast_scope's own
+                // runtime assert(type::get_obj_info<T> != nullptr) remains as the safety net
+                // for a genuinely unregistered type, matching pre-redesign behavior.
                 //
                 // Handle Vars and Refs that are properties... we just convert them to a scope
                 //
-                return
-                { .m_GUID       = xproperty::settings::strguid(T_NAME_V)
-                , .m_pName      = T_NAME_V
-                , .m_Variant    = xproperty::type::members::props{ .m_pCast = details::cast_scope<T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V >::Cast }
-                , .m_bConst     = details::is_read_only_v<T_CLASS, T_MEMBER_TYPE, T_ARGS...>
-                , .m_pGetUserData = details::GetUserData<user_data_t>
-                };
+                return details::make_member_descriptor<T_NAME_V, xproperty::type::members::props, user_data_t>(
+                    { .m_pCast = details::cast_scope<T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V>::Cast },
+                    details::is_read_only_v<T_CLASS, T_MEMBER_TYPE, T_ARGS...>);
             }
         };
 
@@ -2084,13 +2756,9 @@ namespace xproperty
                 //
                 // Handle Vars and Refs that are properties... we just convert them to a scope
                 //
-                return
-                { .m_GUID       = xproperty::settings::strguid(T_NAME_V)
-                , .m_pName      = T_NAME_V
-                , .m_Variant    = xproperty::type::members::props{ details::cast_scope<T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V >::Cast }
-                , .m_bConst     = details::is_read_only_v<T_CLASS, T_MEMBER_TYPE, T_ARGS...>
-                , .m_pGetUserData = details::GetUserData<user_data_t>
-                };
+                return details::make_member_descriptor<T_NAME_V, xproperty::type::members::props, user_data_t>(
+                    { .m_pCast = details::cast_scope<T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V>::Cast },
+                    details::is_read_only_v<T_CLASS, T_MEMBER_TYPE, T_ARGS...>);
             }
         };
 
@@ -2190,7 +2858,7 @@ namespace xproperty
                 { .m_GUID               = xproperty::settings::strguid(T_NAME_V)
                 , .m_pName              = T_NAME_V
                 , .m_Variant            = xproperty::type::members::list_var
-                    { .m_pRead          =  +[](const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    { .m_pReadUnchecked          =  +[](const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
                                             {
                                                 if constexpr (std::is_enum_v<atomic_t> && type::var_t<atomic_t>::guid_v == 1)
                                                 {
@@ -2207,7 +2875,7 @@ namespace xproperty
                                                 );
                                             }
                                             
-                    , .m_pWrite         = is_ready_only_v ? nullptr : +[]( void* pClass, const type::any& Any,const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    , .m_pWriteUnchecked         = is_ready_only_v ? nullptr : +[]( void* pClass, const type::any& Any,const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
                                             {
                                                 if constexpr (std::is_enum_v<atomic_t> && type::var_t<atomic_t>::guid_v == 1)
                                                 {
@@ -2215,6 +2883,32 @@ namespace xproperty
                                                         type::atomic_v<atomic_t>.m_RegisteredEnumSpan = S;
                                                     else
                                                         assert( S.size() == type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size() );
+                                                }
+
+                                                if constexpr (std::is_enum_v<atomic_t>)
+                                                {
+                                                    if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
+                                                    {
+                                                        auto& String = Any.get<std::string>();
+                                                        for (auto& E : type::atomic_v<atomic_t>.m_RegisteredEnumSpan)
+                                                        {
+                                                            if (String == E.m_pName)
+                                                            {
+                                                                type::any RealValue;
+                                                                RealValue.set<atomic_t>(static_cast<atomic_t>(E.m_Value));
+
+                                                                type::var_t<last_t>::Write
+                                                                ( *static_cast< typename type::var_t<last_t>::specializing_t*>(pClass)
+                                                                , RealValue.get<atomic_t>()
+                                                                , Context
+                                                                );
+                                                                return;
+                                                            }
+                                                        }
+
+                                                        // TODO: Value failed to be set... what to do???
+                                                        return;
+                                                    }
                                                 }
 
                                                 type::var_t<last_t>::Write
@@ -2246,6 +2940,46 @@ namespace xproperty
             };
         };
 
+        namespace details
+        {
+            template<typename T_ARGUMENTS>
+            inline constexpr auto argument_type_list_v = xproperty::details::make_argument_type_list<T_ARGUMENTS>();
+
+            template<typename T_CLASS, auto T_FUNCTION, typename T_ARGUMENTS>
+            [[nodiscard]] consteval xproperty::type::members::function make_function_descriptor()
+            {
+                return
+                { .m_pCallFunction = [](void* Class, void* Arguments) constexpr noexcept
+                    {
+                        auto& Tuple = *static_cast<T_ARGUMENTS*>(Arguments);
+                        xproperty::details::invoke_from_tuple(
+                            [Class](auto&&... Values) constexpr
+                            {
+                                std::invoke(
+                                    T_FUNCTION,
+                                    static_cast<T_CLASS*>(Class),
+                                    std::forward<decltype(Values)>(Values)...);
+                            },
+                            Tuple);
+                    }
+                , .m_ArgumentList = argument_type_list_v<T_ARGUMENTS>
+                };
+            }
+
+            template<typename T_CLASS, typename T_ARGUMENTS>
+            [[nodiscard]] consteval xproperty::type::member_constructor make_constructor_descriptor()
+            {
+                return
+                { .m_pCallConstructor = [](void* Arguments) constexpr -> void*
+                    {
+                        auto& Tuple = *static_cast<T_ARGUMENTS*>(Arguments);
+                        return xproperty::details::construct_from_tuple<T_CLASS>(Tuple);
+                    }
+                , .m_ArgumentList = argument_type_list_v<T_ARGUMENTS>
+                };
+            }
+        }
+
         //
         // Handle member functions
         //
@@ -2257,37 +2991,12 @@ namespace xproperty
             using                        function_return_t = T_RETURN;
             using                        user_data_t       = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
             using                        function_args_t   = std::tuple<T_FUNC_ARGS...>;
-            inline constexpr static auto arg_types_list_v  = []()consteval
-            {
-                if constexpr(std::tuple_size_v<function_args_t>)
-                {
-                    std::array<xproperty::basic_type, std::tuple_size_v<function_args_t>> List;
-                    ((List[xproperty::details::tuple_t2i_v<T_FUNC_ARGS, function_args_t>].m_Value = type_meta<T_FUNC_ARGS>::value), ...);
-                    return List;
-                }
-                else
-                {
-                    return std::span<xproperty::basic_type>{};
-                }
-            }();
-
             static consteval xproperty::type::members getInfo(bool bConst=false) noexcept
             {
                 return
                 { .m_GUID    = xproperty::settings::strguid(T_NAME_V)
                 , .m_pName   = T_NAME_V
-                , .m_Variant = xproperty::type::members::function
-                    { .m_pCallFunction = []( void* pClass, void* pArgs) constexpr noexcept
-                        {
-                            auto pTheArgs = static_cast<function_args_t*>(pArgs);
-                            std::invoke
-                            ( T_DATA
-                            , static_cast<class_t*>(pClass)
-                            , std::get<T_FUNC_ARGS>(*pTheArgs) ...
-                            );
-                        }
-                    , .m_ArgumentList  = arg_types_list_v
-                    }
+                , .m_Variant = details::make_function_descriptor<class_t, T_DATA, function_args_t>()
                 , .m_bConst = bConst
                 , .m_pGetUserData = details::GetUserData<user_data_t>
                 };
@@ -2322,14 +3031,29 @@ namespace xproperty
             {
                 if constexpr ( std::tuple_size_v<members_t> > 0 ) return []< typename...T>(std::tuple<T...>*) consteval
                 {
+                    constexpr std::array GUIDs{ T::meta_t::getInfo().m_GUID ... };
+                    constexpr bool Unique = [&]() consteval
+                    {
+                        for (std::size_t i = 0; i < GUIDs.size(); ++i)
+                            for (std::size_t j = i + 1; j < GUIDs.size(); ++j)
+                                if (GUIDs[i] == GUIDs[j]) return false;
+                        return true;
+                    }();
+                    static_assert(Unique, "xproperty: duplicate member GUID/hash collision in scope");
                     return std::array{ T::meta_t::getInfo() ... };
                 }((members_t*)0);
-                else                             return std::span<type::members>{};
+                else return std::span<type::members>{};
             }();
+
+            using lookup_map_t = xproperty::details::static_guid_map<
+                std::tuple_size_v<members_t>,
+                type::members::scope::invalid_index_v>;
+
+            inline constexpr static auto lookup_v = lookup_map_t::build(members_v);
 
             consteval static type::members::scope getInfoScope( void ) noexcept
             {
-                return{ .m_Members = members_v  };
+                return{ .m_Members = members_v, .m_Lookup = lookup_v };
             }
 
             consteval static type::members getInfo( void ) noexcept
@@ -2381,23 +3105,6 @@ namespace xproperty
             using arg_tuple_t       = xproperty::details::tuple_cat_t< std::conditional_t< has_tags_v<T_ARGS>, std::tuple<T_ARGS>, std::tuple<>>       ...>;
             using user_data_t       = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
 
-            inline constexpr static auto arg_types_list_v  = []()consteval
-            {
-                if constexpr(std::tuple_size_v<function_args_t>)
-                {
-                    std::array<xproperty::basic_type, std::tuple_size_v<function_args_t>> List;
-                    [&] <typename...ARGS>(std::tuple<ARGS...>*) constexpr
-                    {
-                        ((List[xproperty::details::tuple_t2i_v<ARGS, function_args_t>].m_Value = type_meta<ARGS>::value), ...);
-                    }(static_cast<function_args_t*>(nullptr));
-                    return List;
-                }
-                else
-                {
-                    return std::span<xproperty::basic_type>{};
-                }
-            }();
-
             template<typename T_CLASS>
             static consteval type::member_constructor getInfo(std::tuple<T_CLASS>*) noexcept
             {
@@ -2407,17 +3114,7 @@ namespace xproperty
                     static_assert( std::is_constructible_v<T_CLASS, ARGS...>, "xproperty::obj_constructor - You can not construct this object with the arguments that you have given" );
                 }(static_cast<function_args_t*>(nullptr) );
 
-                return
-                { .m_pCallConstructor = [](void* pArgs) constexpr ->void*
-                    {
-                        auto pTheArgs = static_cast<function_args_t*>(pArgs);
-                        return [&] <typename...ARGS>(std::tuple<ARGS...>*) constexpr
-                        {
-                            return new T_CLASS{ std::get<ARGS>(*pTheArgs)... };
-                        }(static_cast<function_args_t*>(nullptr));
-                    }
-                , .m_ArgumentList = arg_types_list_v
-                };
+                return details::make_constructor_descriptor<T_CLASS, function_args_t>();
             }
         };
 
@@ -2512,8 +3209,14 @@ namespace xproperty
     //
 
 
+#if defined(XPROPERTY_DEPRECATE_LEGACY_NAMES)
+    #define XPROPERTY_LEGACY_NAME(MSG) [[deprecated(MSG)]]
+#else
+    #define XPROPERTY_LEGACY_NAME(MSG)
+#endif
+
     template< details::fixed_string T_NAME_V, auto T_DATA, typename...T_ARGS >
-    struct obj_member : tag<meta::obj_member_tag>
+    struct XPROPERTY_LEGACY_NAME("Use xprop::member instead") obj_member : tag<meta::obj_member_tag>
     {
         using meta_t = meta::member<T_NAME_V, decltype(T_DATA), T_DATA, T_ARGS... >;
     };
@@ -2656,7 +3359,7 @@ namespace xproperty
         using meta_t    = meta::object< T_OBJECT_NAME_V, T_OBJECT_TYPE, T_ARGS...>;
         inline static constexpr xproperty::type::object     register_v  = meta_t::getInfo();
 
-        def() : def_base{ register_v }
+        def() : def_base{ register_v, nullptr }
         {
             m_pNext = m_pHead;
             m_pHead = this;
@@ -2691,6 +3394,74 @@ namespace xproperty
     using end_iterator   = type::end_iterator;
 }
 
+// Property-definition vocabulary. These types intentionally live outside the
+// broad xproperty namespace to make declarations recognizable in large codebases.
+namespace xprop
+{
+    namespace details
+    {
+        template<auto T_DATA>
+        inline constexpr auto normalized_data_v = []() consteval
+        {
+            using data_t = decltype(T_DATA);
+            if constexpr (std::is_class_v<data_t>)
+            {
+                static_assert(requires { +T_DATA; },
+                    "XPROP012: property callback must be captureless and convertible to a function pointer");
+                return +T_DATA;
+            }
+            else
+            {
+                return T_DATA;
+            }
+        }();
+    }
+
+    template<xproperty::details::fixed_string T_NAME_V, auto T_DATA, typename...T_ARGS>
+    struct member : xproperty::tag<xproperty::meta::obj_member_tag>
+    {
+        inline constexpr static auto data_v = details::normalized_data_v<T_DATA>;
+        using data_t = std::remove_cv_t<decltype(data_v)>;
+        using meta_t = xproperty::meta::member<T_NAME_V, data_t, data_v, T_ARGS...>;
+    };
+
+    template<xproperty::details::fixed_string T_NAME_V, auto T_DATA, typename...T_ARGS>
+    struct member_ro : member<T_NAME_V, T_DATA, xproperty::tag<xproperty::meta::read_only_tag>, T_ARGS...> {};
+
+    template<xproperty::details::fixed_string T_NAME_V, typename...T_ARGS>
+    struct scope : xproperty::tag<xproperty::meta::obj_member_tag>
+    {
+        using meta_t = xproperty::meta::scope<T_NAME_V, std::tuple<T_ARGS...>>;
+    };
+
+    template<xproperty::details::fixed_string T_NAME_V, typename...T_ARGS>
+    struct scope_ro : scope<T_NAME_V, xproperty::tag<xproperty::meta::read_only_tag>, T_ARGS...> {};
+
+    template<typename T_BASE>
+    struct base : xproperty::tag<xproperty::meta::obj_base_tag>
+    {
+        using type = T_BASE;
+        inline constexpr static bool is_const_v = false;
+    };
+
+    template<typename T_BASE>
+    struct base_ro : xproperty::tag<xproperty::meta::obj_base_tag>
+    {
+        using type = T_BASE;
+        inline constexpr static bool is_const_v = true;
+    };
+
+    template<typename...T_ARGS>
+    struct constructor : xproperty::obj_constructor<T_ARGS...>
+    {
+        static_assert(sizeof...(T_ARGS) > 0,
+            "XPROP008: xprop::constructor must contain at least one argument type");
+    };
+
+    template<xproperty::details::fixed_string T_NAME_V>
+    using group = xproperty::obj_group<T_NAME_V>;
+}
+
 //
 // This is used to register the properties of the object
 //
@@ -2700,5 +3471,9 @@ namespace xproperty
 #define XPROPERTY_REG( TYPE ) XPROPERTY_REG2(TYPE##_props, TYPE)
 #define XPROPERTY_VREG2( NAMESPACE, TYPE ) namespace NAMESPACE { inline const decltype(TYPE::PropertiesDefinition()) g_PropertyRegistration_v{}; } inline const xproperty::type::object* TYPE::getProperties() const noexcept { return NAMESPACE::g_PropertyRegistration_v.get();}
 #define XPROPERTY_VREG( TYPE ) XPROPERTY_VREG2(TYPE##_props, TYPE)
+
+#undef XPROPERTY_LEGACY_NAME
+
+#undef XPROPERTY_LEGACY_API
 
 #endif

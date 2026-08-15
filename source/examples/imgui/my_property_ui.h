@@ -113,7 +113,15 @@ namespace xproperty
     {
         struct member_ui_base
         {
-            void*           m_pDrawFn;
+            using draw_fn = void
+            ( int GUID
+            , ui::undo::cmd& Cmd
+            , const xproperty::any& Value
+            , const member_ui_base& Info
+            , xproperty::flags::type Flags
+            ) noexcept;
+
+            draw_fn*        m_pDrawFn;
             std::uint32_t   m_TypeGUID;
         };
 
@@ -133,6 +141,20 @@ namespace xproperty
         {
             static void Render(int GUID, ui::undo::cmd& Cmd, const T_TYPE& Value, const member_ui_base& I, xproperty::flags::type Flags) noexcept;
         };
+
+        template< typename T_TYPE, typename T_STYLE>
+        void DrawErased
+        ( int GUID
+        , ui::undo::cmd& Cmd
+        , const xproperty::any& Value
+        , const member_ui_base& Info
+        , xproperty::flags::type Flags
+        ) noexcept
+        {
+            assert(Value.m_pType);
+            assert(Value.m_pType->m_GUID == xproperty::settings::var_type<T_TYPE>::guid_v);
+            draw<T_TYPE, T_STYLE>::Render(GUID, Cmd, Value.get<T_TYPE>(), Info, Flags);
+        }
 
         template<typename T, xproperty::details::fixed_string T_FORMAT_MAIN>
         struct member_ui_numbers //: ui::details::member_ui_base
@@ -156,7 +178,7 @@ namespace xproperty
             struct scroll_bar : settings::member_ui_t
             {
                 inline static constexpr data data_v
-                { {.m_pDrawFn = &ui::details::draw<T, ui::details::style::scroll_bar>::Render, .m_TypeGUID = type_guid_v }
+                { {.m_pDrawFn = &ui::details::DrawErased<T, ui::details::style::scroll_bar>, .m_TypeGUID = type_guid_v }
                 , T_MIN
                 , T_MAX
                 , T_FORMAT
@@ -172,7 +194,7 @@ namespace xproperty
             struct edit_box : settings::member_ui_t
             {
                 inline static constexpr data data_v
-                { {.m_pDrawFn = &ui::details::draw<T, ui::details::style::edit_box>::Render, .m_TypeGUID = type_guid_v }
+                { {.m_pDrawFn = &ui::details::DrawErased<T, ui::details::style::edit_box>, .m_TypeGUID = type_guid_v }
                 , T_MIN
                 , T_MAX
                 , T_FORMAT
@@ -189,7 +211,7 @@ namespace xproperty
             struct drag_bar : settings::member_ui_t
             {
                 inline static constexpr data data_v
-                { { .m_pDrawFn = &ui::details::draw< T, ui::details::style::drag_bar>::Render, .m_TypeGUID = type_guid_v }
+                { { .m_pDrawFn = &ui::details::DrawErased<T, ui::details::style::drag_bar>, .m_TypeGUID = type_guid_v }
                 , T_MIN
                 , T_MAX
                 , T_FORMAT
@@ -227,7 +249,7 @@ namespace xproperty
         struct button : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::button>::Render, .m_TypeGUID = type_guid_v };
+            { .m_pDrawFn = &ui::details::DrawErased<std::string, ui::details::style::button>, .m_TypeGUID = type_guid_v };
 
             constexpr button() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
@@ -235,7 +257,7 @@ namespace xproperty
         struct defaults : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { .m_pDrawFn = &ui::details::draw<std::string, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v };
+            { .m_pDrawFn = &ui::details::DrawErased<std::string, ui::details::style::defaulted>, .m_TypeGUID = type_guid_v };
 
             constexpr defaults() : settings::member_ui_t{.m_pUIBase  = &data_v} {}
         };
@@ -251,19 +273,19 @@ namespace xproperty
 
         struct data : ui::details::member_ui_base
         {
-            const wchar_t*  m_pFilter                       = { nullptr };
-            bool            m_bMakePathRelative             = { false };
-            int             m_RelativeCurrentPathMinusCount = { 0 };
-            bool            m_bFolders                      = { false };
+            const wchar_t*  m_pFilter;
+            bool            m_bMakePathRelative;
+            int             m_RelativeCurrentPathMinusCount;
+            bool            m_bFolders;
         };
 
-        inline static constexpr auto type_guid_v = xproperty::settings::var_type<std::string>::guid_v;
+        inline static constexpr auto type_guid_v = xproperty::settings::var_type<std::wstring>::guid_v;
 
         template< typename T = ui::details::style::defaulted >
         struct button : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::button>::Render, .m_TypeGUID = type_guid_v }, {} };
+            { {.m_pDrawFn = &ui::details::DrawErased<std::wstring, ui::details::style::button>, .m_TypeGUID = type_guid_v }, nullptr, false, 0, false };
 
             constexpr button() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
@@ -272,7 +294,7 @@ namespace xproperty
         struct file_dialog : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
+            { {.m_pDrawFn = &ui::details::DrawErased<std::wstring, ui::details::style::file_dialog>, .m_TypeGUID = type_guid_v }
             , T_FILTER
             , T_MAKE_PATH_RELATIVE_V
             , T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V
@@ -286,7 +308,7 @@ namespace xproperty
         struct folder_dialog : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::file_dialog>::Render, .m_TypeGUID = type_guid_v }
+            { {.m_pDrawFn = &ui::details::DrawErased<std::wstring, ui::details::style::file_dialog>, .m_TypeGUID = type_guid_v }
             , T_FILTER
             , T_MAKE_PATH_RELATIVE_V
             , T_RELATIVE_CURRENT_PATH_MINUS_COUNT_V
@@ -299,7 +321,7 @@ namespace xproperty
         struct defaults : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<std::wstring, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v} };
+            { {.m_pDrawFn = &ui::details::DrawErased<std::wstring, ui::details::style::defaulted>, .m_TypeGUID = type_guid_v}, nullptr, false, 0, false };
 
             constexpr defaults() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
@@ -315,7 +337,7 @@ namespace xproperty
         struct defaults : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { .m_pDrawFn = &ui::details::draw<bool, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v };
+            { .m_pDrawFn = &ui::details::DrawErased<bool, ui::details::style::defaulted>, .m_TypeGUID = type_guid_v };
 
             constexpr defaults() : settings::member_ui_t{ .m_pUIBase = &data_v }
             {
@@ -341,7 +363,7 @@ namespace xproperty
         struct type_filters : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v}, T_TYPES_SPAN_V };
+            { {.m_pDrawFn = &ui::details::DrawErased<xresource::full_guid, ui::details::style::defaulted>, .m_TypeGUID = type_guid_v}, T_TYPES_SPAN_V };
 
             constexpr type_filters() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
@@ -349,7 +371,7 @@ namespace xproperty
         struct defaults : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v} };
+            { {.m_pDrawFn = &ui::details::DrawErased<xresource::full_guid, ui::details::style::defaulted>, .m_TypeGUID = type_guid_v} };
 
             constexpr defaults() : settings::member_ui_t{ .m_pUIBase = &data_v }
             {
@@ -374,7 +396,7 @@ namespace xproperty
         struct type_filters : settings::member_ui_t
         {
             inline static constexpr data data_v
-            { {.m_pDrawFn = &ui::details::draw<xresource::full_guid, ui::details::style::defaulted>::Render, .m_TypeGUID = type_guid_v}, T_TYPES_SPAN_V };
+            { {.m_pDrawFn = &ui::details::DrawErased<xresource::full_guid, ui::details::style::defaulted>, .m_TypeGUID = type_guid_v}, T_TYPES_SPAN_V };
             constexpr type_filters() : settings::member_ui_t{ .m_pUIBase = &data_v } {}
         };
 
@@ -408,4 +430,24 @@ namespace xproperty
         using defaults = drag_bar< 1, 10000 >;
     };
 }
+
+// Optional UI user-data vocabulary. The xproperty core does not depend on it.
+namespace xprop
+{
+    template<xproperty::flags::_flags...T_FLAGS>
+    using flags = xproperty::member_flags<T_FLAGS...>;
+
+    template<auto T_CALLBACK_V>
+    using dynamic_flags = xproperty::member_dynamic_flags<T_CALLBACK_V>;
+}
+
+namespace xprop_ui
+{
+    template<typename T>
+    using for_type = xproperty::member_ui<T>;
+
+    template<bool T_OPEN_V>
+    using default_open = xproperty::member_ui_open<T_OPEN_V>;
+}
+
 #endif
