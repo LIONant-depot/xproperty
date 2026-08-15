@@ -27,6 +27,7 @@
 #include<array>
 
 #include "dependencies/xresource_guid/source/xresource_guid.h"      // because of xresource::guid_full
+#include "dependencies/xmath/source/xmath.h"
 
 // ------------------------------------------------------------------------------
 // USER PRE-CONFIGURATION
@@ -429,6 +430,7 @@ namespace xproperty::settings
     struct var_type<std::vector<T>> : var_list_defaults< "vector", std::vector<T>, T>
     {
         using type = typename var_list_defaults< "vector", std::vector<T>, T>::type;
+        inline constexpr static bool has_real_setSize_v = true;
         constexpr static void setSize(type& MemberVar, const std::size_t Size, context&) noexcept
         {
             MemberVar.resize(Size);
@@ -748,6 +750,17 @@ namespace xproperty::settings
 //  ADD SUPPORT FOR IMGUI UI/EDITOR
 // ------------------------------------------------------------------------------
 #include "dependencies\xproperty\source\examples\imgui\my_property_ui.h"
+
+// ------------------------------------------------------------------------------
+//  THIRD-PARTY TYPE BRIDGES
+// ------------------------------------------------------------------------------
+// These give xresource/xmath types their reflection via a sibling wrapper struct
+// (xproperty::settings::reflected_type<T> links the plain type to it) - included here, once, after
+// my_property_ui.h (member_flags/member_ui/drag_bar all live there) so every descriptor sees the same,
+// fully-set-up registration regardless of its own include order, instead of relying on picking up a
+// transitively-included copy at an arbitrary point.
+#include "dependencies\xresource_guid\source\bridges\xresource_xproperty_bridge.h"
+#include "dependencies\xmath\source\bridge\xmath_to_xproperty.h"
 
 namespace xprop_ui
 {

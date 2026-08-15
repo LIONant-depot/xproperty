@@ -408,6 +408,7 @@ namespace xproperty::settings
     struct var_type<std::vector<T>> : var_list_defaults< "vector", std::vector<T>, T>
     {
         using type = typename var_list_defaults< "vector", std::vector<T>, T>::type;
+        inline constexpr static bool has_real_setSize_v = true;
         constexpr static void setSize( type& MemberVar, const std::size_t Size, context&) noexcept
         {
             MemberVar.resize(Size);

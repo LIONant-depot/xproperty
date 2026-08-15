@@ -555,6 +555,24 @@ namespace xproperty
         struct context;
 
         //--------------------------------------------------------------------------------------------
+        // Foreign types you can't add XPROPERTY_DEF to directly (ImGui's ImVec2, xresource's type_guid,
+        // etc.) get their reflection through a sibling wrapper struct instead
+        // ("struct v2 : ImVec2 { XPROPERTY_DEF(...) }"), and members are still declared with the plain
+        // foreign type. This trait is the explicit, deterministic link between the two: specialize it
+        // wherever such a wrapper is defined so the validator and cast_scope both know where to find
+        // T's actual reflection. Default is the identity mapping - most types need no specialization at
+        // all, since they either have their own PropertiesDefinition() or aren't reflected as objects.
+        //--------------------------------------------------------------------------------------------
+        template<typename T>
+        struct reflected_type
+        {
+            using type = T;
+        };
+
+        template<typename T>
+        using reflected_type_t = typename reflected_type<T>::type;
+
+        //--------------------------------------------------------------------------------------------
         // computes murmur hash
         // http://szelei.me/constexpr-murmurhash/
         //--------------------------------------------------------------------------------------------
@@ -816,7 +834,11 @@ namespace xproperty
             constexpr static void              VoidConstruct   ( data_memory& Data )                            noexcept  { std::construct_at(reinterpret_cast<builder*>(&Data)); }  //std::construct_at(&reinterpret_cast<type&>(Data) ); }
             constexpr static void              Destruct        ( data_memory& Data )                            noexcept  { std::destroy_at(reinterpret_cast<builder*>(&Data)); }//std::destroy_at(&reinterpret_cast<type&>(Data) ); }
             constexpr static void              MoveConstruct   ( data_memory& Data1,       type&& Data2 )       noexcept  { std::construct_at(reinterpret_cast<builder*>(&Data1), std::forward<type>(Data2)); }//new(&Data1) type{ Data2 }; }
-            constexpr static void              CopyConstruct   ( data_memory& Data1, const type&  Data2 )       noexcept  { std::construct_at(reinterpret_cast<builder*>(&Data1), Data2); } //new(&Data1) type{ Data2 }; }
+            // Deliberately not noexcept: copy-constructing an arbitrary registered type (std::string and
+            // any other heap-allocating type included) can throw bad_alloc. Default/move-construct and
+            // destruct are guaranteed nothrow (enforced by atomic_v<T>'s static_asserts); copy is the one
+            // place xproperty accepts a throw as the unavoidable cost of supporting ordinary value types.
+            constexpr static void              CopyConstruct   ( data_memory& Data1, const type&  Data2 )                 { std::construct_at(reinterpret_cast<builder*>(&Data1), Data2); } //new(&Data1) type{ Data2 }; }
 
         };
 
@@ -870,6 +892,12 @@ namespace xproperty
             using                        end_iterator   = T_ITERATOR;
             using                        atomic_key     = T_ATOMIC_KEY;
             using                        any_t          = typename xproperty::details::delay_linkage< xproperty::type::any, T_ATOMIC_KEY >::type;
+
+            // Fixed-size adapters (std::span, std::array, native C-arrays) inherit this struct's own
+            // do-nothing setSize below - so TrySetSize needs an explicit way to tell "genuinely
+            // resizable" from "silently a no-op". Any var_type<T> that overrides setSize with a real
+            // implementation (e.g. std::vector, via .resize()) must also override this flag to true.
+            inline constexpr static bool has_real_setSize_v = false;
 
             inline constexpr static auto is_const_v     = xproperty::details::has_const_v<T_SPECIALIZING_TYPE> || var_type<specializing_t>::is_const_v || std::is_const_v<T_SPECIALIZING_TYPE>;
 
@@ -983,6 +1011,24 @@ namespace xproperty
             static_assert( xproperty::details::has_const_v<T>   == false );
             static_assert( settings::var_type<T>::is_list_v    == false );
             static_assert( settings::var_type<T>::is_pointer_v == false );
+
+            // xproperty is a no-throw API: any's construct/move/destruct are all declared noexcept and
+            // rely on this being true for anything reasonable to register. Catching a violation here, at
+            // registration time, is far cheaper than discovering it as a std::terminate later.
+            //
+            // Copy construction is deliberately NOT required to be nothrow here - std::string and every
+            // other heap-allocating type have a copy constructor that can throw bad_alloc by the standard,
+            // and refusing to register them isn't a viable trade for a general-purpose reflection library.
+            // any's copy path (operator=(const any&), the copying set()/Reset<T>()) is instead given
+            // transactional safety: construct the replacement before touching the existing value, so a
+            // throw during copy leaves the original untouched instead of destroyed-with-nothing-to-replace-it.
+            static_assert(std::is_nothrow_default_constructible_v<T>,
+                "XPROP035: registered type must be nothrow default-constructible (xproperty guarantees no-throw semantics end to end)");
+            static_assert(std::is_nothrow_move_constructible_v<T>,
+                "XPROP037: registered type must be nothrow move-constructible (xproperty guarantees no-throw semantics end to end)");
+            static_assert(std::is_nothrow_destructible_v<T>,
+                "XPROP038: registered type must be nothrow destructible (xproperty guarantees no-throw semantics end to end)");
+
             return
             { .m_pName          = var_t<T>::name_v
             , .m_GUID           = var_t<T>::guid_v
@@ -1236,10 +1282,37 @@ namespace xproperty
                 if (m_pType) m_pType->m_pDestruct(m_Data);
             }
 
-            constexpr void copyValueFrom(const any& Source) noexcept
+            // Used only for construction into fresh/empty storage (the copy constructor) - there is no
+            // existing value that a throw could leave half-destroyed, so a plain throwing copy-construct
+            // is fine here: it simply means *this never comes into being, standard C++ behavior.
+            constexpr void copyValueFrom(const any& Source)
             {
                 m_pType = Source.m_pType;
                 if (m_pType) m_pType->m_pCopyConstruct(m_Data, Source.m_Data);
+            }
+
+            // Used for REPLACING an existing value (operator=(const any&)). Constructs the incoming
+            // value into temporary erased storage before touching *this's current value, so a throwing
+            // copy-construct (std::string on allocation failure, etc.) leaves *this completely untouched
+            // - strong exception guarantee - instead of destroyed with nothing to replace it. The
+            // move-construct/destruct of the temporary are both guaranteed nothrow (enforced by
+            // atomic_v<T>'s static_asserts), so nothing past the copy-construct line can throw.
+            constexpr void copyAssignFrom(const any& Source)
+            {
+                if (!Source.m_pType)
+                {
+                    destroyValue();
+                    m_pType = nullptr;
+                    return;
+                }
+
+                settings::data_memory Temp;
+                Source.m_pType->m_pCopyConstruct(Temp, Source.m_Data);   // may throw - *this still intact
+
+                destroyValue();
+                m_pType = Source.m_pType;
+                m_pType->m_pMoveConstruct(m_Data, std::move(Temp));      // nothrow
+                m_pType->m_pDestruct(Temp);                              // nothrow
             }
 
             constexpr void moveValueFrom(any& Source) noexcept
@@ -1314,20 +1387,29 @@ namespace xproperty
                 return storageAs<T>();
             }
 
+            // Not noexcept: settings::var_type<T>::CopyConstruct can throw for an arbitrary registered
+            // T (std::string on allocation failure, etc.). Same transactional shape as copyAssignFrom -
+            // construct into temporary storage before touching *this's current value, so a throw leaves
+            // *this untouched instead of destroyed-with-nothing-to-replace-it.
             template<typename T>
-            constexpr T& set(T& Data) noexcept
+            constexpr T& set(T& Data)
             {
                 static_assert(xproperty::details::has_const_v<T> == false);
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
-                destroyValue();
 
+                settings::data_memory Temp;
+                settings::var_type<T>::CopyConstruct(Temp, Data);   // may throw - *this still intact
+
+                destroyValue();
                 m_pType = &atomic_v<T>;
-                settings::var_type<T>::CopyConstruct(m_Data, Data);
+                settings::var_type<T>::MoveConstruct(m_Data, std::move(reinterpret_cast<T&>(Temp)));  // nothrow
+                settings::var_type<T>::Destruct(Temp);                                                // nothrow
+
                 return storageAs<T>();
             }
 
             template<typename T>
-            constexpr T& set(const T& Data) noexcept
+            constexpr T& set(const T& Data)
             {
                 static_assert(xproperty::details::has_const_v<T> == false);
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
@@ -1406,14 +1488,17 @@ namespace xproperty
                 moveValueFrom(Any);
             }
 
-            constexpr any(const any& Any) noexcept
+            // Not noexcept: constructing into fresh storage, so a throwing copy-construct (std::string
+            // on allocation failure, etc.) simply means *this never comes into being - standard C++
+            // behavior, nothing here needs to be undone.
+            constexpr any(const any& Any)
             {
                 copyValueFrom(Any);
             }
 
             template< typename T>
             requires (xproperty::settings::var_type<T>::guid_v != 0)
-            constexpr any(const T& Data) noexcept
+            constexpr any(const T& Data)
             {
                 m_pType = &atomic_v<T>;
                 m_pType->m_pCopyConstruct(m_Data, reinterpret_cast<const settings::data_memory&>(Data) );
@@ -1427,12 +1512,12 @@ namespace xproperty
                 m_pType->m_pMoveConstruct( m_Data, reinterpret_cast<settings::data_memory&&>(Data) );
             }
 
-            constexpr any& operator=(const any& Any) noexcept
+            // Not noexcept: see copyAssignFrom's comment. Strong exception guarantee - if the source's
+            // copy-construct throws, *this is left exactly as it was before the call.
+            constexpr any& operator=(const any& Any)
             {
                 if (this == &Any) return *this;
-                destroyValue();
-                m_pType = nullptr;
-                copyValueFrom(Any);
+                copyAssignFrom(Any);
                 return *this;
             }
 
@@ -1474,6 +1559,7 @@ namespace xproperty
 
             get_size_fn*                const m_pGetSize;
             set_size_fn*                const m_pSetSize;
+            const bool                        m_bHasRealSetSize; // false for fixed-size adapters (span/array/native C-arrays) whose setSize is just var_list_defaults's inherited no-op - m_pSetSize itself is always populated, TrySetSize consults this instead
             start_fn*                   const m_pStart;
             end_fn*                     const m_pEnd;
             next_fn*                    const m_pNext;
@@ -1514,7 +1600,7 @@ namespace xproperty
             [[nodiscard]] xproperty::result<void> TrySetSize(void* Object, std::size_t Size, settings::context& Context) const
             {
                 if (!Object) return xproperty::details::makeNullObject();
-                if (!m_pSetSize) return xproperty::details::makeUnsupportedOperation();
+                if (!m_pSetSize || !m_bHasRealSetSize) return xproperty::details::makeUnsupportedOperation();
                 m_pSetSize(Object, Size, Context);
                 return {};
             }
@@ -1845,6 +1931,12 @@ namespace xproperty
         }
     }
 
+    // Forward declaration only (defined further below) - needed here so validate_reflected_object_type()
+    // can pattern-match against it to extract the type a wrapper struct actually registered itself
+    // under, without waiting for the full definition.
+    template< details::fixed_string T_OBJECT_NAME_V, typename T_OBJECT_TYPE, typename... T_ARGS >
+    struct def;
+
     //
     // META (HELPERS TO HELP FILL THE TYPES)
     //
@@ -1882,6 +1974,43 @@ namespace xproperty
 
         namespace details
         {
+            // Single, shared implementation of "the incoming value is a string naming one of this
+            // enum's entries - resolve it to the real enum value" - used by every member category that
+            // can receive an enum property write (plain data members, virtual/lambda properties, and
+            // list elements). Previously this logic was copy-pasted independently into each of those
+            // three call sites, which is exactly how the registered-enum TryWrite regression happened:
+            // one copy got a fix, the other two didn't.
+            //
+            // `S` must always be the PROPERTY-LOCAL enum item span (the one passed down from the actual
+            // member's own registration), never a cached/shared one - using anything else risks one
+            // property resolving names that actually belong to a different property sharing the same
+            // underlying enum type.
+            template<typename T_ATOMIC>
+            [[nodiscard]] inline xproperty::result<type::any> resolveEnumString(
+                const type::any& Value, const std::span<const type::atomic::enum_item>& S) noexcept
+            {
+                static_assert(std::is_enum_v<T_ATOMIC>);
+
+                for (auto& E : S)
+                {
+                    if (Value.get<std::string>() == E.m_pName)
+                    {
+                        type::any Resolved;
+                        Resolved.set<T_ATOMIC>(static_cast<T_ATOMIC>(E.m_Value));
+                        return Resolved;
+                    }
+                }
+                return xproperty::error{ .m_Code = error_code::invalid_enum_value };
+            }
+
+            // True when Value holds a std::string rather than T_ATOMIC directly - i.e. when it needs to
+            // go through resolveEnumString() before it can be used as T_ATOMIC.
+            template<typename T_ATOMIC>
+            [[nodiscard]] inline bool isUnresolvedEnumString(const type::any& Value) noexcept
+            {
+                return Value.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, T_ATOMIC>::type::guid_v;
+            }
+
             template< typename T_CLASS, typename T, auto T_LAMBDA_V, typename... T_ARGS >
             struct var_io
             {
@@ -1925,28 +2054,16 @@ namespace xproperty
 
                     if constexpr (std::is_enum_v<atomic_t>)
                     {
-                        // This forces to have std::string as part of its atomic types... which is not ideal...
-                        if( Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v )
+                        if (details::isUnresolvedEnumString<atomic_t>(Any))
                         {
-                            auto& String = Any.get<std::string>();
-                            for( auto& E : type::atomic_v<atomic_t>.m_RegisteredEnumSpan )
-                            {
-                                if(String == E.m_pName)
-                                {
-                                    type::any RealValue;
-                                    RealValue.set<atomic_t>( static_cast<atomic_t>(E.m_Value) );
-                                    type::var_t<t>::Write
-                                    (const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(pClass)))
-                                        , RealValue.get<atomic_t>()
-                                        , Context
-                                    );
+                            auto Resolved = details::resolveEnumString<atomic_t>(Any, S);
+                            if (!Resolved) return; // TODO: How to log this information??? << Fail to set the enum value >>
 
-                                    return;
-                                }
-                            }
-
-                            // TODO: How to log this information???
-                            // << Fail to set the enum value >>
+                            type::var_t<t>::Write
+                            (const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(pClass)))
+                                , Resolved.value().get<atomic_t>()
+                                , Context
+                            );
                             return;
                         }
                     }
@@ -2043,8 +2160,15 @@ namespace xproperty
                     }
                     else
                     {
-                        assert(type::get_obj_info<typename type::var_t<t>::atomic_type> != nullptr);
-                        return { pInst, type::get_obj_info<typename type::var_t<t>::atomic_type> };
+                        // var_t<t>::atomic_type - not bare t - is the fully-resolved key here: it unwraps
+                        // however many pointer/smart-pointer layers t itself didn't (t only had ONE
+                        // std::remove_pointer_t applied above, so a Base1** member still leaves t as
+                        // Base1*, not Base1), and for non-pointer members (fvec3, type_guid, ...) it's the
+                        // identity, matching how a wrapper struct's XPROPERTY_DEF always registers under
+                        // the raw foreign type's name ("ImVec2", "vector3", ...), never the wrapper itself.
+                        using key_t = typename type::var_t<t>::atomic_type;
+                        assert(type::get_obj_info<key_t> != nullptr);
+                        return { pInst, type::get_obj_info<key_t> };
                     }
                 }
             };
@@ -2193,6 +2317,17 @@ namespace xproperty
 
                     using  overwrite_list_size_tuple_t = xproperty::details::filter_by_tag_t< meta::member_overwrite_list_size_tag, T_ARGS... >;
 
+                    // TrySetSize must honestly report "unsupported" for adapters that never provide real
+                    // resize support - fixed-size containers (std::span, std::array, native C-arrays) just
+                    // inherit var_list_defaults's own do-nothing setSize - instead of silently succeeding.
+                    // A property-local overwrite_list_size callback always counts as real; otherwise defer
+                    // to the adapter's own has_real_setSize_v flag. m_pSetSize itself stays unconditionally
+                    // populated (unchanged) - only the separate m_bHasRealSetSize flag varies, so
+                    // TrySetSize's null-object/no-op branches stay exactly as narrow as before.
+                    constexpr bool has_setSize_override_v =
+                           !std::is_same_v<std::tuple<>, overwrite_list_size_tuple_t >
+                        || t::has_real_setSize_v;
+
                     return
                     { .m_pGetSize = [](void* pClass, settings::context& C) constexpr -> std::size_t
                         {
@@ -2211,7 +2346,7 @@ namespace xproperty
                                 using fn_t = xproperty::details::function_traits<callback>;
                                 if constexpr (fn_t::arity_v == 3) callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), true, Size);
                                 else                              callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), true, Size, C);
-                                
+
                                 return Size;
                             }
                         }
@@ -2233,6 +2368,7 @@ namespace xproperty
                                 else                              callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size, C);
                             }
                         }
+                    , .m_bHasRealSetSize = has_setSize_override_v
                     , .m_pStart = [](void* pClass, xproperty::type::begin_iterator& Iterator, settings::context& C) constexpr -> xproperty::result<void>
                         {
                             T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
@@ -2454,16 +2590,48 @@ namespace xproperty
         template<typename T>
         concept reflected_object_type = requires
         {
-            { std::remove_cvref_t<T>::PropertiesDefinition() };
+            { std::remove_cvref_t<settings::reflected_type_t<T>>::PropertiesDefinition() };
         };
+
+        // Extracts the T_OBJECT_TYPE a wrapper's PropertiesDefinition() actually registered itself
+        // under - i.e. XPROPERTY_DEF's own second argument - so it can be compared against the raw
+        // type reflected_type<T> was specialized for. No primary definition: only matches an actual
+        // xproperty::def<...>, which is exactly what a well-formed PropertiesDefinition() returns.
+        template<typename T> struct def_registered_type;
+        template<xproperty::details::fixed_string T_NAME_V, typename T_OBJECT_TYPE, typename... T_ARGS>
+        struct def_registered_type<xproperty::def<T_NAME_V, T_OBJECT_TYPE, T_ARGS...>> { using type = T_OBJECT_TYPE; };
 
         template<typename T>
         consteval void validate_reflected_object_type()
         {
             static_assert(reflected_object_type<T>,
                 "XPROP004: property type is not a registered atomic and has no xproperty definition. "
-                "Register it with var_type<T> for an atomic value, or add XPROPERTY_DEF/XPROPERTY_VDEF "
-                "and XPROPERTY_REG for a reflected object");
+                "Register it with var_type<T> for an atomic value, add XPROPERTY_DEF/XPROPERTY_VDEF and "
+                "XPROPERTY_REG for a reflected object, or - for a foreign type you can't add "
+                "XPROPERTY_DEF to directly - specialize xproperty::settings::reflected_type<T> to point "
+                "at a sibling wrapper struct that has one");
+
+            // If T itself needed the reflected_type<T> redirection (T has no PropertiesDefinition() of
+            // its own - it's a foreign type like xmath::fvec3 or xresource::type_guid), the wrapper that
+            // carries its reflection MUST register itself via XPROPERTY_DEF("name", T, ...) using T
+            // itself as the object type - NOT the wrapper struct's own type. get_obj_info<T> and every
+            // runtime cast_scope::Cast() lookup are keyed on T, so a wrapper that registers under its
+            // own type instead compiles fine and passes reflected_object_type above, then fails a
+            // get_obj_info assert at runtime the first time something actually tries to inspect T -
+            // silently, in whatever code path happens to touch it first. Catch it here instead.
+            if constexpr (!std::is_same_v<T, settings::reflected_type_t<T>>)
+            {
+                using wrapper_t      = settings::reflected_type_t<T>;
+                using registered_as  = typename def_registered_type<decltype(wrapper_t::PropertiesDefinition())>::type;
+                static_assert(std::is_same_v<registered_as, T>,
+                    "XPROP0xx: xproperty::settings::reflected_type<T> points at a wrapper struct that "
+                    "registers itself under the WRONG type. The wrapper's XPROPERTY_DEF(\"name\", ..., ...) "
+                    "second argument must be the same raw foreign type T that reflected_type<T> was "
+                    "specialized for - not the wrapper struct's own type - because get_obj_info<T> and "
+                    "cast_scope::Cast() both look objects up by T directly. Fix: change the wrapper's "
+                    "XPROPERTY_DEF second argument to T (see xmath::vec3_friend or "
+                    "xresource::type_guid_give_properties for the correct pattern).");
+            }
         }
 
         template< bool T_IS_VAR_V, bool T_IS_LIST_V, typename T_MEMBER_TYPE >
@@ -2578,82 +2746,37 @@ namespace xproperty
                                 type::atomic_v<t>.m_RegisteredEnumSpan = S;
                             }
 
+                            if constexpr (std::is_enum_v<t>)
+                            {
+                                if (details::isUnresolvedEnumString<t>(Any))
+                                {
+                                    auto Resolved = details::resolveEnumString<t>(Any, S);
+                                    if (!Resolved) return; // TODO: Value failed to be set... what to do???
+
+                                    if constexpr (sizeof...(T_ADDITIONAL) == 0)
+                                        T_LAMBDA_V(*static_cast<T_CLASS*>(pClass), false, Resolved.value().get<t>());
+                                    else
+                                        T_LAMBDA_V(*static_cast<T_CLASS*>(pClass), false, Resolved.value().get<t>(), Context);
+                                    return;
+                                }
+                            }
+
                             if constexpr (sizeof...(T_ADDITIONAL) == 0)
                             {
-                                if constexpr (std::is_enum_v<t>)
-                                {
-                                    if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
-                                    {
-                                        auto& String = Any.get<std::string>();
-                                        for (auto& E : type::atomic_v<t>.m_RegisteredEnumSpan)
-                                        {
-                                            if (String == E.m_pName)
-                                            {
-                                                type::any RealValue;
-                                                RealValue.set<t>(static_cast<t>(E.m_Value));
-
-                                                T_LAMBDA_V
-                                                ( *static_cast<T_CLASS*>(pClass)
-                                                , false
-                                                , const_cast<type::any&>(RealValue).get<t>()
-                                                );
-                                                return;
-                                            }
-                                        }
-
-                                        // TODO: Value failed to be set... what to do???
-                                    }
-                                    else
-                                    {
-                                        T_LAMBDA_V
-                                        (*static_cast<T_CLASS*>(pClass)
-                                            , false
-                                            , const_cast<type::any&>(Any).get<t>()
-                                        );
-                                    }
-                                }
-                                else
-                                {
-                                    T_LAMBDA_V
-                                    ( *static_cast<T_CLASS*>(pClass)
-                                    , false
-                                    , const_cast<type::any&>(Any).get<t>()
-                                    );
-                                }
+                                T_LAMBDA_V
+                                ( *static_cast<T_CLASS*>(pClass)
+                                , false
+                                , const_cast<type::any&>(Any).get<t>()
+                                );
                             }
                             else
                             {
-                                if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
-                                {
-                                    auto& String = Any.get<std::string>();
-                                    for (auto& E : type::atomic_v<t>.m_RegisteredEnumSpan)
-                                    {
-                                        if (String == E.m_pName)
-                                        {
-                                            type::any RealValue;
-                                            RealValue.set<t>(static_cast<t>(E.m_Value));
-
-                                            T_LAMBDA_V
-                                            ( *static_cast<T_CLASS*>(pClass)
-                                            , false
-                                            , const_cast<type::any&>(RealValue).get<t>()
-                                            , Context
-                                            );
-                                            return;
-                                        }
-                                    }
-
-                                    // TODO: Value failed to be set... what to do???
-                                }
-                                else
-                                {
-                                    T_LAMBDA_V
-                                    ( *static_cast<T_CLASS*>(pClass)
-                                    , false
-                                    , const_cast<type::any&>(Any).get<t>()
-                                    , Context
-                                    );
-                                }
+                                T_LAMBDA_V
+                                ( *static_cast<T_CLASS*>(pClass)
+                                , false
+                                , const_cast<type::any&>(Any).get<t>()
+                                , Context
+                                );
                             }
                         }
                     }
@@ -2680,15 +2803,15 @@ namespace xproperty
 
             static consteval xproperty::type::members getInfo()
             {
-                // NOTE: deliberately not calling validate_reflected_object_type() here.
-                // The engine has an established pattern of giving foreign/third-party types
-                // (ImVec2, xresource::type_guid, etc.) their reflection via a sibling wrapper
-                // struct ("W : T { XPROPERTY_DEF(...) }") rather than injecting
-                // PropertiesDefinition() into T itself, and members are still declared with
-                // the plain T. A compile-time check on T here can't see that wrapper, so it
-                // false-positives on every such member across the engine. cast_scope's own
-                // runtime assert(type::get_obj_info<T> != nullptr) remains as the safety net
-                // for a genuinely unregistered type, matching pre-redesign behavior.
+                // Pointer members (of any depth) are unwrapped to their ultimate pointee via
+                // var_t<T>::atomic_type, and foreign types that get their reflection through a sibling
+                // wrapper struct (ImVec2 -> v2, xresource::type_guid -> type_guid_give_properties, ...)
+                // are resolved through the explicit xproperty::settings::reflected_type<T> trait -
+                // specialize that trait alongside the wrapper rather than expecting this check to find
+                // it on its own. Pass the RAW type here (not pre-wrapped) - validate_reflected_object_type
+                // applies reflected_type_t itself, and needs the raw type to also check the wrapper
+                // registered itself under it.
+                validate_reflected_object_type<typename type::var_t<T_MEMBER_TYPE>::atomic_type>();
                 //
                 // Handle Vars and Refs that are properties... we just convert them to a scope
                 //
@@ -2887,26 +3010,16 @@ namespace xproperty
 
                                                 if constexpr (std::is_enum_v<atomic_t>)
                                                 {
-                                                    if (Any.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, atomic_t>::type::guid_v)
+                                                    if (details::isUnresolvedEnumString<atomic_t>(Any))
                                                     {
-                                                        auto& String = Any.get<std::string>();
-                                                        for (auto& E : type::atomic_v<atomic_t>.m_RegisteredEnumSpan)
-                                                        {
-                                                            if (String == E.m_pName)
-                                                            {
-                                                                type::any RealValue;
-                                                                RealValue.set<atomic_t>(static_cast<atomic_t>(E.m_Value));
+                                                        auto Resolved = details::resolveEnumString<atomic_t>(Any, S);
+                                                        if (!Resolved) return; // TODO: Value failed to be set... what to do???
 
-                                                                type::var_t<last_t>::Write
-                                                                ( *static_cast< typename type::var_t<last_t>::specializing_t*>(pClass)
-                                                                , RealValue.get<atomic_t>()
-                                                                , Context
-                                                                );
-                                                                return;
-                                                            }
-                                                        }
-
-                                                        // TODO: Value failed to be set... what to do???
+                                                        type::var_t<last_t>::Write
+                                                        ( *static_cast< typename type::var_t<last_t>::specializing_t*>(pClass)
+                                                        , Resolved.value().get<atomic_t>()
+                                                        , Context
+                                                        );
                                                         return;
                                                     }
                                                 }

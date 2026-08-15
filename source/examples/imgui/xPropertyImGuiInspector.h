@@ -458,5 +458,10 @@ XPROPERTY_VREG2(inspect_props,  xproperty::inspector)
 XPROPERTY_REG2(v2_props,        xproperty::inspector::v2)
 XPROPERTY_REG2(settings_props,  xproperty::inspector::settings)
 
+// ImVec2 itself can't have XPROPERTY_DEF injected into it (it's ImGui's, not ours) - v2 above carries
+// its reflection instead. This is the explicit link xproperty::settings::validate_reflected_object_type()
+// and cast_scope look for when a member is declared as a plain ImVec2.
+template<> struct xproperty::settings::reflected_type<ImVec2> { using type = xproperty::inspector::v2; };
+
 #pragma warning( pop ) 
 #endif
