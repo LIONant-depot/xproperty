@@ -98,7 +98,7 @@ namespace xproperty::sprop
 
             // Read the actual value
             xproperty::any Value;
-            Info.m_pReadUnchecked(pClass, Value, Info.m_UnregisteredEnumSpan, *m_pContext);
+            (void)Info.m_pReadUnchecked(pClass, Value, Info.m_UnregisteredEnumSpan, *m_pContext);
 
             // Let the user know that we got properties
             CallBack( m_CurrentPath.data(), std::move(Value), Members, isConst, pParentClass);

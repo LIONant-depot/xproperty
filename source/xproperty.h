@@ -975,6 +975,12 @@ namespace xproperty
             std::uint32_t               m_GUID;
             std::uint32_t               m_Size;
             bool                        m_IsEnum;
+            // Best-effort cache for any-only enum-name display (AnyToString, getEnumString()) when no
+            // property context/span is available - actual property reads/writes never consult this,
+            // they always resolve directly off their own property-local span (see resolveEnumString()),
+            // so this cache being stale or first-writer-wins for a shared "unregistered enum" sentinel
+            // never causes a read/write correctness bug, only a possibly-wrong any-only display for a
+            // DIFFERENT unregistered enum than the one last touched.
             mutable std::span<const enum_item>  m_RegisteredEnumSpan;
             void_construct*             m_pVoidConstruct;
             destruct*                   m_pDestruct;
@@ -1658,8 +1664,8 @@ namespace xproperty
 
             struct var
             {
-                using read_fn           = void( const void* pClass,       any& DataOut, const std::span<const atomic::enum_item>& S, settings::context& );
-                using write_fn          = void(       void* pClass, const any& DataIn,  const std::span<const atomic::enum_item>& S, settings::context& );
+                using read_fn           = xproperty::result<void>( const void* pClass,       any& DataOut, const std::span<const atomic::enum_item>& S, settings::context& );
+                using write_fn          = xproperty::result<void>(       void* pClass, const any& DataIn,  const std::span<const atomic::enum_item>& S, settings::context& );
 
                 read_fn*  const                          m_pReadUnchecked;
                 write_fn* const                          m_pWriteUnchecked;
@@ -1670,8 +1676,7 @@ namespace xproperty
                 {
                     if (!Object) return xproperty::details::makeNullObject();
                     if (!m_pReadUnchecked) return xproperty::details::makeUnsupportedOperation();
-                    m_pReadUnchecked(Object, Out, m_UnregisteredEnumSpan, Context);
-                    return {};
+                    return m_pReadUnchecked(Object, Out, m_UnregisteredEnumSpan, Context);
                 }
 
                 template<typename T_STRING = std::string>
@@ -1691,8 +1696,7 @@ namespace xproperty
                         if (!Found) return xproperty::error{ .m_Code = error_code::invalid_enum_value, .m_ExpectedType = m_AtomicType.m_GUID, .m_ActualType = In.getTypeGuid() };
                     }
 
-                    m_pWriteUnchecked(Object, In, m_UnregisteredEnumSpan, Context);
-                    return {};
+                    return m_pWriteUnchecked(Object, In, m_UnregisteredEnumSpan, Context);
                 }
 
                 XPROPERTY_LEGACY_API("Use TryRead instead")
@@ -1713,8 +1717,8 @@ namespace xproperty
 
             struct list_var
             {
-                using read_fn               = void( const void* pClass,       any& DataOut, const std::span<const atomic::enum_item>& S, settings::context&);
-                using write_fn              = void(       void* pClass, const any& DataIn,  const std::span<const atomic::enum_item>& S, settings::context&);
+                using read_fn               = xproperty::result<void>( const void* pClass,       any& DataOut, const std::span<const atomic::enum_item>& S, settings::context&);
+                using write_fn              = xproperty::result<void>(       void* pClass, const any& DataIn,  const std::span<const atomic::enum_item>& S, settings::context&);
 
                 read_fn*  const                          m_pReadUnchecked;
                 write_fn* const                          m_pWriteUnchecked;
@@ -1825,8 +1829,7 @@ namespace xproperty
                 {
                     if (!Object) return xproperty::details::makeNullObject();
                     if (!Value->m_pReadUnchecked) return xproperty::details::makeUnsupportedOperation();
-                    Value->m_pReadUnchecked(Object, Out, Value->m_UnregisteredEnumSpan, Context);
-                    return {};
+                    return Value->m_pReadUnchecked(Object, Out, Value->m_UnregisteredEnumSpan, Context);
                 }
                 return xproperty::details::makeUnsupportedOperation();
             }
@@ -1839,10 +1842,17 @@ namespace xproperty
                 {
                     if (!Object) return xproperty::details::makeNullObject();
                     if (!Value->m_pWriteUnchecked) return xproperty::details::makeReadOnly(Value->m_AtomicType.m_GUID, In.getTypeGuid());
-                    if (!In.hasValue() || In.getTypeGuid() != Value->m_AtomicType.m_GUID)
-                        return xproperty::details::makeTypeMismatch(Value->m_AtomicType.m_GUID, In.getTypeGuid());
-                    Value->m_pWriteUnchecked(Object, In, Value->m_UnregisteredEnumSpan, Context);
-                    return {};
+                    if (!In.hasValue()) return xproperty::details::makeTypeMismatch(Value->m_AtomicType.m_GUID);
+                    if (In.getTypeGuid() != Value->m_AtomicType.m_GUID)
+                    {
+                        if (!(Value->m_AtomicType.m_IsEnum && In.getTypeGuid() == xproperty::settings::var_type<T_STRING>::guid_v))
+                            return xproperty::details::makeTypeMismatch(Value->m_AtomicType.m_GUID, In.getTypeGuid());
+
+                        const auto* String = In.tryGet<T_STRING>().value();
+                        const auto Found = Value->m_AtomicType.TryFindEnumByName(*String, Value->m_UnregisteredEnumSpan);
+                        if (!Found) return xproperty::error{ .m_Code = error_code::invalid_enum_value, .m_ExpectedType = Value->m_AtomicType.m_GUID, .m_ActualType = In.getTypeGuid() };
+                    }
+                    return Value->m_pWriteUnchecked(Object, In, Value->m_UnregisteredEnumSpan, Context);
                 }
                 return xproperty::details::makeUnsupportedOperation();
             }
@@ -2011,6 +2021,28 @@ namespace xproperty
                 return Value.m_pType->m_GUID == xproperty::details::delay_linkage< xproperty::settings::var_type<std::string>, T_ATOMIC>::type::guid_v;
             }
 
+            // Best-effort echo of the property-local span into atomic_v<T_ATOMIC>.m_RegisteredEnumSpan,
+            // purely so any-only callers with no property context (AnyToString, any::getEnumString(),
+            // e.g. the ImGui inspector's undo-command display) have *something* to resolve an unregistered
+            // enum's name against. First-writer-wins per T_ATOMIC (an unregistered enum has no real type
+            // identity beyond the shared guid_v==1 sentinel, so there's no way to key this correctly for
+            // more than one logical enum at a time) - this can occasionally show the wrong name for a
+            // DIFFERENT unregistered enum than the one just read/written, but never affects the read/write
+            // itself, which always resolves off the real property-local span passed in here, not this
+            // cache.
+            template<typename T_ATOMIC>
+            inline void cacheEnumSpanBestEffort(const std::span<const type::atomic::enum_item>& S) noexcept
+            {
+                if constexpr (std::is_enum_v<T_ATOMIC> && type::var_t<T_ATOMIC>::guid_v == 1)
+                {
+                    auto& Cached = type::atomic_v<T_ATOMIC>.m_RegisteredEnumSpan;
+                    if (Cached.size() == 0)
+                        Cached = S;
+                    else
+                        assert(S.size() == Cached.size());
+                }
+            }
+
             template< typename T_CLASS, typename T, auto T_LAMBDA_V, typename... T_ARGS >
             struct var_io
             {
@@ -2025,31 +2057,25 @@ namespace xproperty
                 //
                 // Deal with register atomic types
                 //
-                static void Read ( const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context )
+                static xproperty::result<void> Read ( const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context )
                 {
-                    if constexpr (std::is_enum_v<atomic_t> && type::var_t<atomic_t>::guid_v == 1)
+                    details::cacheEnumSpanBestEffort<atomic_t>(S);
+                    auto& Member = const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(const_cast<void*>(pClass))));
+                    if constexpr (type::var_t<t>::is_pointer_v)
                     {
-                        if (type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size() == 0)
-                            type::atomic_v<atomic_t>.m_RegisteredEnumSpan = S;
-                        else
-                            assert(S.size() == type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size());
+                        if (!type::var_t<t>::getAtomic(Member, Context)) return xproperty::details::makeNullObject();
                     }
-
-                    type::var_t<t>::Read
-                    ( const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(const_cast<void*>(pClass))))
-                    , Any.Reset<atomic_t>()
-                    , Context
-                    );
+                    type::var_t<t>::Read(Member, Any.Reset<atomic_t>(), Context);
+                    return {};
                 }
 
-                static void Write(void* pClass, const type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context)
+                static xproperty::result<void> Write(void* pClass, const type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context)
                 {
-                    if constexpr (std::is_enum_v<atomic_t> && type::var_t<atomic_t>::guid_v == 1)
+                    details::cacheEnumSpanBestEffort<atomic_t>(S);
+                    auto& Member = const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(pClass)));
+                    if constexpr (type::var_t<t>::is_pointer_v)
                     {
-                        if (type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size() == 0)
-                            type::atomic_v<atomic_t>.m_RegisteredEnumSpan = S;
-                        else
-                            assert(S.size() == type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size());
+                        if (!type::var_t<t>::getAtomic(Member, Context)) return xproperty::details::makeNullObject();
                     }
 
                     if constexpr (std::is_enum_v<atomic_t>)
@@ -2057,27 +2083,18 @@ namespace xproperty
                         if (details::isUnresolvedEnumString<atomic_t>(Any))
                         {
                             auto Resolved = details::resolveEnumString<atomic_t>(Any, S);
-                            if (!Resolved) return; // TODO: How to log this information??? << Fail to set the enum value >>
+                            if (!Resolved) return Resolved.getError();
 
-                            type::var_t<t>::Write
-                            (const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(pClass)))
-                                , Resolved.value().get<atomic_t>()
-                                , Context
-                            );
-                            return;
+                            type::var_t<t>::Write(Member, Resolved.value().template get<atomic_t>(), Context);
+                            return {};
                         }
                     }
 
-                    if (Any.m_pType->m_GUID != type::var_t<atomic_t>::guid_v )
-                    {
-                        return;
-                    }
+                    if (Any.m_pType->m_GUID != type::var_t<atomic_t>::guid_v)
+                        return xproperty::details::makeTypeMismatch(type::var_t<atomic_t>::guid_v, Any.m_pType->m_GUID);
 
-                    type::var_t<t>::Write
-                    ( const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(pClass)))
-                    , Any.get<atomic_t>()
-                    , Context
-                    );
+                    type::var_t<t>::Write(Member, Any.get<atomic_t>(), Context);
+                    return {};
                 }
             };
 
@@ -2248,6 +2265,15 @@ namespace xproperty
 
             namespace details
             {
+                template<typename T_ADAPTER>
+                [[nodiscard]] consteval bool hasRealSetSize() noexcept
+                {
+                    if constexpr (requires { T_ADAPTER::has_real_setSize_v; })
+                        return static_cast<bool>(T_ADAPTER::has_real_setSize_v);
+                    else
+                        return false;
+                }
+
                 template<typename T_ADAPTER, typename T_CONTAINER>
                 consteval void validate_list_adapter()
                 {
@@ -2326,7 +2352,7 @@ namespace xproperty
                     // TrySetSize's null-object/no-op branches stay exactly as narrow as before.
                     constexpr bool has_setSize_override_v =
                            !std::is_same_v<std::tuple<>, overwrite_list_size_tuple_t >
-                        || t::has_real_setSize_v;
+                        || hasRealSetSize<t>();
 
                     return
                     { .m_pGetSize = [](void* pClass, settings::context& C) constexpr -> std::size_t
@@ -2709,18 +2735,18 @@ namespace xproperty
                 using t        = xproperty::details::remove_all_const_t<T_MEMBER_TYPE>;
                 using atomic_t = typename type::var_t<t>::atomic_type;
 
+                static_assert(!type::var_t<t>::is_pointer_v,
+                    "XPROP031: pointer-backed virtual properties are unsupported; use a pointer-returning obj_member accessor instead");
+
                 return
                 { .m_GUID           = xproperty::settings::strguid(T_NAME_V)
                 , .m_pName          = T_NAME_V
                 , .m_Variant        = xproperty::type::members::var
-                    { .m_pReadUnchecked      = (std::is_const_v<T_MEMBER_TYPE>) ? nullptr : +[]( const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    { .m_pReadUnchecked      = (std::is_const_v<T_MEMBER_TYPE>) ? nullptr : +[]( const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr -> xproperty::result<void>
                     {
                         if constexpr (std::is_const_v<T_MEMBER_TYPE> == false)
                         {
-                            if constexpr (std::is_enum_v<t> && type::var_t<t>::guid_v == 1)
-                            {
-                                type::atomic_v<t>.m_RegisteredEnumSpan = S;
-                            }
+                            details::cacheEnumSpanBestEffort<t>(S);
 
                             if constexpr ( sizeof...(T_ADDITIONAL) == 0 )
                                 T_LAMBDA_V
@@ -2735,29 +2761,28 @@ namespace xproperty
                                 , Any.Reset<t>()
                                 , Context
                                 );
+                            return {};
                         }
+                        return xproperty::details::makeUnsupportedOperation();
                     }
-                    , .m_pWriteUnchecked     = is_ready_only_v ? nullptr : +[](void* pClass, const type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    , .m_pWriteUnchecked     = is_ready_only_v ? nullptr : +[](void* pClass, const type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr -> xproperty::result<void>
                     {
                         if constexpr ( is_ready_only_v == false )
                         {
-                            if constexpr (std::is_enum_v<t> && type::var_t<t>::guid_v == 1)
-                            {
-                                type::atomic_v<t>.m_RegisteredEnumSpan = S;
-                            }
+                            details::cacheEnumSpanBestEffort<t>(S);
 
                             if constexpr (std::is_enum_v<t>)
                             {
                                 if (details::isUnresolvedEnumString<t>(Any))
                                 {
                                     auto Resolved = details::resolveEnumString<t>(Any, S);
-                                    if (!Resolved) return; // TODO: Value failed to be set... what to do???
+                                    if (!Resolved) return Resolved.getError();
 
                                     if constexpr (sizeof...(T_ADDITIONAL) == 0)
-                                        T_LAMBDA_V(*static_cast<T_CLASS*>(pClass), false, Resolved.value().get<t>());
+                                        T_LAMBDA_V(*static_cast<T_CLASS*>(pClass), false, Resolved.value().template get<t>());
                                     else
-                                        T_LAMBDA_V(*static_cast<T_CLASS*>(pClass), false, Resolved.value().get<t>(), Context);
-                                    return;
+                                        T_LAMBDA_V(*static_cast<T_CLASS*>(pClass), false, Resolved.value().template get<t>(), Context);
+                                    return {};
                                 }
                             }
 
@@ -2778,7 +2803,9 @@ namespace xproperty
                                 , Context
                                 );
                             }
+                            return {};
                         }
+                        return xproperty::details::makeReadOnly();
                     }
                     , .m_AtomicType = xproperty::type::atomic_v<atomic_t>
                     , .m_UnregisteredEnumSpan = details::unregistered_enum_array<details::is_unregistered_enum_v<atomic_t>, T_ARGS...>::value
@@ -2981,46 +3008,35 @@ namespace xproperty
                 { .m_GUID               = xproperty::settings::strguid(T_NAME_V)
                 , .m_pName              = T_NAME_V
                 , .m_Variant            = xproperty::type::members::list_var
-                    { .m_pReadUnchecked          =  +[](const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    { .m_pReadUnchecked          =  +[](const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr -> xproperty::result<void>
                                             {
-                                                if constexpr (std::is_enum_v<atomic_t> && type::var_t<atomic_t>::guid_v == 1)
-                                                {
-                                                    if (type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size() == 0)
-                                                        type::atomic_v<atomic_t>.m_RegisteredEnumSpan = S;
-                                                    else
-                                                        assert(S.size() == type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size());
-                                                }
+                                                details::cacheEnumSpanBestEffort<atomic_t>(S);
 
                                                 type::var_t<last_t>::Read
                                                 ( *static_cast<const typename type::var_t<last_t>::specializing_t*>(pClass)
                                                 , Any.Reset<atomic_t>()
                                                 , Context
                                                 );
+                                                return {};
                                             }
                                             
-                    , .m_pWriteUnchecked         = is_ready_only_v ? nullptr : +[]( void* pClass, const type::any& Any,const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr
+                    , .m_pWriteUnchecked         = is_ready_only_v ? nullptr : +[]( void* pClass, const type::any& Any,const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr -> xproperty::result<void>
                                             {
-                                                if constexpr (std::is_enum_v<atomic_t> && type::var_t<atomic_t>::guid_v == 1)
-                                                {
-                                                    if (type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size() == 0 )
-                                                        type::atomic_v<atomic_t>.m_RegisteredEnumSpan = S;
-                                                    else
-                                                        assert( S.size() == type::atomic_v<atomic_t>.m_RegisteredEnumSpan.size() );
-                                                }
+                                                details::cacheEnumSpanBestEffort<atomic_t>(S);
 
                                                 if constexpr (std::is_enum_v<atomic_t>)
                                                 {
                                                     if (details::isUnresolvedEnumString<atomic_t>(Any))
                                                     {
                                                         auto Resolved = details::resolveEnumString<atomic_t>(Any, S);
-                                                        if (!Resolved) return; // TODO: Value failed to be set... what to do???
+                                                        if (!Resolved) return Resolved.getError();
 
                                                         type::var_t<last_t>::Write
                                                         ( *static_cast< typename type::var_t<last_t>::specializing_t*>(pClass)
-                                                        , Resolved.value().get<atomic_t>()
+                                                        , Resolved.value().template get<atomic_t>()
                                                         , Context
                                                         );
-                                                        return;
+                                                        return {};
                                                     }
                                                 }
 
@@ -3029,6 +3045,7 @@ namespace xproperty
                                                 , Any.get<atomic_t>()
                                                 , Context
                                                 );
+                                                return {};
                                             }
                     , .m_Table          = array_v
                     , .m_AtomicType     = xproperty::type::atomic_v<atomic_t>
