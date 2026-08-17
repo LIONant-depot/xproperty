@@ -1337,14 +1337,20 @@ namespace xproperty
             template<typename T>
             [[nodiscard]] constexpr bool is() const noexcept
             {
-                return m_pType == &atomic_v<T>;
+                // Compares by GUID value, not by &atomic_v<T> address: atomic_v<T> is a per-binary
+                // `inline` singleton (header-only, implicitly instantiated), so a plugin DLL's copy and
+                // the host EXE's copy of atomic_v<T> live at different addresses even though both are
+                // valid pointers in the one shared process. m_GUID is a compile-time string hash with no
+                // address dependency, so it's identical across binaries for the same type - see
+                // xnode_os_reflection_boundary_research notes for the full cross-DLL crash this fixes.
+                return m_pType && m_pType->m_GUID == atomic_v<T>.m_GUID;
             }
 
             template<typename T>
             [[nodiscard]] constexpr xproperty::result<T*> tryGet() noexcept
             {
                 if (!m_pType) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID);
-                if (m_pType != &atomic_v<T>) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID, m_pType->m_GUID);
+                if (m_pType->m_GUID != atomic_v<T>.m_GUID) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID, m_pType->m_GUID); // GUID compare, not pointer - see is<T>()'s comment
                 return &storageAs<T>();
             }
 
@@ -1352,7 +1358,7 @@ namespace xproperty
             [[nodiscard]] constexpr xproperty::result<const T*> tryGet() const noexcept
             {
                 if (!m_pType) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID);
-                if (m_pType != &atomic_v<T>) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID, m_pType->m_GUID);
+                if (m_pType->m_GUID != atomic_v<T>.m_GUID) return xproperty::details::makeTypeMismatch(atomic_v<T>.m_GUID, m_pType->m_GUID); // GUID compare, not pointer - see is<T>()'s comment
                 return &storageAs<T>();
             }
 
@@ -1428,7 +1434,7 @@ namespace xproperty
                 static_assert(xproperty::details::has_const_v<T> == false);
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
                 assert(m_pType);
-                assert(m_pType == &atomic_v<T>);
+                assert(m_pType->m_GUID == atomic_v<T>.m_GUID); // GUID compare, not pointer - see any::is<T>()'s comment
                 return storageAs<T>();
             }
 
@@ -1474,7 +1480,7 @@ namespace xproperty
                 static_assert(xproperty::details::has_const_v<T> == false);
                 static_assert(std::is_enum_v<T> || settings::var_type<T>::guid_v != 0);
                 assert(m_pType);
-                assert(m_pType == &atomic_v<T>);
+                assert(m_pType->m_GUID == atomic_v<T>.m_GUID); // GUID compare, not pointer - see any::is<T>()'s comment
                 return storageAs<T>();
             }
 

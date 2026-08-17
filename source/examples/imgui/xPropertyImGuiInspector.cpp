@@ -15,6 +15,10 @@
 #include "imgui_internal.h"
 
 #pragma comment( lib, "shlwapi.lib") // For PathMatchSpecW
+#pragma comment( lib, "comdlg32.lib") // For GetOpenFileNameW - a plain project template typically links
+                                       // this by default, so a consumer without that default (e.g. a
+                                       // bare cl.exe invocation) would otherwise get an unresolved
+                                       // external for it.
 
 namespace xproperty::ui::undo
 {
@@ -105,7 +109,7 @@ namespace xproperty::ui::details
         {
             T V = Value;
             Cmd.m_isChange = ImGui::DragScalar("##value", T_IMGUID_DATA_TYPE_V, &V, I.m_Speed, &I.m_Min, &I.m_Max, I.m_pFormat );
-            if( Cmd.m_isChange )
+            if (Cmd.m_isChange)
             {
                 if (Cmd.m_isEditing == false) Cmd.m_Original.set<T>(Value);
                 Cmd.m_isEditing = true;
