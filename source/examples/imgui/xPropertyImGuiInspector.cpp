@@ -20,6 +20,88 @@
                                        // bare cl.exe invocation) would otherwise get an unresolved
                                        // external for it.
 
+#include <unordered_map>
+
+namespace xproperty::ui::details
+{
+    namespace
+    {
+        // (TypeGUID, StyleGUID) packed into one key - a few dozen entries total, all registered once
+        // at static init, so a plain hash map lookup at draw time is more than fast enough (this is a
+        // once-per-visible-widget-per-frame cost, nowhere near a hot inner loop).
+        constexpr std::uint64_t MakeDrawKey(std::uint32_t TypeGUID, std::uint32_t StyleGUID) noexcept
+        {
+            return (std::uint64_t(TypeGUID) << 32) | StyleGUID;
+        }
+
+        std::unordered_map<std::uint64_t, draw_fn*>& GetDrawRegistry() noexcept
+        {
+            static std::unordered_map<std::uint64_t, draw_fn*> s_Registry;
+            return s_Registry;
+        }
+    }
+
+    void RegisterDrawFn(std::uint32_t TypeGUID, std::uint32_t StyleGUID, draw_fn* pFn) noexcept
+    {
+        GetDrawRegistry()[MakeDrawKey(TypeGUID, StyleGUID)] = pFn;
+    }
+
+    draw_fn* ResolveDrawFn(std::uint32_t TypeGUID, std::uint32_t StyleGUID) noexcept
+    {
+        auto& Registry = GetDrawRegistry();
+        auto  It       = Registry.find(MakeDrawKey(TypeGUID, StyleGUID));
+        return It == Registry.end() ? nullptr : It->second;
+    }
+
+    namespace
+    {
+        template<typename T, typename Style>
+        void RegisterOne() noexcept
+        {
+            // Keyed by xproperty::type::atomic_v<T>.m_GUID - the SAME descriptor any::Reset<T>() tags
+            // a value with (Value.m_pType == &atomic_v<T>) - not settings::var_type<T>::guid_v, which
+            // can disagree with it depending on header include order (a pre-existing, previously-inert
+            // mismatch: the old function-pointer dispatch never compared GUIDs for anything but a
+            // since-disabled sanity assert, so it never mattered before).
+            RegisterDrawFn(xproperty::type::atomic_v<T>.m_GUID, Style::guid_v, &DrawErased<T, Style>);
+        }
+
+        // One-time registration of every (Type,Style) combo this file actually implements a real
+        // draw<T,Style>::Render for - the ONLY place any binary ever instantiates DrawErased/Render.
+        // A plugin that merely attaches a style to a member (member_ui<T>::Style<...>) never does,
+        // since member_ui_base now stores just two GUIDs (see my_property_ui.h) - so styled/read-only
+        // members no longer force ImGui/this inspector to be linked into a plugin DLL; only whichever
+        // binary actually calls Show() (and therefore needs this registration) does.
+        struct register_all_draw_fns
+        {
+            register_all_draw_fns() noexcept
+            {
+                RegisterOne<std::int64_t,  style::drag_bar>();   RegisterOne<std::int64_t,  style::edit_box>();   RegisterOne<std::int64_t,  style::scroll_bar>();
+                RegisterOne<std::uint64_t, style::drag_bar>();   RegisterOne<std::uint64_t, style::edit_box>();   RegisterOne<std::uint64_t, style::scroll_bar>();
+                RegisterOne<std::int32_t,  style::drag_bar>();   RegisterOne<std::int32_t,  style::edit_box>();   RegisterOne<std::int32_t,  style::scroll_bar>();
+                RegisterOne<std::uint32_t, style::drag_bar>();   RegisterOne<std::uint32_t, style::edit_box>();   RegisterOne<std::uint32_t, style::scroll_bar>();
+                RegisterOne<std::int16_t,  style::drag_bar>();   RegisterOne<std::int16_t,  style::edit_box>();   RegisterOne<std::int16_t,  style::scroll_bar>();
+                RegisterOne<std::uint16_t, style::drag_bar>();   RegisterOne<std::uint16_t, style::edit_box>();   RegisterOne<std::uint16_t, style::scroll_bar>();
+                RegisterOne<std::int8_t,   style::drag_bar>();   RegisterOne<std::int8_t,   style::edit_box>();   RegisterOne<std::int8_t,   style::scroll_bar>();
+                RegisterOne<std::uint8_t,  style::drag_bar>();   RegisterOne<std::uint8_t,  style::edit_box>();   RegisterOne<std::uint8_t,  style::scroll_bar>();
+                RegisterOne<float,         style::drag_bar>();   RegisterOne<float,         style::edit_box>();   RegisterOne<float,         style::scroll_bar>();
+                RegisterOne<double,        style::drag_bar>();   RegisterOne<double,        style::edit_box>();   RegisterOne<double,        style::scroll_bar>();
+
+                RegisterOne<std::string,   style::button>();
+                RegisterOne<std::string,   style::defaulted>();
+                RegisterOne<std::wstring,  style::button>();
+                RegisterOne<std::wstring,  style::file_dialog>();
+                RegisterOne<std::wstring,  style::defaulted>();
+                RegisterOne<bool,          style::defaulted>();
+#ifdef XCORE_PROPERTIES_H
+                RegisterOne<xresource::full_guid, style::defaulted>();
+#endif
+            }
+        };
+        const register_all_draw_fns s_RegisterAllDrawFns;
+    }
+}
+
 namespace xproperty::ui::undo
 {
     void system::Add(const cmd& Cmd) noexcept
@@ -1107,16 +1189,16 @@ namespace xproperty::ui::details
         }();
 
 
-        // Check to make sure that the user did not made a mistake...
-        // the actual type of the property must match the type of the UI style..
-        // NOTE: I had to comment this assert because visual studio 17.11.1 seems to be failing... which is non-sense.... 
-      //  assert(Value.m_pType->m_GUID == StyleBase.m_TypeGUID );
-
-        // Sanity check make sure that we have a function as well... 
-        assert(StyleBase.m_pDrawFn);
+        // Resolve the real drawer from the registry (see xproperty::ui::details::RegisterDrawFn,
+        // above) - StyleBase only ever carries a style GUID now, never a function pointer. Keyed by
+        // Value.m_pType->m_GUID (the value's own real type tag), not StyleBase.m_TypeGUID - the two
+        // aren't always equal (see RegisterOne's comment), so Value's is the one guaranteed to agree
+        // with what got registered.
+        auto* pDrawFn = xproperty::ui::details::ResolveDrawFn(Value.m_pType->m_GUID, StyleBase.m_StyleGUID);
+        assert(pDrawFn);
 
         //ImGui::PushID(&Entry);
-        StyleBase.m_pDrawFn(GUID, Cmd, Value, StyleBase, Flags);
+        pDrawFn(GUID, Cmd, Value, StyleBase, Flags);
         //ImGui::PopID();
     }
 
