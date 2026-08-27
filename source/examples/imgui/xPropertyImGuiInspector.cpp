@@ -2226,10 +2226,29 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
                     if (bShowArrayControls) ImGui::PushID(static_cast<int>(iE));
 
-                    // Drag handle - leftmost, drawn BEFORE the [i] label itself (Unity convention).
+                    bool Open;
+                    const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
+                    else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
+
+                    // Captured right here, before any of the array-control buttons below get drawn -
+                    // otherwise the shared "print help" check further down in Render() would see
+                    // whichever of THOSE was hovered last instead of this label (see bSuppressRowHelp's
+                    // own comment at its declaration).
+                    if (bShowArrayControls)
+                    {
+                        if (ImGui::IsItemHovered()) Help(E);
+                        bSuppressRowHelp = true;
+                    }
+
+                    // Drag handle - right after the [i] label, matching where it lands for object-array
+                    // elements (that branch draws its own "[i]" via PushTree before it can even reach
+                    // this button cluster, so leftmost was never actually achievable there - matched
+                    // here instead, for one consistent layout across atomic and object elements).
                     if (bShowArrayControls)
                     {
                         const float Sz = ImGui::GetFrameHeight();
+                        ImGui::SameLine();
                         ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // Segoe MDL2 Assets GripperBarHorizontal (U+E76F) - same icon font as the trashcan glyph below
                         if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
                         {
@@ -2250,22 +2269,6 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             ImGui::EndDragDropTarget();
                         }
                         HelpMarker("Drag to reorder this element");
-                        ImGui::SameLine();
-                    }
-
-                    bool Open;
-                    const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
-                    else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
-
-                    // Captured right here, before any of the array-control buttons below get drawn -
-                    // otherwise the shared "print help" check further down in Render() would see
-                    // whichever of THOSE was hovered last instead of this label (see bSuppressRowHelp's
-                    // own comment at its declaration).
-                    if (bShowArrayControls)
-                    {
-                        if (ImGui::IsItemHovered()) Help(E);
-                        bSuppressRowHelp = true;
                     }
 
                     if (bShowArrayControls)
