@@ -401,6 +401,17 @@ public:
     // bool& starts false (normal rendering) and the consumer opts in per-property by setting it true.
     using on_custom_render_replace_value = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, bool&>;
 
+    // Level 3 of the same 4-level plan: replace the LEFT column (the tree-node/label draw) - the
+    // override-revert ">" button, if any, still renders first, unconditionally, regardless of this.
+    // Render()'s own column transition (ImGui::NextColumn()) happens automatically right after this
+    // fires, before the right column's own code runs - so this delegate alone only ever replaces the
+    // left half of the row. Setting the trailing bool true ALSO seeds level 2's own bHandled (skipping
+    // the default value widget), so a consumer wanting the whole row custom registers BOTH this AND
+    // on_custom_render_replace_value for the same property - one drawing the label side, the other the
+    // value side - rather than one delegate somehow spanning both columns in a single call. Composable
+    // with level 1 (append-after) regardless - that one still fires afterward, on the same row.
+    using on_custom_render_replace_row = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, bool&>;
+
     settings                    m_Settings {};
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
     on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
@@ -441,6 +452,7 @@ public:
 
     on_custom_render_append         m_OnCustomRenderAppend;         // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
     on_custom_render_replace_value  m_OnCustomRenderReplaceValue;   // Fired once per property BEFORE its value column would normally render - consumer sets the trailing bool true to draw its own widget instead and skip the default one entirely (level 2 of 4)
+    on_custom_render_replace_row    m_OnCustomRenderReplaceRow;     // Fired once per property BEFORE its left-column label would normally render - consumer sets the trailing bool true to take over BOTH columns (the override-revert button, if any, still renders regardless) (level 3 of 4)
 
     void RenderBackground()
     {

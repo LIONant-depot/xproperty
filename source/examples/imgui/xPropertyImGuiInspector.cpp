@@ -1788,6 +1788,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // so the shared check downstream skips instead of double-firing off a stale hover target.
         bool bSuppressRowHelp = false;
 
+        // Level 3 of the 4 planned custom-rendering levels: replace the ENTIRE row except structural
+        // controls (the override-revert ">" button stays - see m_OnCustomRenderReplaceRow's own
+        // comment). Declared at this scope because it's resolved in the LEFT-column leaf-entry code
+        // below but also needs to suppress the separate RIGHT-column block further down.
+        bool bReplacedRow = false;
+
         // Set by the E.m_bScope branch below (obj_scope_toggle support) when this scope's first
         // child carries scope_toggle_t - read back by the right-column section further down, since
         // the checkbox itself belongs in the value column like any other bool, not merged into the
@@ -2469,8 +2475,20 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 pLeftLabel = ElementName.data();
             }
 
-            if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, pLeftLabel, Open);
-            else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
+            // Level 3: replace the LEFT column - the override-revert ">" button above already rendered
+            // unconditionally and stays exactly as is; this only decides whether the tree-node/label
+            // draw below gets skipped. Also seeds bReplacedValue (level 2's own flag) further down, so
+            // a consumer wanting the whole row custom registers both this AND
+            // m_OnCustomRenderReplaceValue for the same property - the automatic NextColumn() between
+            // here and the right-column code means one delegate can't draw both halves in a single call.
+            // Same "fires for every property, consumer checks Path" idiom as levels 1/2.
+            m_OnCustomRenderReplaceRow.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedRow);
+
+            if (!bReplacedRow)
+            {
+                if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, pLeftLabel, Open);
+                else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
+            }
 
             if (bIsOverridden) ImGui::PopStyleColor();
         }
@@ -2685,7 +2703,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // once rather than one axis at a time). Same "fires for every property, consumer checks
             // Path" idiom as level 1/m_OnOverrideCheck; bHandled starts false (normal rendering) and
             // the consumer opts in per-property by setting it true instead of a separate registration.
-            bool bReplacedValue = false;
+            // Seeded from bReplacedRow (level 3) rather than always false - a row already fully
+            // replaced up in the left-column code has no default value widget left to skip separately.
+            bool bReplacedValue = bReplacedRow;
             m_OnCustomRenderReplaceValue.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedValue);
 
             if (!bReplacedValue) if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
