@@ -1488,6 +1488,11 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         int                  m_OpenAll;
         int                  m_MyDimension;
         bool                 m_bArrayMustInsertIndex = false;
+        // Cached from the size-marker entry the moment THIS level was pushed (where E.m_pUserData is
+        // genuinely the array's own list_props/list_var Member) - by the time object-array elements
+        // render at this same depth, E has moved on to their own first reflected sub-property, so this
+        // is the only reliable way to get back to the array's list_table for per-element controls.
+        const xproperty::type::members* m_pArrayMember = nullptr;
         bool                 m_isOpen          : 1
                              , m_isAtomicArray : 1
                              , m_isReadOnly    : 1
@@ -1868,7 +1873,156 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 if (const auto Slash = InstancePath.rfind('/'); Slash != std::string_view::npos)
                     InstancePath = InstancePath.substr(0, Slash);
 
+                // Captured BEFORE PushTree below - that call pushes the ELEMENT's own new scope (for
+                // its sub-properties), incrementing iDepth itself, so reading Tree[iDepth] afterward
+                // would silently see the freshly-pushed (empty) level instead of the array's own level
+                // one below it, where this was cached (confirmed live: the whole block below silently
+                // no-opped, no buttons, no error, until this was moved before the push).
+                const xproperty::type::members* pArrayMember = Tree[iDepth].m_pArrayMember;
+
                 PushTree(Name.data(), bCustomRender, InstancePath, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
+
+                // Same Unity-style per-element controls as the atomic-array branch above, generalized
+                // to object (list_props) elements. A scalar element's whole value fits in one
+                // xproperty::any, so that branch could build everything from ordinary setProperty-by-
+                // path calls; an object element can't, so this one goes straight to the real
+                // list_table::TrySwap/TrySetSize this session added instead - Move/Insert/Delete are
+                // all just chains of real Swap calls around a resize, exactly the Resize+Swap
+                // composition this was designed around from the start, now that a real container
+                // pointer is reachable. E itself is NOT the array's own entry at this point (it's the
+                // element's own first reflected sub-property - see this branch's own comment above), so
+                // the array's Member/list_table comes from the pArrayMember captured just above.
+                if (pArrayMember)
+                {
+                    if (const auto* pListProps = std::get_if<xproperty::type::members::list_props>(&pArrayMember->m_Variant);
+                        pListProps && pListProps->m_Table.size() == 1)
+                    {
+                        const auto& Table = pListProps->m_Table[0];
+
+                        // Parse this element's own ordinal index and the array's own path prefix out
+                        // of InstancePath ("ArrayPrefix[KeyType:Index]") - Tree[iDepth].m_iArray is
+                        // never incremented for object arrays (only the atomic branch above does that),
+                        // so the index has to come from the path's own embedded key instead.
+                        const auto LastOpen = InstancePath.rfind('[');
+                        const auto Colon    = InstancePath.find(':', LastOpen);
+                        if (LastOpen != std::string_view::npos && Colon != std::string_view::npos && InstancePath.back() == ']'
+                            // Only an ordinal (std::size_t-keyed) list supports index-based Move/
+                            // Insert/Delete via a swap chain - a GUID- or other custom-keyed one (e.g.
+                            // a texture slot list keyed by resource GUID) has no meaningful "adjacent
+                            // index" to bubble through.
+                            && Table.m_KeyAtomicType.m_GUID == xproperty::settings::var_type<std::size_t>::guid_v)
+                        {
+                            const std::string_view ArrayPrefixView = InstancePath.substr(0, LastOpen);
+                            const std::string_view IndexStr        = InstancePath.substr(Colon + 1, InstancePath.size() - 1 - (Colon + 1));
+
+                            // Only a TOP-LEVEL array (declared directly on the component's own
+                            // registered class, not nested inside another object/array) has
+                            // C.m_Base.second as its owning instance - TrySwap/TrySetSize need the
+                            // exact instance T_LAMBDA_V's accessor was compiled against, and a nested
+                            // array's real owning instance isn't reachable from here. Every path always
+                            // carries a leading "ComponentDisplayName/" segment even for a genuinely
+                            // top-level member (confirmed live: "Array Ops Smoke Test/Object List
+                            // (...)" for a directly-declared std::vector) - strip that one component-
+                            // name slash before checking for any FURTHER '/' or '[' that would indicate
+                            // real nesting inside another scope or array.
+                            const auto             FirstSlash    = ArrayPrefixView.find('/');
+                            const std::string_view AfterComponent = FirstSlash != std::string_view::npos ? ArrayPrefixView.substr(FirstSlash + 1) : ArrayPrefixView;
+                            const bool bTopLevel = AfterComponent.find('/') == std::string_view::npos && AfterComponent.find('[') == std::string_view::npos;
+
+                            int  CurrentIndex = 0;
+                            bool bValidIndex  = bTopLevel && !IndexStr.empty();
+                            for (char c : IndexStr) { if (c < '0' || c > '9') { bValidIndex = false; break; } CurrentIndex = CurrentIndex * 10 + (c - '0'); }
+
+                            if (bValidIndex && Table.m_bHasRealSetSize && !Tree[iDepth].m_isReadOnly)
+                            {
+                                void*      pInstance   = C.m_Base.second;
+                                const auto SizeResult  = Table.TryGetSize(pInstance, *m_pContext);
+                                const std::size_t N    = SizeResult ? SizeResult.value() : 0;
+
+                                const auto KeyOf = [](std::size_t Index) { xproperty::any K; K.set<std::size_t>(Index); return K; };
+                                const auto Commit = [&]
+                                    {
+                                        xproperty::ui::undo::cmd Cmd;
+                                        Cmd.m_Name         = std::string(ArrayPrefixView);
+                                        Cmd.m_pClassObject = C.m_Base.second;
+                                        Cmd.m_pPropObject  = C.m_Base.first;
+                                        Cmd.m_bHasChanged  = true;
+                                        m_OnChangeEvent.NotifyAll(*this, Cmd);
+                                    };
+                                const auto SwapAt = [&](std::size_t A, std::size_t B)
+                                    {
+                                        (void)Table.TrySwap(pInstance, KeyOf(A), KeyOf(B), *m_pContext);
+                                    };
+                                const auto MoveElement = [&](std::size_t FromIndex, std::size_t ToIndex)
+                                    {
+                                        if (FromIndex == ToIndex) return;
+                                        if (FromIndex < ToIndex) for (std::size_t k = FromIndex; k < ToIndex; ++k) SwapAt(k, k + 1);
+                                        else                      for (std::size_t k = FromIndex; k > ToIndex; --k) SwapAt(k, k - 1);
+                                        Commit();
+                                    };
+
+                                struct array_reorder_drag_payload { std::uint32_t m_ArrayGUID; int m_SourceIndex; };
+                                const std::uint32_t ThisArrayGUID = xproperty::settings::strguid({ ArrayPrefixView.data(), static_cast<std::uint32_t>(ArrayPrefixView.size()) });
+
+                                const float Sz = ImGui::GetFrameHeight();
+                                ImGui::PushID(static_cast<int>(iE));
+                                ImGui::SameLine();
+                                ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // GripperBarHorizontal
+                                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+                                {
+                                    array_reorder_drag_payload Payload{ ThisArrayGUID, CurrentIndex };
+                                    ImGui::SetDragDropPayload("XPROP_ARRAY_ELEMENT", &Payload, sizeof(Payload));
+                                    ImGui::Text("Move [%d]", CurrentIndex);
+                                    ImGui::EndDragDropSource();
+                                }
+                                if (ImGui::BeginDragDropTarget())
+                                {
+                                    if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
+                                    {
+                                        IM_ASSERT(Pay->DataSize == sizeof(array_reorder_drag_payload));
+                                        const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
+                                        if (P.m_ArrayGUID == ThisArrayGUID && P.m_SourceIndex != CurrentIndex)
+                                            MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                    }
+                                    ImGui::EndDragDropTarget();
+                                }
+                                HelpMarker("Drag to reorder this element");
+
+                                ImGui::SameLine();
+                                if (ImGui::Button("\xEE\x9C\x8E", ImVec2(Sz, Sz))) // ChevronUp
+                                {
+                                    // Insert Above: grow, then bubble the fresh (blank) trailing element
+                                    // from N down to CurrentIndex via adjacent swaps - unlike the atomic
+                                    // branch, there's no generic "copy a whole object" primitive here,
+                                    // so the new slot is a blank default rather than a duplicate.
+                                    (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
+                                    for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex); --k) SwapAt(k, k - 1);
+                                    Commit();
+                                }
+                                HelpMarker("Insert a new (blank) element above this one");
+
+                                ImGui::SameLine();
+                                if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // ChevronDown
+                                {
+                                    (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
+                                    for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex) + 1; --k) SwapAt(k, k - 1);
+                                    Commit();
+                                }
+                                HelpMarker("Insert a new (blank) element below this one");
+
+                                ImGui::SameLine();
+                                if (ImGui::Button("\xEE\x9D\x8D", ImVec2(Sz, Sz))) // Delete (same glyph as elsewhere in this codebase)
+                                {
+                                    for (std::size_t k = static_cast<std::size_t>(CurrentIndex); k + 1 < N; ++k) SwapAt(k, k + 1);
+                                    (void)Table.TrySetSize(pInstance, N - 1, *m_pContext);
+                                    Commit();
+                                }
+                                HelpMarker("Delete this element");
+                                ImGui::PopID();
+                            }
+                        }
+                    }
+                }
 
                 bRenderBlankRight = true;
 
@@ -1933,6 +2087,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 }
                 snprintf(&Name[NameOffset], Name.size() - NameOffset, " ");
                 PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
+
+                // E.m_pUserData is genuinely the array's own list_props/list_var Member right here -
+                // cached for the object-array index-row branch below, which runs at this same depth
+                // once E has moved on to the element's own first sub-property (see the cache field's
+                // own comment on element::m_pArrayMember).
+                Tree[iDepth].m_pArrayMember = E.m_pUserData;
 
                 // Only insert a real, separate [index] row at the DEEPEST size-marker of an object
                 // (non-atomic) array - the transition from "which dimension" bookkeeping into actual
