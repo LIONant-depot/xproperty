@@ -358,6 +358,18 @@ public:
 #endif
     using on_resource_leftside = xdelegate::thread_unsafe<inspector&, void*, ImGuiTreeNodeFlags, const char*, bool&>;
 
+    // Whether a given property currently differs from some consumer-defined notion of "its base
+    // value" (a prefab/template/material-instance source, etc.) - xproperty never tries to know what
+    // "overridden" means itself, it just calls out with everything it already has on hand: the real
+    // (type::object&, instance) pair (so the consumer can re-query via sprop::getProperty against a
+    // second/base object if that's their strategy) and the FULL property path (already a complete,
+    // canonical key - it embeds any array index itself, e.g. "m_lTextures[G:2]", so it works as an
+    // opaque lookup key into a consumer-owned override-set just as well as it works as a getProperty
+    // argument - no parsing needed either way) plus the already-resolved current value, so a simple
+    // consumer doesn't even need to re-fetch it.
+    using on_override_check = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, bool&>;
+    using on_override_reset = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view>;
+
     settings                    m_Settings {};
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
     on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
@@ -375,7 +387,10 @@ public:
     on_resource_browser         m_OnResourceBrowser;        // When the user needs to adquire a resource the system will isssue a event here...
     on_resource_wigzmos         m_OnResourceWigzmos;        // This callback is used to collect the name of the resource
 #endif
-    on_resource_leftside        m_OnResourceLeftSize;       // Gets the height of the 
+    on_resource_leftside        m_OnResourceLeftSize;       // Gets the height of the
+
+    on_override_check           m_OnOverrideCheck;          // Registered by a consumer that has some notion of "base value" for its own properties (a prefab/template/material-instance source) - called per row; if it reports true, the row renders with an override indicator and a revert button
+    on_override_reset           m_OnOverrideReset;          // Fired when the revert button (above) is clicked - consumer's job to actually remove/reset the override however that's meaningful for their own data model
 
     void RenderBackground()
     {

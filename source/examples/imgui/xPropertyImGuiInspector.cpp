@@ -1976,6 +1976,27 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             bool Open;
             const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
+            // Ask a registered consumer (if any) whether this property currently differs from
+            // whatever THEY consider its base value - xproperty never tries to know what "overridden"
+            // means itself. E.m_Property.m_Path is the full, canonical path (already embeds any array
+            // index, e.g. "m_lTextures[G:2]") - a complete, opaque key either for a lookup into a
+            // consumer-owned override-set, or to hand straight back into sprop::getProperty against a
+            // second/base object, whichever strategy the consumer uses. The already-resolved current
+            // value is passed too so a simple consumer doesn't need to re-fetch it.
+            bool bIsOverridden = false;
+            m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden);
+            if (bIsOverridden)
+            {
+                // Tint stays pushed through the label draw below too (matches E20's own convention -
+                // the whole row's left-column text recolors, not just the button), popped right after.
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 170, 255, 255));
+                if (ImGui::Button(">"))
+                {
+                    m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                }
+                ImGui::SameLine();
+            }
+
             // A real element (not a size-marker) belonging to a multi-dimensional array still
             // carries the array's own Member descriptor (list_var/list_props, same as its size
             // markers), so E.m_pName here would otherwise repeat the raw array name with none of
@@ -2008,6 +2029,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, pLeftLabel, Open);
             else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
 
+            if (bIsOverridden) ImGui::PopStyleColor();
         }
 
 
