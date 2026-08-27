@@ -2805,8 +2805,18 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // value widget that fills the whole column via -1 width has zero room for a same-line
             // append, confirmed live, so a property whose consumer wants to append there should opt
             // into a new line instead.
+            //
+            // SameLine() is only meaningful when something was actually drawn in this column already -
+            // a level-3-replaced-to-blank row (nothing drawn on either column, e.g. a level-4 "consumed
+            // into an earlier block" row) has no real "last item" here for SameLine() to anchor to, so
+            // it falls back to stale state from elsewhere (the LEFT column's own last item) and lands
+            // the appended text at a bogus position - confirmed live as a single stray clipped
+            // character where a fully-blank row's append should have been. Comparing the cursor to
+            // rpos (this column's own start position, captured right after NextColumn() above) is a
+            // reliable "has anything drawn here yet" check regardless of what the value branch did.
+            const bool bValueColumnHasContent = ImGui::GetCursorScreenPos().x != rpos.x || ImGui::GetCursorScreenPos().y != rpos.y;
             if (E.m_Flags.m_bAppendNewLine) ImGui::NewLine();
-            else                            ImGui::SameLine();
+            else if (bValueColumnHasContent) ImGui::SameLine();
             m_OnCustomRenderAppend.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value);
 
             // Handle group entry increments
