@@ -922,6 +922,13 @@ namespace xproperty
                 return size;
             }
             constexpr static void             setSize         (       type&           MemberVar,   const std::size_t        Size,                       context&   ) noexcept {}
+
+            // Physical slot ceiling, separate from getSize's current LIVE count. Fixed-size adapters
+            // (std::array, native C-arrays - see var_list_native_defaults below) override this to their
+            // compile-time N; a dynamically-sized container (std::vector) is only bounded by memory, so
+            // the default here reports "unbounded" rather than tying capacity to the live count.
+            constexpr static std::size_t      getCapacity     ( const type&           MemberVar,                                                        context&   ) noexcept { return std::numeric_limits<std::size_t>::max(); }
+
             constexpr static void             IteratorToKey   ( const type&           MemberVar,         any_t&             Key, const begin_iterator& I, context& ) noexcept { Key.template set<atomic_key>(I - MemberVar.begin()); }
             constexpr static specializing_t*  IteratorToObject(       type&           MemberVar,         begin_iterator&    I,                          context&   ) noexcept { return const_cast<specializing_t*>(&(*I)); }
             constexpr static specializing_t*  getObject       (       type&           MemberVar,   const any_t&             Key,                        context&   ) noexcept { return const_cast<specializing_t*>(&MemberVar[Key.template get<atomic_key>()]); }
@@ -946,6 +953,7 @@ namespace xproperty
             using any_t             = typename xproperty::details::delay_linkage< xproperty::type::any, atomic_key >::type;
 
             constexpr static std::size_t      getSize         ( const type& MemberVar,                            context&) noexcept { return N; }
+            constexpr static std::size_t      getCapacity     ( const type& MemberVar,                            context&) noexcept { return N; }
             constexpr static void             IteratorToKey   ( const type& MemberVar,       any_t&          Key, const begin_iterator& I, context& ) noexcept { Key.template set<atomic_key>(I); }
             constexpr static void             Start           (       type& MemberVar,       begin_iterator& I,   context&) noexcept { I = 0; }
             constexpr static void             End             (       type& MemberVar,       end_iterator&   End, context&) noexcept { End = N; }
@@ -1560,6 +1568,8 @@ namespace xproperty
         {
             using get_size_fn               = std::size_t (void* pClass, settings::context&);
             using set_size_fn               = void ( void*           pClass,       std::size_t,                                         settings::context&);
+            using get_capacity_fn           = std::size_t (void* pClass, settings::context&);
+            using swap_fn                   = void ( void*           pClass, const any&             KeyA, const any& KeyB,               settings::context&);
             using start_fn                  = xproperty::result<void>(void* pClass, begin_iterator& Iterator, settings::context&);
             using end_fn                    = xproperty::result<void>(void* pClass, end_iterator& End, settings::context&);
             using next_fn                   = bool ( void*           pClass,       begin_iterator&  Iterator, const end_iterator& End,  settings::context&);
@@ -1572,6 +1582,8 @@ namespace xproperty
             get_size_fn*                const m_pGetSize;
             set_size_fn*                const m_pSetSize;
             const bool                        m_bHasRealSetSize; // false for fixed-size adapters (span/array/native C-arrays) whose setSize is just var_list_defaults's inherited no-op - m_pSetSize itself is always populated, TrySetSize consults this instead
+            get_capacity_fn*            const m_pGetCapacity;
+            swap_fn*                    const m_pSwap; // always real - synthesized generically from getObject at the getListTable() builder, no per-container opt-in needed (unlike setSize, which structurally can't be generic since resizing has no generic meaning)
             start_fn*                   const m_pStart;
             end_fn*                     const m_pEnd;
             next_fn*                    const m_pNext;
@@ -1614,6 +1626,24 @@ namespace xproperty
                 if (!Object) return xproperty::details::makeNullObject();
                 if (!m_pSetSize || !m_bHasRealSetSize) return xproperty::details::makeUnsupportedOperation();
                 m_pSetSize(Object, Size, Context);
+                return {};
+            }
+
+            [[nodiscard]] xproperty::result<std::size_t> TryGetCapacity(void* Object, settings::context& Context) const
+            {
+                if (!Object) return xproperty::details::makeNullObject();
+                if (!m_pGetCapacity) return xproperty::details::makeUnsupportedOperation();
+                return m_pGetCapacity(Object, Context);
+            }
+
+            [[nodiscard]] xproperty::result<void> TrySwap(void* Object, const any& KeyA, const any& KeyB, settings::context& Context) const
+            {
+                if (!Object) return xproperty::details::makeNullObject();
+                if (!m_pSwap) return xproperty::details::makeUnsupportedOperation();
+                if (!KeyA.hasValue() || !KeyB.hasValue()) return xproperty::details::makeInvalidKey(m_KeyAtomicType.m_GUID);
+                if (KeyA.getTypeGuid() != m_KeyAtomicType.m_GUID) return xproperty::details::makeTypeMismatch(m_KeyAtomicType.m_GUID, KeyA.getTypeGuid());
+                if (KeyB.getTypeGuid() != m_KeyAtomicType.m_GUID) return xproperty::details::makeTypeMismatch(m_KeyAtomicType.m_GUID, KeyB.getTypeGuid());
+                m_pSwap(Object, KeyA, KeyB, Context);
                 return {};
             }
 
@@ -2375,8 +2405,19 @@ namespace xproperty
                                 using callback = std::tuple_element_t< 0, overwrite_list_size_tuple_t >;
                                 std::size_t Size;
 
-                                using fn_t = xproperty::details::function_traits<callback>;
-                                if constexpr (fn_t::arity_v == 3) callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), true, Size);
+                                // function_traits needs the callback's own FUNCTION type
+                                // (decltype(callback::overwrite_size_v)), not the member_overwrite_list_size<>
+                                // tag wrapper struct itself, and with the top-level const stripped (a
+                                // constexpr static function-pointer member decltypes as "T(* const)(...)",
+                                // for which function_traits has no specialization - only the non-const
+                                // pointer and bare-function forms) - fixing latent bugs that could never
+                                // have surfaced before, since no real declaration ever got this far until
+                                // the T_ARGS-forwarding fix just above (in the two member<> specializations).
+                                // function_traits also has no arity_v member (only return_type/args/
+                                // is_member_v) - arity is std::tuple_size_v<fn_t::args>, same as
+                                // member_dynamic_flags already computes it just above in this file.
+                                using fn_t = xproperty::details::function_traits<std::remove_const_t<decltype(callback::overwrite_size_v)>>;
+                                if constexpr (std::tuple_size_v<typename fn_t::args> == 3) callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), true, Size);
                                 else                              callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), true, Size, C);
 
                                 return Size;
@@ -2395,12 +2436,46 @@ namespace xproperty
                             {
                                 using callback = std::tuple_element_t< 0, overwrite_list_size_tuple_t >;
 
-                                using fn_t = xproperty::details::function_traits<callback>;
-                                if constexpr (fn_t::arity_v == 3) callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size);
+                                // function_traits needs the callback's own FUNCTION type
+                                // (decltype(callback::overwrite_size_v)), not the member_overwrite_list_size<>
+                                // tag wrapper struct itself, and with the top-level const stripped (a
+                                // constexpr static function-pointer member decltypes as "T(* const)(...)",
+                                // for which function_traits has no specialization - only the non-const
+                                // pointer and bare-function forms) - fixing latent bugs that could never
+                                // have surfaced before, since no real declaration ever got this far until
+                                // the T_ARGS-forwarding fix just above (in the two member<> specializations).
+                                // function_traits also has no arity_v member (only return_type/args/
+                                // is_member_v) - arity is std::tuple_size_v<fn_t::args>, same as
+                                // member_dynamic_flags already computes it just above in this file.
+                                using fn_t = xproperty::details::function_traits<std::remove_const_t<decltype(callback::overwrite_size_v)>>;
+                                if constexpr (std::tuple_size_v<typename fn_t::args> == 3) callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size);
                                 else                              callback::overwrite_size_v(*static_cast<T_CLASS*>(pClass), false, Size, C);
                             }
                         }
                     , .m_bHasRealSetSize = has_setSize_override_v
+                    , .m_pGetCapacity = [](void* pClass, settings::context& C) constexpr -> std::size_t
+                        {
+                            T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
+                            if (pA == nullptr) return 0;
+
+                            return t::getCapacity(*pA, C);
+                        }
+                    , .m_pSwap = [](void* pClass, const xproperty::type::any& KeyA, const xproperty::type::any& KeyB, settings::context& C) constexpr
+                        {
+                            T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
+                            if (pA == nullptr) return;
+
+                            auto& Container = const_cast<type&>(*pA);
+                            // Dispatched through t::getObject (the fully-resolved, possibly-overridden
+                            // adapter, e.g. std::map's key-based lookup) rather than a helper living
+                            // inside var_list_defaults itself - a default method there calling another
+                            // default method has no way to see a derived adapter's own override (these
+                            // are plain static hiding, not virtual dispatch/CRTP), which is exactly why
+                            // every other hook here is also synthesized at this builder level instead.
+                            auto* pElemA = t::getObject(Container, KeyA, C);
+                            auto* pElemB = t::getObject(Container, KeyB, C);
+                            if (pElemA && pElemB && pElemA != pElemB) std::swap(*pElemA, *pElemB);
+                        }
                     , .m_pStart = [](void* pClass, xproperty::type::begin_iterator& Iterator, settings::context& C) constexpr -> xproperty::result<void>
                         {
                             T_MEMBER_TYPE* pA = details::get_member<T_LAMBDA_V, T_CLASS>::get(pClass,C);
@@ -2966,7 +3041,10 @@ namespace xproperty
         requires meets_requirements_v<false, true, T_MEMBER_TYPE>
         struct member<T_NAME_V, T_MEMBER_TYPE*(*)(T_CLASS&, T_EXTRA_ARGS...), T_LAMBDA_V, T_ARGS... >
         {
-            using                   table_helper = details::list_table< T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V >;
+            // T_ARGS forwarded through to list_table (previously dropped here) - without it, a list-
+            // related declaration-site tag like member_overwrite_list_size could never actually reach
+            // getListTable()'s overwrite_list_size_tuple_t, no matter what the caller wrote.
+            using                   table_helper = details::list_table< T_CLASS, T_MEMBER_TYPE, T_LAMBDA_V, T_ARGS... >;
             using                   user_data_t  = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
 
             inline static constexpr auto array_v = table_helper::GetArray();
@@ -2995,7 +3073,12 @@ namespace xproperty
         requires meets_requirements_v<true, true, T_MEMBER_TYPE>
         struct member<T_NAME_V, T_MEMBER_TYPE&(*)(T_CLASS&, T_EXTRA_ARGS...), T_LAMBDA_V, T_ARGS... >
         {
-            using                       table_helper = details::list_table< T_CLASS, std::remove_reference_t<T_MEMBER_TYPE>, T_LAMBDA_V >;
+            // T_ARGS forwarded through to list_table (previously dropped here) - see identical comment
+            // above; this is the specialization a plain pointer-to-member list declaration (the common
+            // case, &Class::Member) actually redirects into, so this was the one silently swallowing
+            // member_overwrite_list_size (and any other list-related declaration-site tag) for every
+            // real array field in the codebase.
+            using                       table_helper = details::list_table< T_CLASS, std::remove_reference_t<T_MEMBER_TYPE>, T_LAMBDA_V, T_ARGS... >;
             using                        user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
             inline static constexpr auto array_v     = table_helper::GetArray();
 

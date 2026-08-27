@@ -1138,10 +1138,21 @@ namespace xproperty::ui::details
         {
             const xproperty::settings::member_ui_t* pMemberUI = reinterpret_cast<const xproperty::settings::member_ui_t*>(Entry.getUserData<T_UI_TAG>());
 
-            // if the user does not specify a way to edit the size of a list we assume it is read-only
+            // The Size field is editable only when the list is genuinely resizable - either a real
+            // container (std::vector) or a fixed-capacity one wired up via member_overwrite_list_size
+            // (both already fold into m_bHasRealSetSize at the list_table level, see xproperty.h's
+            // getListTable()). member_ui_list_size_t itself is purely a STYLE opt-in (drag_bar vs
+            // scroll_bar, custom min/max) - it must not gate editability on its own, or a genuinely
+            // resizable list with no custom style would render disabled for no reason.
             if constexpr ( std::is_same_v<xproperty::settings::member_ui_list_size_t, T_UI_TAG> )
             {
-                if(pMemberUI==nullptr) Flags.m_bShowReadOnly = true;
+                bool bHasRealSetSize = false;
+                if (const auto* pListVar = std::get_if<xproperty::type::members::list_var>(&Entry.m_Variant))
+                    bHasRealSetSize = !pListVar->m_Table.empty() && pListVar->m_Table[0].m_bHasRealSetSize;
+                else if (const auto* pListProps = std::get_if<xproperty::type::members::list_props>(&Entry.m_Variant))
+                    bHasRealSetSize = !pListProps->m_Table.empty() && pListProps->m_Table[0].m_bHasRealSetSize;
+
+                if (!bHasRealSetSize) Flags.m_bShowReadOnly = true;
             }
 
             // This is super strange... in visual studio 17.11.1 these static assets are failing... Not sure why...
@@ -1690,7 +1701,28 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // is pushed, so a section label never leaks from one object instance into a sibling or a
         // nested one). Pure layout sugar - no effect on m_List/serialization/the CRC-boundary scope
         // machinery above.
-        if (E.m_pSectionName && E.m_pSectionName != LastSectionAtDepth[iDepth]
+        //
+        // A list member's section tag is attached once, at the declaration - but every row derived
+        // from that same declaration (the array's own size-marker row AND each of its per-element/
+        // index rows) shares the identical m_pUserData/m_pSectionName, since they all point back to
+        // the one reflected Member. The size-marker row correctly starts the section; its elements
+        // then push into a FRESH (reset) tree depth, where the same section name looks "new" again
+        // and re-triggers the separator a second time. Only the size-marker row itself (path ends in
+        // the empty "[]" RefreshAllProperties emits for it) should ever be allowed to start a section -
+        // a per-element row's path instead ends in "[key:value]", confirmed live as the fix (an
+        // element row's own section check was otherwise re-drawing the same header right before [0]).
+        const bool bIsArrayElementRow = [&]
+            {
+                if (!E.m_pUserData) return false;
+                if (!std::holds_alternative<xproperty::type::members::list_var>(E.m_pUserData->m_Variant)
+                    && !std::holds_alternative<xproperty::type::members::list_props>(E.m_pUserData->m_Variant))
+                    return false;
+                const auto& Path = E.m_Property.m_Path;
+                const bool bIsSizeMarker = Path.size() >= 2 && Path.back() == ']' && Path[Path.size() - 2] == '[';
+                return !bIsSizeMarker;
+            }();
+
+        if (!bIsArrayElementRow && E.m_pSectionName && E.m_pSectionName != LastSectionAtDepth[iDepth]
             && (LastSectionAtDepth[iDepth] == nullptr || std::strcmp(E.m_pSectionName, LastSectionAtDepth[iDepth]) != 0))
         {
             LastSectionAtDepth[iDepth] = E.m_pSectionName;

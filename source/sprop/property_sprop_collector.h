@@ -128,11 +128,10 @@ namespace xproperty::sprop
             const auto&     EndIterator   = EndHolder.value();
 
             // If a size is 0 we completely ignore this xproperty
- //           if ( const auto Count = EndIterator.getSize(); Count == 0) return;
- //           else
+            // Declared outside the block below (not just the pre-existing commented-out early-return)
+            // because the element loop further down now needs it too - see its own comment.
+            const auto Count = EndIterator.getSize();
             {
-                const auto Count = EndIterator.getSize();
-
                 // We will write the size for each dimension as a xproperty
                 xproperty::any Value;
                 Value.set<std::size_t>(Count);
@@ -147,12 +146,25 @@ namespace xproperty::sprop
             }
 
             auto iStringPop = m_iCurrentPath;
+            // Count already reflects any list-size override (member_overwrite_list_size) via
+            // end_iterator::getSize() -> list_table::m_pGetSize. Without bounding by it here, this loop
+            // instead runs until StartIterator.Next() naturally reaches the container's own raw
+            // physical end - for a fixed-capacity container overridden to report fewer live elements
+            // than its physical size (e.g. std::array<int,8> with only 3 "live"), that walked every
+            // physical slot regardless, confirmed live (Size: correctly read 3, but all 8 elements
+            // still rendered). For every non-overridden container Count already equals the raw
+            // iterator span, so this changes nothing there.
+            std::size_t iVisited = 0;
             do
             {
+                if (iVisited >= Count) break;
+
                 void* const pObject = StartIterator.getObject();
 
                 // Check if we have anything valid
                 if (pObject == nullptr) continue;
+
+                ++iVisited;
 
                 // Reset the string
                 m_iCurrentPath = iStringPop;
