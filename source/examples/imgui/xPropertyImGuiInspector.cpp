@@ -2677,7 +2677,18 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 }
             }
 
-            if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
+            // Level 2 of the 4 planned custom-rendering levels: replace the value column entirely -
+            // the left column (tree/label) above has already rendered normally by this point, this
+            // only decides whether the RIGHT column's default widget gets skipped. Checked once per
+            // entry (not per grouped sub-component - a consumer wanting to replace a vector2/vector3's
+            // packed row can still do so via this same Path, it just replaces the whole group's row at
+            // once rather than one axis at a time). Same "fires for every property, consumer checks
+            // Path" idiom as level 1/m_OnOverrideCheck; bHandled starts false (normal rendering) and
+            // the consumer opts in per-property by setting it true instead of a separate registration.
+            bool bReplacedValue = false;
+            m_OnCustomRenderReplaceValue.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedValue);
+
+            if (!bReplacedValue) if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
             {
                 E.m_Flags.m_bShowReadOnly = true;
 

@@ -395,6 +395,12 @@ public:
     // once regardless of which one it was.
     using on_custom_render_append = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&>;
 
+    // Level 2 of the same 4-level plan: replace the value column's default widget entirely - the left
+    // column (tree/label) still renders normally, this only decides whether the RIGHT column's default
+    // widget gets skipped. Same "fires for every property, consumer checks Path" idiom; the trailing
+    // bool& starts false (normal rendering) and the consumer opts in per-property by setting it true.
+    using on_custom_render_replace_value = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, bool&>;
+
     settings                    m_Settings {};
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
     on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
@@ -433,7 +439,8 @@ public:
     on_override_check           m_OnOverrideCheck;          // Registered by a consumer that has some notion of "base value" for its own properties (a prefab/template/material-instance source) - called per row; if it reports true, the row renders with an override indicator and a revert button
     on_override_reset           m_OnOverrideReset;          // Fired when the revert button (above) is clicked - consumer's job to actually remove/reset the override however that's meaningful for their own data model
 
-    on_custom_render_append     m_OnCustomRenderAppend;     // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
+    on_custom_render_append         m_OnCustomRenderAppend;         // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
+    on_custom_render_replace_value  m_OnCustomRenderReplaceValue;   // Fired once per property BEFORE its value column would normally render - consumer sets the trailing bool true to draw its own widget instead and skip the default one entirely (level 2 of 4)
 
     void RenderBackground()
     {
