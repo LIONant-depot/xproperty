@@ -1961,7 +1961,16 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                         Commit();
                                     };
 
-                                struct array_reorder_drag_payload { std::uint32_t m_ArrayGUID; int m_SourceIndex; };
+                                // m_pOwningInstance is the real deciding field - m_ArrayGUID alone is just
+                                // a hash of the DECLARATION path, so two instances of the SAME component
+                                // type (two entities, or later two rows of an outer dimension) would
+                                // otherwise hash identically and falsely accept a cross-instance drop,
+                                // silently pulling whatever happens to sit at that offset in THIS array
+                                // instead of the real source (confirmed as a live bug, not hypothetical -
+                                // MoveElement/ValueAt below close over THIS Render() call's own C/iE, so
+                                // a same-GUID-different-instance drop was never actually reading the
+                                // source array at all).
+                                struct array_reorder_drag_payload { void* m_pOwningInstance; std::uint32_t m_ArrayGUID; int m_SourceIndex; };
                                 const std::uint32_t ThisArrayGUID = xproperty::settings::strguid({ ArrayPrefixView.data(), static_cast<std::uint32_t>(ArrayPrefixView.size()) });
 
                                 const float Sz = ImGui::GetFrameHeight();
@@ -1970,21 +1979,33 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // GripperBarHorizontal
                                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
                                 {
-                                    array_reorder_drag_payload Payload{ ThisArrayGUID, CurrentIndex };
+                                    array_reorder_drag_payload Payload{ pInstance, ThisArrayGUID, CurrentIndex };
                                     ImGui::SetDragDropPayload("XPROP_ARRAY_ELEMENT", &Payload, sizeof(Payload));
                                     ImGui::Text("Move [%d]", CurrentIndex);
                                     ImGui::EndDragDropSource();
                                 }
-                                if (ImGui::BeginDragDropTarget())
+                                // Peeked BEFORE BeginDragDropTarget - that call draws the "valid drop
+                                // zone" highlight automatically for ANY matching payload TYPE, before
+                                // the instance/GUID check below ever runs, so every other array in the
+                                // whole inspector would light up as droppable while dragging, only to
+                                // silently reject the drop afterward. Skipping BeginDragDropTarget
+                                // entirely for a genuinely non-matching payload means only the real
+                                // source array's own rows ever highlight at all.
+                                if (const ImGuiPayload* Peek = ImGui::GetDragDropPayload();
+                                    Peek && Peek->IsDataType("XPROP_ARRAY_ELEMENT") && Peek->DataSize == sizeof(array_reorder_drag_payload)
+                                    && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_pOwningInstance == pInstance
+                                    && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_ArrayGUID == ThisArrayGUID)
                                 {
-                                    if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
+                                    if (ImGui::BeginDragDropTarget())
                                     {
-                                        IM_ASSERT(Pay->DataSize == sizeof(array_reorder_drag_payload));
-                                        const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
-                                        if (P.m_ArrayGUID == ThisArrayGUID && P.m_SourceIndex != CurrentIndex)
-                                            MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                        if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
+                                        {
+                                            const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
+                                            if (P.m_SourceIndex != CurrentIndex)
+                                                MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                        }
+                                        ImGui::EndDragDropTarget();
                                     }
-                                    ImGui::EndDragDropTarget();
                                 }
                                 HelpMarker("Drag to reorder this element");
 
@@ -2219,7 +2240,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             Commit();
                         };
 
-                    struct array_reorder_drag_payload { std::uint32_t m_ArrayGUID; int m_SourceIndex; };
+                    // m_pOwningInstance is the real deciding field, not just m_ArrayGUID - see the
+                    // object-array branch's identical struct for why a path-hash alone falsely matches
+                    // across different instances of the same component/array declaration.
+                    struct array_reorder_drag_payload { void* m_pOwningInstance; std::uint32_t m_ArrayGUID; int m_SourceIndex; };
                     const std::uint32_t ThisArrayGUID = bArrayControls
                         ? xproperty::settings::strguid({ ArrayPrefix.data(), static_cast<std::uint32_t>(ArrayPrefix.size()) })
                         : 0;
@@ -2252,21 +2276,30 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // Segoe MDL2 Assets GripperBarHorizontal (U+E76F) - same icon font as the trashcan glyph below
                         if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
                         {
-                            array_reorder_drag_payload Payload{ ThisArrayGUID, CurrentIndex };
+                            array_reorder_drag_payload Payload{ C.m_Base.second, ThisArrayGUID, CurrentIndex };
                             ImGui::SetDragDropPayload("XPROP_ARRAY_ELEMENT", &Payload, sizeof(Payload));
                             ImGui::Text("Move [%d]", CurrentIndex);
                             ImGui::EndDragDropSource();
                         }
-                        if (ImGui::BeginDragDropTarget())
+                        // Peeked BEFORE BeginDragDropTarget - see the object-array branch's identical
+                        // comment for why: that call draws the "valid drop zone" highlight for ANY
+                        // matching payload TYPE regardless of instance/GUID, so skipping it entirely for
+                        // a genuinely non-matching payload keeps every other array from lighting up.
+                        if (const ImGuiPayload* Peek = ImGui::GetDragDropPayload();
+                            Peek && Peek->IsDataType("XPROP_ARRAY_ELEMENT") && Peek->DataSize == sizeof(array_reorder_drag_payload)
+                            && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_pOwningInstance == C.m_Base.second
+                            && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_ArrayGUID == ThisArrayGUID)
                         {
-                            if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
+                            if (ImGui::BeginDragDropTarget())
                             {
-                                IM_ASSERT(Pay->DataSize == sizeof(array_reorder_drag_payload));
-                                const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
-                                if (P.m_ArrayGUID == ThisArrayGUID && P.m_SourceIndex != CurrentIndex)
-                                    MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
+                                {
+                                    const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
+                                    if (P.m_SourceIndex != CurrentIndex)
+                                        MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                }
+                                ImGui::EndDragDropTarget();
                             }
-                            ImGui::EndDragDropTarget();
                         }
                         HelpMarker("Drag to reorder this element");
                     }
