@@ -1994,6 +1994,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 {
                     m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
                 }
+                HelpMarker( "This property has been overridden from its base value - click to revert" );
                 ImGui::SameLine();
             }
 
