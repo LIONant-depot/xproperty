@@ -404,6 +404,7 @@ protected:
         bool                                            m_bAtomicArray;
         bool                                            m_bDefaultOpen;
         void*                                           m_pInstance = nullptr; // the live class instance this entry belongs to - only meaningful for a member-function entry, which needs it to invoke through
+        const char*                                     m_pSectionName = nullptr; // member_section tag value, if any - drives the layout pass's section-separator draw
     };
 
     struct component

@@ -58,6 +58,27 @@ namespace xproperty::settings
         std::uint32_t m_Flags;
     };
 
+    // Pure layout sugar - a section separator drawn before the first member of a new named group, no
+    // serialization impact. Named "section" rather than the roadmap's original "group" specifically to
+    // avoid colliding with the existing, unrelated m_GroupGUID concept (vector2_group/vector3_group,
+    // which packs sibling scalar members like x/y/z into one inline row - a completely different idea).
+    struct member_section_t : xproperty::member_user_data<"Section">
+    {
+        const char* m_pSectionName;
+    };
+
+    // Presence-only marker (no payload) - a real, normally-reflected bool member carries this when it
+    // should also act as its OWN PARENT SCOPE's enable-toggle: rendered as a checkbox merged into the
+    // scope's own header row instead of a separate row, with the scope's children only rendering while
+    // it's true. Deliberately its own dedicated marker rather than a bit in xproperty::flags::type - a
+    // scope-toggle isn't a "how should this member render/save" flag the way SHOW_READONLY/DONT_SAVE/
+    // DONT_SHOW are, it's an unrelated structural relationship to a DIFFERENT entry (the parent scope),
+    // so it doesn't belong sharing that bitset. The member must be the scope's FIRST child for the
+    // renderer to find it - this is checked positionally, not by walking the whole scope.
+    struct scope_toggle_t : xproperty::member_user_data<"Scope Toggle">
+    {
+    };
+
 }
 
 namespace xproperty::settings
@@ -97,6 +118,31 @@ namespace xproperty
                   else                                                       return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj), C);
                 } } {}
     };
+
+    // Pure layout sugar - see settings::member_section_t above for why this isn't called member_group.
+    template< xproperty::details::fixed_string T_NAME_V >
+    struct member_section : settings::member_section_t
+    {
+        constexpr member_section() noexcept : settings::member_section_t{ .m_pSectionName = T_NAME_V.m_Value } {}
+    };
+
+    // Sugar over obj_member for a reflected action (a plain member-function pointer, e.g.
+    // &Class::Method) - decltype(T_DATA) alone already selects xproperty's member_function_tag
+    // dispatch regardless of the macro name used at the call site, so this is purely a declaration-
+    // site name that reads as "this member is an action", not a new mechanism.
+    template< xproperty::details::fixed_string T_NAME_V, auto T_DATA, typename...T_ARGS >
+    using obj_action = xproperty::obj_member<T_NAME_V, T_DATA, T_ARGS...>;
+
+    // Sugar over obj_member for a real bool data member that ALSO acts as its own parent obj_scope's
+    // enable-toggle (see settings::scope_toggle_t above) - must be the scope's first child. Bakes in
+    // the scope_toggle_t marker so the declaration site reads as "this bool controls its own scope"
+    // without the caller needing to know the marker type exists:
+    //   obj_scope<"Advanced Settings"
+    //       , obj_scope_toggle<"Enabled", &Class::m_bAdvancedEnabled>
+    //       , obj_member<"Speed", &Class::m_Speed>
+    //       ...>
+    template< xproperty::details::fixed_string T_NAME_V, auto T_DATA, typename...T_ARGS >
+    using obj_scope_toggle = xproperty::obj_member<T_NAME_V, T_DATA, settings::scope_toggle_t, T_ARGS...>;
 
     template< bool T_OPEN_V >
     struct member_ui_open : settings::member_ui_open_t

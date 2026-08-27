@@ -1337,6 +1337,14 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                 }();
 
             Flags.m_bShowReadOnly |= isConst;
+
+            const char* pSectionName = [&]() -> const char*
+                {
+                    if (auto* pSection = Member.getUserData<xproperty::settings::member_section_t>(); pSection)
+                        return pSection->m_pSectionName;
+                    return nullptr;
+                }();
+
             bool bScope = std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
                 || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant);
 
@@ -1447,6 +1455,7 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     , bAtomicArray
                     , bDefaultOpen
                     , const_cast<void*>(pInstance)
+                    , pSectionName
                 )
             );
         }, true);
@@ -1476,6 +1485,11 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
     int                         iDepth   = -1;
     std::array<element,32>      Tree;
+    // Name of the last member_section drawn at each tree depth this render pass - lets the section-
+    // separator check below fire only once per distinct section name, without ever leaking a section
+    // label from one object scope into a sibling or nested one (reset to nullptr the moment a new
+    // scope is pushed, in PushTreeStruct below).
+    std::array<const char*,32> LastSectionAtDepth{};
 
     constexpr auto ComputeCRC = []( std::string_view Str, std::size_t iEnd ) constexpr
     {
@@ -1488,6 +1502,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // Compute start / end
         //
         auto& L = Tree[++iDepth];
+        LastSectionAtDepth[iDepth] = nullptr;
 
         // Compute start / end
         if (iDepth == 0) L.m_iStart = 0;
@@ -1662,6 +1677,39 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // A property is hidden...
         if (E.m_Flags.m_bDontShow) continue;
 
+        // A member_section tag starts a new named section - draw a separator once, the first time
+        // its name is seen at this depth (LastSectionAtDepth is reset to nullptr whenever a new scope
+        // is pushed, so a section label never leaks from one object instance into a sibling or a
+        // nested one). Pure layout sugar - no effect on m_List/serialization/the CRC-boundary scope
+        // machinery above.
+        if (E.m_pSectionName && E.m_pSectionName != LastSectionAtDepth[iDepth]
+            && (LastSectionAtDepth[iDepth] == nullptr || std::strcmp(E.m_pSectionName, LastSectionAtDepth[iDepth]) != 0))
+        {
+            LastSectionAtDepth[iDepth] = E.m_pSectionName;
+            // The loop always rests in the RIGHT column at this point (the tail end of the previous
+            // entry's own row - "Render the left column" below unconditionally calls NextColumn() to
+            // move from there into the left column for whatever entry comes next, every single time).
+            // So this block must reproduce that same one-entry shape - NextColumn() into the left
+            // column first, draw there, NextColumn() into the right column, draw there too - or every
+            // row rendered after it ends up shifted by one column (confirmed live: an earlier version
+            // that skipped this ordering swapped labels and values for the rest of the panel).
+            // Independent per-column draws, not a merged/full-width one - same trick the top-level
+            // scope header above already uses (AddRectFilled in each column separately) to look like
+            // one continuous bar without ever touching the column count.
+            ImGui::NextColumn();
+            ImGui::SeparatorText(E.m_pSectionName);
+            ImGui::NextColumn();
+            // Call the exact same real widget again, with an empty label, instead of hand-drawing a
+            // line to approximate it - two attempts at reverse-engineering SeparatorText's internal
+            // line-Y math from memory (GetTextLineHeight()*0.5f, then a hand-rolled
+            // ImTrunc((min+max)*0.5f) copied from a possibly-stale recollection of imgui_widgets.cpp)
+            // both left it visibly 1px off against this actual 1.92.5 build. Calling the real ImGui
+            // function a second time is exact by construction, whatever its internals actually are -
+            // an empty label draws a plain full-width line with no text gap, which is exactly what the
+            // right column needs since "Group A"'s text already appears on the left.
+            ImGui::SeparatorText("");
+        }
+
         //
         // Render the left column
         //
@@ -1685,6 +1733,14 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         E.m_RightUIGUID = static_cast<int>(std::hash<size_t>{}(static_cast<size_t>(E.m_LeftUIGUID)) % std::numeric_limits<int>::max());
 
         bool bRenderBlankRight = false;
+
+        // Set by the E.m_bScope branch below (obj_scope_toggle support) when this scope's first
+        // child carries scope_toggle_t - read back by the right-column section further down, since
+        // the checkbox itself belongs in the value column like any other bool, not merged into the
+        // header row on the left (name stays reserved for the label).
+        entry* pScopeToggle              = nullptr;
+        bool   bScopeToggleValue         = false;
+        bool   bScopeToggleHasExpandable = false; // does this scope have any child worth bulk open/close-ing? see the O/C scan below
 
 #ifdef XCORE_PROPERTIES_H
         const bool bCustomRender = E.m_Property.m_Value.m_pType && E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v;
@@ -1868,7 +1924,52 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         }
         else if (E.m_bScope)
         {
+            // A scope whose FIRST child carries scope_toggle_t (obj_scope_toggle) gets that bool
+            // rendered as a checkbox in the RIGHT (value) column, in this same header row - the left
+            // column stays reserved for the name, matching every other row's convention. Only the
+            // peek + open-state sync happen here; the actual checkbox is drawn in the right-column
+            // section below via pScopeToggle/bScopeToggleValue. Positional check only (must be the
+            // immediate next entry in the flat list AND a genuine child of this scope, verified via
+            // path-prefix) - no scope-wide search.
+            if (static_cast<std::size_t>(iE) + 1 < C.m_List.size())
+            {
+                auto& Next = *C.m_List[iE + 1];
+                if (Next.m_pUserData && Next.m_pUserData->getUserData<xproperty::settings::scope_toggle_t>()
+                    && Next.m_Property.m_Path.size() > E.m_Property.m_Path.size()
+                    && Next.m_Property.m_Path.compare(0, E.m_Property.m_Path.size(), E.m_Property.m_Path) == 0)
+                {
+                    pScopeToggle = &Next;
+                }
+            }
+
+            bScopeToggleValue = pScopeToggle ? pScopeToggle->m_Property.m_Value.get<bool>() : false;
+            if (pScopeToggle) ImGui::SetNextItemOpen(bScopeToggleValue); // keep the arrow's own visual state in sync - it isn't independently toggleable once a toggle child exists
+
+            // O/C only mean something if at least one child is itself something that can be opened
+            // or closed (a nested scope, or an array) - a scope made entirely of plain scalar leaves
+            // (e.g. this one's Speed Multiplier/Max Retries/Debug Tag) has nothing to bulk-toggle.
+            // Scan only as far as this scope's own children (path-prefix bounded, same check as the
+            // toggle peek above) - cheap, bounded by this one scope's child count, not the whole tree.
+            if (pScopeToggle)
+            {
+                for (std::size_t j = static_cast<std::size_t>(iE) + 2; j < C.m_List.size(); ++j)
+                {
+                    auto& Child = *C.m_List[j];
+                    if (Child.m_Property.m_Path.size() <= E.m_Property.m_Path.size()
+                        || Child.m_Property.m_Path.compare(0, E.m_Property.m_Path.size(), E.m_Property.m_Path) != 0)
+                        break; // no longer a descendant of this scope
+
+                    if (Child.m_bScope || (Child.m_Property.m_Path.size() >= 2 && Child.m_Property.m_Path.back() == ']'))
+                    {
+                        bScopeToggleHasExpandable = true;
+                        break;
+                    }
+                }
+            }
+
             PushTree(E.m_pName, bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, E.m_Flags.m_bDontShow);
+
+            if (pScopeToggle) ++iE; // this entry is fully handled via pScopeToggle - skip its own normal row below
         }
         else
         {
@@ -1976,6 +2077,43 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         {
             if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex );
 
+            if (pScopeToggle)
+            {
+                // |Checkbox|O|C| - O/C (open/close all this scope's own children) only make sense,
+                // and only appear, once the checkbox is actually true - no point offering to
+                // open/close-all contents that aren't even shown.
+                bool NewValue = bScopeToggleValue;
+                if (ImGui::Checkbox("##ScopeToggle", &NewValue) && NewValue != bScopeToggleValue)
+                {
+                    // Same commit shape the reflected-function button branch below already uses
+                    // (build a cmd, fire m_OnChangeEvent) - not the generic onRender<member_ui_t>
+                    // dispatcher, which also tracks "the entry currently mid-edit" (m_CmdCurrentEdit)
+                    // across frames; this checkbox is drawn outside pScopeToggle's own normal loop
+                    // slot (that entry's row was skipped above), so it must commit on its own rather
+                    // than risk desyncing that unrelated per-frame edit-tracking state.
+                    std::string        Error;
+                    xproperty::any     NewAny; NewAny.set<bool>(NewValue);
+                    xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, xproperty::sprop::container::prop{ pScopeToggle->m_Property.m_Path, NewAny }, *m_pContext);
+
+                    xproperty::ui::undo::cmd Cmd;
+                    Cmd.m_Name          = pScopeToggle->m_Property.m_Path;
+                    Cmd.m_pClassObject  = C.m_Base.second;
+                    Cmd.m_pPropObject   = C.m_Base.first;
+                    Cmd.m_bHasChanged   = true;
+                    m_OnChangeEvent.NotifyAll(*this, Cmd);
+                }
+
+                if (NewValue && bScopeToggleHasExpandable)
+                {
+                    ImGui::SameLine();
+                    if ( ImGui::Button( " O " ) ) Tree[iDepth].m_OpenAll = 1;
+                    HelpMarker( "Open/Expands all entries in this scope" );
+                    ImGui::SameLine();
+                    if ( ImGui::Button( " C " ) ) Tree[iDepth].m_OpenAll = -1;
+                    HelpMarker( "Closes/Collapses all entries in this scope" );
+                }
+            }
+
             if (E.m_Property.m_Path.back() == ']' && bRenderBlankRight == false )
             {
                 if (E.m_Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
@@ -1987,7 +2125,31 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 ImGui::PopItemWidth();
             }
 
-            if( iDepth>0 && ((E.m_Dimensions - E.m_MyDimension) > 1 || Tree[iDepth].m_isAtomicArray == false) && Tree[iDepth].m_isOpen )
+            // Requiring bRenderBlankRight here (a prior attempt at this same fix) turned out wrong -
+            // it's only true for ONE specific array sub-case (an object array's own "[i]" index-
+            // insertion rows), not array size-markers in general ("m_avListB[2d]" etc. never set it),
+            // and excluding it broke O/C for every ordinary array (confirmed live). E.m_bScope isn't
+            // the right signal either - it's explicitly set true for array size-marker entries too
+            // (RefreshAllProperties' multi-dimension counting block), which is the ORIGINAL bug: it
+            // doesn't distinguish "array size-marker" from "plain object scope" at all. The one signal
+            // that actually does is the underlying Member's own variant kind - list_var/list_props for
+            // a genuine array (where "open/close all repeated elements" is meaningful) vs. scope/props
+            // for a plain named scope (fixed, non-repeated children - nothing to bulk-toggle).
+            const bool bIsArrayEntry = E.m_pUserData
+                && ( std::holds_alternative<xproperty::type::members::list_var>(E.m_pUserData->m_Variant)
+                  || std::holds_alternative<xproperty::type::members::list_props>(E.m_pUserData->m_Variant) );
+
+            // For an ATOMIC (scalar) array, only show O/C while there's still at least one more
+            // dimension level below this one (E.m_MyDimension < E.m_Dimensions) - at the deepest
+            // level, an atomic array's children are bare leaf values (a plain number), nothing to
+            // open/close. For a non-atomic (object) array, always show it, even at the deepest level -
+            // each element there still has its own expandable scope for its sub-properties (var/
+            // setValues/CheckValues), confirmed live as the one case that stayed correct throughout.
+            // The original condition used "> 1" (strictly MORE than one level remaining), which
+            // excluded exactly the "one level remaining" case - confirmed live as a 3D atomic array's
+            // [2d] level (myDim=2, Dimensions=3, exactly 1 remaining) missing O/C entirely.
+            if( bIsArrayEntry && iDepth>0 && Tree[iDepth].m_isOpen
+             && (E.m_MyDimension < E.m_Dimensions || Tree[iDepth].m_isAtomicArray == false) )
             {
                 if (E.m_Property.m_Path.back() == ']') ImGui::SameLine();
                 if ( ImGui::Button( " O " ) ) Tree[iDepth-1].m_OpenAll = 1;
@@ -2006,6 +2168,14 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // a second, action-specific event to subscribe to.
             if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth, GlobalIndex );
 
+            // E.m_Flags.m_bShowReadOnly is already resolved generically for every member, function
+            // entries included (RefreshAllProperties' Flags block runs unconditionally, no branch on
+            // variant kind) - so member_flags<SHOW_READONLY>/member_dynamic_flags<...> already work
+            // here for free, same as any other member. An earlier version of this branch reinvented
+            // this via a separate action_state/action_dynamic_state mechanism, duplicating something
+            // that already worked; removed in favor of just reading the same flag everything else does.
+            if ( E.m_Flags.m_bShowReadOnly ) ImGui::BeginDisabled();
+
             // ImGui::Button auto-sizes to its label and ignores PushItemWidth (unlike the input
             // widgets every other value type here uses) - explicit -1 width fills the column the
             // same way everything else in this right-hand column already does.
@@ -2021,6 +2191,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 Cmd.m_bHasChanged   = true;
                 m_OnChangeEvent.NotifyAll(*this, Cmd);
             }
+
+            if ( E.m_Flags.m_bShowReadOnly ) ImGui::EndDisabled();
         }
         else
         {
