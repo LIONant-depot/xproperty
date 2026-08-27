@@ -2005,6 +2005,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             bHasRealSetSize = !pListVar->m_Table.empty() && pListVar->m_Table[0].m_bHasRealSetSize;
                     }
 
+                    // A non-resizable array (fixed std::array/C-array with no member_overwrite_list_size
+                    // override) or a read-only one has nothing these controls can actually do - hidden
+                    // entirely rather than shown-but-disabled, decluttering the row instead of leaving a
+                    // permanently-greyed-out button cluster nobody can ever use.
+                    const bool bShowArrayControls = bArrayControls && bHasRealSetSize && !E.m_Flags.m_bShowReadOnly;
+
                     const auto ElementPath = [&](std::size_t Index)
                         {
                             return std::format("{}[{}:{}]", ArrayPrefix, KeyTypeChar, Index);
@@ -2058,16 +2064,14 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         ? xproperty::settings::strguid({ ArrayPrefix.data(), static_cast<std::uint32_t>(ArrayPrefix.size()) })
                         : 0;
 
-                    if (bArrayControls) ImGui::PushID(static_cast<int>(iE));
+                    if (bShowArrayControls) ImGui::PushID(static_cast<int>(iE));
 
                     // Drag handle - leftmost, drawn BEFORE the [i] label itself (Unity convention).
-                    if (bArrayControls)
+                    if (bShowArrayControls)
                     {
                         const float Sz = ImGui::GetFrameHeight();
-                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly);
                         ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // Segoe MDL2 Assets GripperBarHorizontal (U+E76F) - same icon font as the trashcan glyph below
-                        ImGui::EndDisabled();
-                        if (!E.m_Flags.m_bShowReadOnly && ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+                        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
                         {
                             array_reorder_drag_payload Payload{ ThisArrayGUID, CurrentIndex };
                             ImGui::SetDragDropPayload("XPROP_ARRAY_ELEMENT", &Payload, sizeof(Payload));
@@ -2098,18 +2102,17 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     // otherwise the shared "print help" check further down in Render() would see
                     // whichever of THOSE was hovered last instead of this label (see bSuppressRowHelp's
                     // own comment at its declaration).
-                    if (bArrayControls)
+                    if (bShowArrayControls)
                     {
                         if (ImGui::IsItemHovered()) Help(E);
                         bSuppressRowHelp = true;
                     }
 
-                    if (bArrayControls)
+                    if (bShowArrayControls)
                     {
                         const float Sz = ImGui::GetFrameHeight();
 
                         ImGui::SameLine();
-                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly || !bHasRealSetSize);
                         if (ImGui::Button("\xEE\x9C\x8E", ImVec2(Sz, Sz))) // Segoe MDL2 Assets ChevronUp (U+E70E)
                         {
                             // Insert Above: grow by one, then shift [CurrentIndex..N-1] up into
@@ -2121,11 +2124,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 SetValueAt(k, ValueAt(k - 1));
                             Commit();
                         }
-                        ImGui::EndDisabled();
                         HelpMarker("Insert a new element above this one");
 
                         ImGui::SameLine();
-                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly || !bHasRealSetSize);
                         if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // Segoe MDL2 Assets ChevronDown (U+E70D)
                         {
                             // Insert Below: grow by one, then shift [CurrentIndex+1..N-1] up into
@@ -2137,11 +2138,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             SetValueAt(static_cast<std::size_t>(CurrentIndex) + 1, ValueAt(CurrentIndex));
                             Commit();
                         }
-                        ImGui::EndDisabled();
                         HelpMarker("Insert a new element below this one");
 
                         ImGui::SameLine();
-                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly || !bHasRealSetSize);
                         if (ImGui::Button("\xEE\x9D\x8D", ImVec2(Sz, Sz))) // same trashcan glyph as "Empty Trashcan"/"Delete Node" elsewhere in this codebase
                         {
                             // Shift [CurrentIndex+1..N-1] down into [CurrentIndex..N-2], forward this
@@ -2152,7 +2151,6 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             SetSize(N - 1);
                             Commit();
                         }
-                        ImGui::EndDisabled();
                         HelpMarker("Delete this element");
 
                         ImGui::PopID();
