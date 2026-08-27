@@ -2761,6 +2761,23 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 }( *C.m_List[iE + i] );
             }
 
+            // Level 1 custom-rendering hook - fired once per entry regardless of which of the three
+            // branches above actually rendered the value column this frame (read-only, mid-edit-
+            // continuation, or the normal per-i HandleElement loop), so a consumer sees this exactly
+            // once per property either way. See on_custom_render_append's own comment for the full
+            // 4-level plan this is the first (purely additive) piece of.
+            //
+            // The framework owns the SameLine()-vs-new-line layout decision (via the APPEND_NEW_LINE
+            // flag, same member_flags<>/member_dynamic_flags<> mechanism as SHOW_READONLY etc.) rather
+            // than leaving every consumer to call ImGui::SameLine() itself - default is same-line
+            // (matches a value widget with genuine leftover column space, e.g. a checkbox); a wide
+            // value widget that fills the whole column via -1 width has zero room for a same-line
+            // append, confirmed live, so a property whose consumer wants to append there should opt
+            // into a new line instead.
+            if (E.m_Flags.m_bAppendNewLine) ImGui::NewLine();
+            else                            ImGui::SameLine();
+            m_OnCustomRenderAppend.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value);
+
             // Handle group entry increments
             iE += n - 1;
         }

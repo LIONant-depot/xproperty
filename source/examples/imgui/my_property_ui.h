@@ -10,18 +10,20 @@ namespace xproperty::flags
 
         struct
         {
-            bool  m_bShowReadOnly : 1       // Tells the UI to show this property/ies as read only
-                , m_bDontSave     : 1       // Tells the serializer not to save this property/ies
-                , m_bDontShow     : 1       // Tells the UI not to show this property/ies
+            bool  m_bShowReadOnly   : 1     // Tells the UI to show this property/ies as read only
+                , m_bDontSave       : 1     // Tells the serializer not to save this property/ies
+                , m_bDontShow       : 1     // Tells the UI not to show this property/ies
+                , m_bAppendNewLine  : 1     // Tells inspector::m_OnCustomRenderAppend's call site to start a new line before invoking the callback, instead of the default ImGui::SameLine() right after the value widget - same idiom as SHOW_READONLY etc., so member_flags<APPEND_NEW_LINE>/member_dynamic_flags<...> already work here for free
                 ;
         };
     };
     static_assert(sizeof(type)==1);
 
     enum _flags : std::uint8_t
-    { SHOW_READONLY = std::uint32_t(1<<0)
-    , DONT_SAVE     = std::uint32_t(1<<1)
-    , DONT_SHOW     = std::uint32_t(1<<2)
+    { SHOW_READONLY   = std::uint32_t(1<<0)
+    , DONT_SAVE       = std::uint32_t(1<<1)
+    , DONT_SHOW       = std::uint32_t(1<<2)
+    , APPEND_NEW_LINE = std::uint32_t(1<<3)
     };
 
 }

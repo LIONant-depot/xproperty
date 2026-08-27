@@ -382,6 +382,19 @@ public:
     using on_override_check = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, bool&>;
     using on_override_reset = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view>;
 
+    // First (least invasive) of 4 planned levels of custom-rendering control, in increasing order of
+    // how much of a row's normal rendering gets taken over: (1) append after the normal value widget
+    // - this one, purely additive, nothing skipped; (2) replace the value widget entirely, left column
+    // untouched; (3) replace the whole row except structural controls (expand arrow, override-revert
+    // button); (4) replace multiple rows, taking over rendering until the consumer signals it should
+    // resume. Fired unconditionally for every property, same idiom as on_override_check/
+    // on_resource_browser above - the consumer checks Path itself to decide whether to draw anything,
+    // no separate per-property registration needed. Called once per entry, right after its value
+    // column finishes rendering (whichever of Render()'s several internal paths - read-only, mid-edit-
+    // continuation, or the normal HandleElement call - actually ran that frame), so it fires exactly
+    // once regardless of which one it was.
+    using on_custom_render_append = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&>;
+
     settings                    m_Settings {};
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
     on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
@@ -419,6 +432,8 @@ public:
 
     on_override_check           m_OnOverrideCheck;          // Registered by a consumer that has some notion of "base value" for its own properties (a prefab/template/material-instance source) - called per row; if it reports true, the row renders with an override indicator and a revert button
     on_override_reset           m_OnOverrideReset;          // Fired when the revert button (above) is clicked - consumer's job to actually remove/reset the override however that's meaningful for their own data model
+
+    on_custom_render_append     m_OnCustomRenderAppend;     // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
 
     void RenderBackground()
     {
