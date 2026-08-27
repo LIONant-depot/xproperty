@@ -329,11 +329,14 @@ public:
             // We are not replacing anything....
         }>();
 
-        m_OnResourceLeftSize.Register < [](xproperty::inspector& Inspector, void* pID, ImGuiTreeNodeFlags flags, const char* pName, bool& Open)
+        m_OnResourceLeftSize.Register < [](xproperty::inspector& Inspector, const xproperty::type::object&, void*, std::string_view Path, const xproperty::any&, ImGuiTreeNodeFlags flags, const char* pName, bool& Open)
         {
             Inspector.RenderBackground();
-            if (pID) Open = ImGui::TreeNodeEx(pID, flags, "%s", pName);
-            else     Open = ImGui::TreeNodeEx(pName, flags);
+            // Path is a stable, genuinely unique identity (unlike pName, which can repeat across
+            // sibling rows) - hashed into a void*-shaped id the same way other per-row ids in this
+            // file already derive stability from a path hash rather than trusting the label text.
+            if (!Path.empty()) Open = ImGui::TreeNodeEx(reinterpret_cast<void*>(std::hash<std::string_view>{}(Path)), flags, "%s", pName);
+            else                Open = ImGui::TreeNodeEx(pName, flags);
         } > ();
     }
     virtual                ~inspector               ( void )                                                noexcept = default;
@@ -352,11 +355,20 @@ public:
     using on_realtime_change_event  = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
     using on_get_component_pointer  = xdelegate::thread_unsafe<inspector&, const int, void*&, void*>;
 
+    // All 3 resource-picker callbacks below identify "which property is this" the same way
+    // m_OnOverrideCheck/m_OnOverrideReset do - the real (type::object&, instance) pair plus the full
+    // canonical property path, instead of an opaque per-widget id or (m_OnResourceLeftSize's old
+    // shape) the property's own RENDERED DISPLAY TEXT, which is what forced E20_Material_Instance_
+    // Editor.cpp to string-parse `if (pName[0] == '[')` to figure out which texture slot it was even
+    // looking at. m_OnResourceBrowser/m_OnResourceWigzmos already receive the value directly as a
+    // strongly-typed full_guid& (no need for a redundant xproperty::any on top); m_OnResourceLeftSize
+    // previously had zero value access at all, so it gains a resolved xproperty::any the same way
+    // m_OnOverrideCheck does.
 #ifdef XCORE_PROPERTIES_H
-    using on_resource_browser       = xdelegate::thread_unsafe<inspector&, const void*, bool&, xresource::full_guid&, std::span<const xresource::type_guid>>;
-    using on_resource_wigzmos       = xdelegate::thread_unsafe<inspector&, bool&, const xresource::full_guid&>;
+    using on_resource_browser       = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, bool&, xresource::full_guid&, std::span<const xresource::type_guid>>;
+    using on_resource_wigzmos       = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, bool&, const xresource::full_guid&>;
 #endif
-    using on_resource_leftside = xdelegate::thread_unsafe<inspector&, void*, ImGuiTreeNodeFlags, const char*, bool&>;
+    using on_resource_leftside = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, ImGuiTreeNodeFlags, const char*, bool&>;
 
     // Whether a given property currently differs from some consumer-defined notion of "its base
     // value" (a prefab/template/material-instance source, etc.) - xproperty never tries to know what
@@ -386,6 +398,22 @@ public:
 #ifdef XCORE_PROPERTIES_H
     on_resource_browser         m_OnResourceBrowser;        // When the user needs to adquire a resource the system will isssue a event here...
     on_resource_wigzmos         m_OnResourceWigzmos;        // This callback is used to collect the name of the resource
+
+    // Which property is "currently being drawn," for the resource-type draw<T,Style>::Render
+    // specializations (e.g. draw<xresource::full_guid, style::defaulted>::Render) that call
+    // m_OnResourceWigzmos/m_OnResourceBrowser - those specializations are reached through the same
+    // generic value-drawing dispatch every type goes through (onRender -> ResolveDrawFn ->
+    // draw<T,Style>::Render), several calls removed from Render()'s own per-entry loop where the
+    // real path/object/instance actually live, and changing that whole generic pipeline's signature
+    // to carry them would touch every registered type's draw fn, not just resource types. Render()
+    // sets this right before drawing each entry's value instead - same side-channel role g_pInspector
+    // itself already plays for reaching the current inspector from outside its own call chain.
+    struct current_property_t
+    {
+        const xproperty::type::object* m_pObject   = nullptr;
+        void*                          m_pInstance = nullptr;
+        std::string_view               m_Path      = {};
+    } m_CurrentProperty;
 #endif
     on_resource_leftside        m_OnResourceLeftSize;       // Gets the height of the
 

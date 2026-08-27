@@ -338,10 +338,12 @@ namespace xproperty::ui::details
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<xresource::full_guid>::data&>(IB);
 
+        const auto& Ctx = g_pInspector->m_CurrentProperty;
+
         bool bOpen = false;
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
-            g_pInspector->m_OnResourceWigzmos.NotifyAll(*g_pInspector, bOpen, Value);
+            g_pInspector->m_OnResourceWigzmos.NotifyAll(*g_pInspector, *Ctx.m_pObject, Ctx.m_pInstance, Ctx.m_Path, bOpen, Value);
             if (bOpen && Cmd.m_isEditing == false)
             {
                 Cmd.m_isEditing = true;
@@ -354,7 +356,7 @@ namespace xproperty::ui::details
         {
             xresource::full_guid FullGuid;
             FullGuid.m_Type = Value.m_Type;
-            g_pInspector->m_OnResourceBrowser.NotifyAll(*g_pInspector, (void*)static_cast<std::uint64_t>(GUID), bOpen, FullGuid, I.m_FilerTypes);
+            g_pInspector->m_OnResourceBrowser.NotifyAll(*g_pInspector, *Ctx.m_pObject, Ctx.m_pInstance, Ctx.m_Path, bOpen, FullGuid, I.m_FilerTypes);
 
             // If it is not open any more we are done editing....
             Cmd.m_isEditing = bOpen;
@@ -1555,7 +1557,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if ( iDepth >0 && Tree[iDepth-1].m_OpenAll ) ImGui::SetNextItemOpen( Tree[iDepth-1].m_OpenAll > 0 );
 
             const ImGuiTreeNodeFlags flags = (bDefaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0) | ((iDepth == -1) ? ImGuiTreeNodeFlags_Framed : 0);
-            if (bCustomDraw) m_OnResourceLeftSize.NotifyAll( *this, 0, flags, pTreeName, Open );
+            if (bCustomDraw) m_OnResourceLeftSize.NotifyAll( *this, *C.m_Base.first, C.m_Base.second, Path, xproperty::any{}, flags, pTreeName, Open ); // no single leaf value at a scope/tree header - empty any
             else             Open = ImGui::TreeNodeEx(pTreeName, flags);
         }
 
@@ -1676,6 +1678,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
         // A property is hidden...
         if (E.m_Flags.m_bDontShow) continue;
+
+#ifdef XCORE_PROPERTIES_H
+        // Valid for this entry's whole row (both columns) - see current_property_t's own comment for
+        // why the resource-type draw<T,Style>::Render specializations need this side-channel at all.
+        m_CurrentProperty = { C.m_Base.first, C.m_Base.second, E.m_Property.m_Path };
+#endif
 
         // A member_section tag starts a new named section - draw a separator once, the first time
         // its name is seen at this depth (LastSectionAtDepth is reset to nullptr whenever a new scope
@@ -1801,7 +1809,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 Tree[iDepth].m_iArray++;
                 bool Open;
                 const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-                if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, Name.data(), Open);
+                if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
                 else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
             }
             else
@@ -1907,7 +1915,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 {
                     bool Open;
                     const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, Name.data(), Open);
+                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
                     else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
                 }
                 else
@@ -2027,7 +2035,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 pLeftLabel = ElementName.data();
             }
 
-            if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, pLeftLabel, Open);
+            if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, pLeftLabel, Open);
             else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
 
             if (bIsOverridden) ImGui::PopStyleColor();
