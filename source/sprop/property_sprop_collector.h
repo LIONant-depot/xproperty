@@ -236,7 +236,14 @@ namespace xproperty::sprop
                             DumpObject(CallBack, pInstance, *pObj, bConst);
                         }
                     }
-                    else if constexpr (std::is_same_v<T, func&>)        {} // Nothing to do for functions
+                    else if constexpr (std::is_same_v<T, func&>)
+                    {
+                        // A reflected member function (e.g. obj_member<"Recenter", &T::Recenter>) has no
+                        // value to collect for save/load, but the editor needs a callback so it can offer
+                        // it as an invokable action - same "notify only if we're an editor" convention
+                        // props/scope already use above.
+                        if (m_bForEditors) CallBack(m_CurrentPath.data(), xproperty::any(), Member, bConst, pClass);
+                    }
                     else if constexpr (std::is_same_v<T, list_props&> || std::is_same_v<T, list_var&> ) 
                     {
                         ProcessList( CallBack, 0, pClass, Arg, Member, bConst );

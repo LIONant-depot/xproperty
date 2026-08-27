@@ -1368,7 +1368,8 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
             if (std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant)
                 || std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant))
             {
-                auto i = std::strlen(pPropertyName);
+                const auto NameLen = std::strlen(pPropertyName);
+                auto i = NameLen;
                 if ((pPropertyName[i - 1] == ']') && (pPropertyName[i - 2] == '['))
                 {
                     bScope = true;
@@ -1380,12 +1381,34 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                             {
                                 myDimension = 1;
                                 iDimensions = static_cast<int>(List.m_Table.size());
-                                i -= 3;
-                                if (i >= 0)
+                                // Count how many complete "[key:value]" index groups precede the
+                                // trailing "[]" - each group is multiple characters (e.g. "[G:0]"), so
+                                // counting only consecutive ']' characters (the previous approach)
+                                // silently undercounts past 2 dimensions: after the ONE ']' that
+                                // closes the immediately-preceding group, the very next character
+                                // back is that group's own value digit, not another ']', so the old
+                                // loop stopped there regardless of how many more groups actually
+                                // preceded it - confirmed by direct tracing, a 3D array's innermost
+                                // marker came back myDimension=2, identical to its own middle marker,
+                                // producing two visually-identical sibling rows in the inspector.
+                                // Walk backward one whole bracket group at a time instead: from the
+                                // ']' that closes whatever precedes the trailing "[]", jump back to
+                                // that group's own '[', then step one more character to land on
+                                // whatever closes the group before THAT, repeating until there's no
+                                // preceding "]" left to find.
+                                if (NameLen >= 3)
                                 {
-                                    for (; i >= 0 && pPropertyName[i] == ']'; --i)
+                                    i -= 3;
+                                    while (i < NameLen && pPropertyName[i] == ']') // i < NameLen also
+                                                                                    // catches the
+                                                                                    // unsigned wrap
+                                                                                    // from i=0 below
                                     {
                                         myDimension++;
+                                        auto Open = i;
+                                        while (Open > 0 && pPropertyName[Open] != '[') --Open;
+                                        if (Open == 0) break;
+                                        i = Open - 1;
                                     }
                                 }
                             }
@@ -1423,6 +1446,7 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     , bScope
                     , bAtomicArray
                     , bDefaultOpen
+                    , const_cast<void*>(pInstance)
                 )
             );
         }, true);
@@ -1482,9 +1506,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         else 
         {
             L.m_iEnd = Path.size();
-            if (Path[L.m_iEnd - 1] == ']')
+            // Only an empty "[]" marker (a not-yet-indexed array-dimension placeholder) trims -
+            // a path legitimately ending in a real index like "[G:0]" (e.g. an object-array
+            // instance's own scope prefix) must keep its full length as the boundary, or
+            // CheckSameLevel mis-bounds this scope and pops out on the instance's own siblings.
+            if (Path[L.m_iEnd - 1] == ']' && Path[L.m_iEnd - 2] == '[')
             {
-                assert(Path[L.m_iEnd - 2] == '[');
                 L.m_iEnd -= 2;
             }
         }
@@ -1643,8 +1670,17 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImGui::AlignTextToFramePadding();
     //    ImVec2 lpos = ImGui::GetCursorScreenPos();
         auto CRA = ImGui::GetContentRegionAvail();
-        if( Tree[iDepth].m_iArray >= 0 ) E.m_LeftUIGUID = E.m_GUID + Tree[iDepth].m_iArray + iDepth * 1000 + Tree[iDepth].m_MyDimension * 1000000;
-        else                             E.m_LeftUIGUID = E.m_GUID + iDepth * 1000;
+        // E.m_GUID (a per-MEMBER constant, same for every element of an array) plus a per-tree-level
+        // counter that resets fresh for every sibling container is not actually unique across
+        // siblings - confirmed by a real ImGui "conflicting ID" warning once a 3D array's per-branch
+        // leaves (all reset to the same starting counter value under their own freshly-pushed parent)
+        // collided. E.m_Property.m_Path is genuinely unique per logical entry (confirmed by the
+        // collector's own trace) and, unlike a visible-row ordinal, stays STABLE across frames
+        // regardless of what else is expanded/collapsed elsewhere - folding its hash in fixes the
+        // collision without introducing the frame-to-frame ID instability a visible-row-index would.
+        const auto PathHash = static_cast<int>(std::hash<std::string>{}(E.m_Property.m_Path));
+        if( Tree[iDepth].m_iArray >= 0 ) E.m_LeftUIGUID = E.m_GUID + Tree[iDepth].m_iArray + iDepth * 1000 + Tree[iDepth].m_MyDimension * 1000000 + PathHash;
+        else                             E.m_LeftUIGUID = E.m_GUID + iDepth * 1000 + PathHash;
         ImGui::PushID(E.m_LeftUIGUID);
         E.m_RightUIGUID = static_cast<int>(std::hash<size_t>{}(static_cast<size_t>(E.m_LeftUIGUID)) % std::numeric_limits<int>::max());
 
@@ -1714,7 +1750,20 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             }
             else
             {
-                PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
+                // The [i] index node's own scope boundary must match the OBJECT INSTANCE's own path
+                // prefix (e.g. "...[G:0][G:0]"), not E.m_Property.m_Path as-is - E here is whichever
+                // entry happened to trigger this insertion, which is always the instance's FIRST
+                // reflected sub-property (e.g. "...[G:0][G:0]/var"). Registering the scope boundary
+                // with that longer, member-specific path made CheckSameLevel reject this SAME
+                // instance's own later siblings ("setValues", "CheckValues") as not matching it,
+                // popping back out prematurely and re-triggering another spurious index insertion for
+                // each one - confirmed by direct observation: 2 real base1 instances rendered as 6
+                // separate "[i]" rows, one per reflected sub-property instead of one per instance.
+                std::string_view InstancePath = E.m_Property.m_Path;
+                if (const auto Slash = InstancePath.rfind('/'); Slash != std::string_view::npos)
+                    InstancePath = InstancePath.substr(0, Slash);
+
+                PushTree(Name.data(), bCustomRender, InstancePath, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
 
                 bRenderBlankRight = true;
 
@@ -1725,31 +1774,71 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         {
             if (*(E.m_Property.m_Path.end() - 2) == '[' )
             {
-                if (E.m_MyDimension == 1)
+                // E.m_MyDimension is the CURRENT walk depth of this size-marker (1 at the outermost
+                // level of ANY array, 1D or not) - it is not the array's total dimensionality
+                // (E.m_Dimensions, constant for the whole array). The old `== 1` check conflated the
+                // two, so a genuinely 2D/3D array's outer level(s) were mislabeled "[1d]" and treated
+                // as if no further nesting existed, while the deepest level (where m_MyDimension
+                // actually reaches m_Dimensions) fell into the "else" branch instead - which built its
+                // composite name from Tree[iDepth-i].m_iArray entries that hadn't been pushed yet at
+                // that point, since it was written assuming it only ever ran below at least one
+                // already-pushed array level. Both branches collapse into one correct behavior: every
+                // level (intermediate or final) pushes a node and lets the existing
+                // m_bArrayMustInsertIndex mechanism above insert this level's own [index] and, if more
+                // dimensions remain, recurse into the next one exactly the same way regardless of
+                // depth. Label: "Name[Nd]" at the outermost level (N = total dimensions, no indices
+                // chosen yet). What comes after that at deeper levels depends on whether a SEPARATE
+                // [index] row exists for this array or not (see the bAtomicArray branch above this
+                // one): for an atomic/scalar array, every level's own [index] row is skipped (folded
+                // into a single leaf draw with no recursion), so the size-marker label is the ONLY
+                // place any index ever appears - it must carry the full accumulated chain itself
+                // ("Name[Md][i][j]..."). For a non-atomic/object array, each level genuinely DOES get
+                // its own standalone [index] row (each element needs its own expandable scope for its
+                // sub-properties) - repeating those same indices in the size-marker label directly
+                // below that row would show the identical index twice for no reason, confirmed by
+                // direct observation of a real 3D object array's rendered tree ("[0]" row immediately
+                // followed by a label that says "[0]" again). Corrected design: size-marker labels
+                // ALWAYS carry their own full accumulated-index chain, for both atomic and object
+                // arrays alike - a separate standalone [index] row only ever gets inserted where one
+                // is structurally necessary (see the bArrayMustInsertIndex-setting condition below,
+                // fixed to fire only at the DEEPEST size-marker of an object array, right before the
+                // real per-element content - each object element needs its own pushed scope for its
+                // own sub-properties to unfold under, unlike a scalar leaf or an intermediate
+                // container level, neither of which needs one). Indices are parsed directly out of
+                // this entry's own path string ("...[g:0][g:0][]" for the 3rd level down) rather than
+                // trusted from Tree-stack state, which had already proven unreliable at this exact
+                // spot once.
+                std::array<char, 128> Name;
+                int NameOffset = snprintf(Name.data(), Name.size(), "%s[%dd]", E.m_pName, E.m_Dimensions - E.m_MyDimension + 1);
+                if (E.m_MyDimension > 1)
                 {
-                    std::array<char, 128> Name;
-                    snprintf(Name.data(), Name.size(), "%s[%dd] ", E.m_pName, E.m_MyDimension);
-                    PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
-
-                    if (Tree[iDepth].m_isAtomicArray == false)
+                    const std::string_view Path  = E.m_Property.m_Path;
+                    std::size_t            Start = Path.find('[');
+                    for (int Dim = 0; Dim < E.m_MyDimension - 1 && Start != std::string_view::npos; ++Dim)
                     {
-                        Tree[iDepth].m_bArrayMustInsertIndex = true;
+                        const std::size_t Colon = Path.find(':', Start);
+                        const std::size_t Close = Path.find(']', Start);
+                        if (Colon != std::string_view::npos && Close != std::string_view::npos && Colon < Close)
+                        {
+                            const std::string_view Value = Path.substr(Colon + 1, Close - Colon - 1);
+                            NameOffset += snprintf(&Name[NameOffset], Name.size() - NameOffset, "[%.*s]", static_cast<int>(Value.size()), Value.data());
+                        }
+                        Start = Path.find('[', Close + 1);
                     }
                 }
-                else
-                {
-                    // multi dimensional arrays
-                    std::array<char, 128> Name;
-                    int stroffset = 0;
-                    stroffset += snprintf(&Name[stroffset], Name.size() - stroffset, "%s", E.m_pName);
-                    for (int i = E.m_MyDimension - 1; i >= 0; --i)
-                    {
-                        auto Index = Tree[iDepth - i].m_iArray;
-                        stroffset += snprintf(&Name[stroffset], Name.size() - stroffset, "[%d]", Index);
-                    }
+                snprintf(&Name[NameOffset], Name.size() - NameOffset, " ");
+                PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
 
-                    stroffset += snprintf(&Name.data()[stroffset], Name.size() - stroffset, "[%dd]", E.m_Dimensions - E.m_MyDimension);
-                    PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
+                // Only insert a real, separate [index] row at the DEEPEST size-marker of an object
+                // (non-atomic) array - the transition from "which dimension" bookkeeping into actual
+                // per-element content, where each base1/etc. instance genuinely needs its own pushed
+                // scope for its own sub-properties (var/setValues/CheckValues) to unfold under.
+                // Intermediate levels (myDim < Dimensions) recurse straight into the NEXT size-marker
+                // instead, which already carries the just-chosen index in its own label (above) - no
+                // extra row needed, and none was structurally required there in the first place.
+                if (Tree[iDepth].m_isAtomicArray == false && E.m_MyDimension == E.m_Dimensions)
+                {
+                    Tree[iDepth].m_bArrayMustInsertIndex = true;
                 }
             }
             else
@@ -1785,8 +1874,38 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         {
             bool Open;
             const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-            if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, E.m_pName, Open);
-            else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", E.m_pName);
+
+            // A real element (not a size-marker) belonging to a multi-dimensional array still
+            // carries the array's own Member descriptor (list_var/list_props, same as its size
+            // markers), so E.m_pName here would otherwise repeat the raw array name with none of
+            // the indices that got it here - same disambiguation problem as the size-marker labels
+            // above, fixed the same way: "Element[i][j]...[k]" with every index parsed straight out
+            // of this entry's own path ("...[g:0][g:0][g:0]", no trailing "[]" for a real leaf).
+            // Left as the plain E.m_pName for a genuinely 1D array - that convention already worked
+            // and was never reported broken.
+            std::array<char, 128> ElementName;
+            const char* pLeftLabel = E.m_pName;
+            if (E.m_Dimensions > 1)
+            {
+                int                     Offset = snprintf(ElementName.data(), ElementName.size(), "Element");
+                const std::string_view  Path   = E.m_Property.m_Path;
+                std::size_t             Start  = Path.find('[');
+                for (int Dim = 0; Dim < E.m_Dimensions && Start != std::string_view::npos; ++Dim)
+                {
+                    const std::size_t Colon = Path.find(':', Start);
+                    const std::size_t Close = Path.find(']', Start);
+                    if (Colon != std::string_view::npos && Close != std::string_view::npos && Colon < Close)
+                    {
+                        const std::string_view Value = Path.substr(Colon + 1, Close - Colon - 1);
+                        Offset += snprintf(&ElementName[Offset], ElementName.size() - Offset, "[%.*s]", static_cast<int>(Value.size()), Value.data());
+                    }
+                    Start = Path.find('[', Close + 1);
+                }
+                pLeftLabel = ElementName.data();
+            }
+
+            if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, pLeftLabel, Open);
+            else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
 
         }
 
@@ -1876,6 +1995,31 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 ImGui::SameLine();
                 if ( ImGui::Button( " C " ) ) Tree[iDepth-1].m_OpenAll = -1;
                 HelpMarker( "Closes/Collapses all entries in the list" );
+            }
+        }
+        else if ( E.m_pUserData && std::holds_alternative<xproperty::type::members::function>(E.m_pUserData->m_Variant) )
+        {
+            // A reflected member function - draw it as a single button spanning the value
+            // column, invoke through the same TryCallFunction the rest of xproperty already
+            // uses for reflected functions, and notify m_OnChangeEvent the same way a
+            // committed value edit would - so undo/log systems already listening don't need
+            // a second, action-specific event to subscribe to.
+            if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth, GlobalIndex );
+
+            // ImGui::Button auto-sizes to its label and ignores PushItemWidth (unlike the input
+            // widgets every other value type here uses) - explicit -1 width fills the column the
+            // same way everything else in this right-hand column already does.
+            if ( ImGui::Button(E.m_pName, ImVec2(-1, 0)) )
+            {
+                const auto Result = std::get<xproperty::type::members::function>(E.m_pUserData->m_Variant).TryCallFunction(*static_cast<char*>(E.m_pInstance));
+                assert(Result);
+
+                xproperty::ui::undo::cmd Cmd;
+                Cmd.m_Name          = E.m_Property.m_Path;
+                Cmd.m_pClassObject  = C.m_Base.second;
+                Cmd.m_pPropObject   = C.m_Base.first;
+                Cmd.m_bHasChanged   = true;
+                m_OnChangeEvent.NotifyAll(*this, Cmd);
             }
         }
         else

@@ -63,7 +63,13 @@ std::array<xproperty::inspector, 2>   Inspector{ "Settings", "xProperty Examples
 void DrawPropertyWindow()
 {
     // Settings
-    if constexpr ( true )
+    // Disabled: walking inspector::settings (which uses v2 : ImVec2 - the "bridge wrapper" pattern
+    // for a foreign type) currently hits `assert(type::get_obj_info<key_t> != nullptr)` at
+    // xproperty.h:2193 - confirmed pre-existing and unrelated to any inspector-button work (still
+    // reproduces against an unmodified xproperty checkout). A compile-time validator for this exact
+    // wrapper pattern was previously removed as a known, documented gap - re-enable once that's
+    // actually fixed, don't just silence this flag.
+    if constexpr ( false )
     {
         auto&                               I       = Inspector[0];
         static bool                         Init    = false;
@@ -88,6 +94,12 @@ void DrawPropertyWindow()
         }
 
         xproperty::settings::context Context;
+        // Explicit default position/size (FirstUseEver = only applies if imgui.ini has no saved
+        // layout for this window yet) - without this, whichever floating ImGui window happens to
+        // get focus first can end up covering the others in a small viewport, making it look like
+        // only one panel exists.
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(480, 600), ImGuiCond_FirstUseEver);
         I.Show(Context, [&]
         {
             if (ImGui::Button("  Undo  ")) UndoSystem.Undo(Context);
@@ -104,6 +116,8 @@ void DrawPropertyWindow()
         static int                          iSelection  = -1;
         xproperty::settings::context        Context;
 
+        ImGui::SetNextWindowPos(ImVec2(500, 10), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(480, 600), ImGuiCond_FirstUseEver);
         I.Show(Context, [&]
         {
             if (ImGui::Combo("Select example", &iSelection, Examples.m_Names.data(), static_cast<int>(Examples.m_Names.size())))

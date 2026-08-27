@@ -403,6 +403,7 @@ protected:
         bool                                            m_bScope;
         bool                                            m_bAtomicArray;
         bool                                            m_bDefaultOpen;
+        void*                                           m_pInstance = nullptr; // the live class instance this entry belongs to - only meaningful for a member-function entry, which needs it to invoke through
     };
 
     struct component
