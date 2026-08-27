@@ -1774,6 +1774,15 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
         bool bRenderBlankRight = false;
 
+        // Set by the array-element controls block below (drag handle/insert/delete buttons) - those
+        // buttons are drawn right after the row's own [i] label, so by the time the shared "print
+        // help" check further down runs ImGui::IsItemHovered(), it would otherwise see whichever of
+        // MY buttons was hovered last (not the label) and pop the row's generic Name/Type/FullName/
+        // GUID/Help tooltip on top of my own per-button HelpMarker tooltip. That block captures the
+        // label's own hover state itself and calls Help(E) directly when appropriate, then sets this
+        // so the shared check downstream skips instead of double-firing off a stale hover target.
+        bool bSuppressRowHelp = false;
+
         // Set by the E.m_bScope branch below (obj_scope_toggle support) when this scope's first
         // child carries scope_toggle_t - read back by the right-column section further down, since
         // the checkbox itself belongs in the value column like any other bool, not merged into the
@@ -1945,10 +1954,209 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 // Atomic array
                 if (Tree[iDepth].m_isAtomicArray || E.m_GroupGUID)
                 {
+                    // Unity-style per-element array controls for atomic/scalar 1D arrays (object
+                    // arrays and multi-dimensional ones need a real container pointer via
+                    // list_table::TrySwap, not yet wired at this call site - a plain scalar element's
+                    // whole value already round-trips cleanly through xproperty::any, so all of this
+                    // is built purely from the same setProperty-by-path machinery every other commit
+                    // in this file already uses). Layout follows Unity's own convention: a drag handle
+                    // leftmost (real drag-and-drop reorder), the [i] label, then Insert Above/Insert
+                    // Below/Delete at the row's end. Element VALUES are read directly out of C.m_List
+                    // (already refreshed this frame by RefreshAllProperties) rather than through a
+                    // fresh get-by-path call - there is no getProperty() free function in this
+                    // reflection layer, only setProperty(); since none of this frame's own writes so
+                    // far ever feed back into C.m_List until next frame's RefreshAllProperties, every
+                    // ValueAt() below always returns the pre-edit snapshot, which is exactly what keeps
+                    // a multi-step shift self-consistent (each source index is read exactly once).
+                    //
+                    // This is the ACTUAL leaf-row branch for a scalar array element (confirmed live -
+                    // an earlier attempt placed this same block one level up, inside "Tree[iDepth].
+                    // m_bArrayMustInsertIndex", which the code right above only ever sets true for
+                    // OBJECT arrays - dead code for this case, hence no buttons appeared at all).
+                    const bool bArrayControls = (E.m_Dimensions == 1 && !E.m_GroupGUID);
+                    const int  CurrentIndex   = Tree[iDepth].m_iArray - 1;
+
+                    std::string ArrayPrefix;
+                    char        KeyTypeChar = 0;
+                    std::size_t N           = 0;
+                    bool        bHasRealSetSize = false;
+                    if (bArrayControls)
+                    {
+                        const std::string_view FullPath = E.m_Property.m_Path;
+                        const auto              LastOpen = FullPath.rfind('[');
+                        assert(LastOpen != std::string_view::npos);
+                        ArrayPrefix = std::string(FullPath.substr(0, LastOpen));
+                        KeyTypeChar = FullPath[LastOpen + 1];
+
+                        // How many elements (including this one) remain from here to the array's own
+                        // end, purely from C.m_List's flat order (RefreshAllProperties always emits an
+                        // array's elements consecutively, right after its own size-marker).
+                        std::size_t RemainingCount = 0;
+                        for (std::size_t k = static_cast<std::size_t>(iE); k < C.m_List.size(); ++k)
+                        {
+                            const auto& P = C.m_List[k]->m_Property.m_Path;
+                            if (P.size() <= ArrayPrefix.size() || P.compare(0, ArrayPrefix.size(), ArrayPrefix) != 0 || P[ArrayPrefix.size()] != '[')
+                                break;
+                            ++RemainingCount;
+                        }
+                        N = static_cast<std::size_t>(CurrentIndex) + RemainingCount;
+
+                        if (const auto* pListVar = std::get_if<xproperty::type::members::list_var>(&E.m_pUserData->m_Variant))
+                            bHasRealSetSize = !pListVar->m_Table.empty() && pListVar->m_Table[0].m_bHasRealSetSize;
+                    }
+
+                    const auto ElementPath = [&](std::size_t Index)
+                        {
+                            return std::format("{}[{}:{}]", ArrayPrefix, KeyTypeChar, Index);
+                        };
+                    const auto ValueAt = [&](std::size_t Index) -> xproperty::any
+                        {
+                            return C.m_List[iE + (Index - static_cast<std::size_t>(CurrentIndex))]->m_Property.m_Value;
+                        };
+                    const auto SetValueAt = [&](std::size_t Index, const xproperty::any& Value)
+                        {
+                            std::string Error;
+                            xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, xproperty::sprop::container::prop{ ElementPath(Index), Value }, *m_pContext);
+                        };
+                    const auto SetSize = [&](std::size_t NewSize)
+                        {
+                            std::string    Error;
+                            xproperty::any Value; Value.set<std::size_t>(NewSize);
+                            xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, xproperty::sprop::container::prop{ std::format("{}[]", ArrayPrefix), Value }, *m_pContext);
+                        };
+                    const auto Commit = [&]
+                        {
+                            xproperty::ui::undo::cmd Cmd;
+                            Cmd.m_Name         = ArrayPrefix;
+                            Cmd.m_pClassObject = C.m_Base.second;
+                            Cmd.m_pPropObject  = C.m_Base.first;
+                            Cmd.m_bHasChanged  = true;
+                            m_OnChangeEvent.NotifyAll(*this, Cmd);
+                        };
+                    // Moves the element at FromIndex to ToIndex, shifting everything strictly between
+                    // them by one - read the whole affected span first (all still pre-edit values, per
+                    // the ValueAt note above), then write the rotated order back out, so this is a
+                    // single self-consistent operation regardless of how far apart the two indices are
+                    // (needed for a real drag-and-drop reorder, not just adjacent swaps).
+                    const auto MoveElement = [&](std::size_t FromIndex, std::size_t ToIndex)
+                        {
+                            if (FromIndex == ToIndex) return;
+                            const std::size_t Lo = std::min(FromIndex, ToIndex);
+                            const std::size_t Hi = std::max(FromIndex, ToIndex);
+                            std::vector<xproperty::any> Buffer;
+                            Buffer.reserve(Hi - Lo + 1);
+                            for (std::size_t m = Lo; m <= Hi; ++m) Buffer.push_back(ValueAt(m));
+                            xproperty::any Moved = Buffer[FromIndex - Lo];
+                            Buffer.erase(Buffer.begin() + (FromIndex - Lo));
+                            Buffer.insert(Buffer.begin() + (ToIndex - Lo), Moved);
+                            for (std::size_t m = Lo; m <= Hi; ++m) SetValueAt(m, Buffer[m - Lo]);
+                            Commit();
+                        };
+
+                    struct array_reorder_drag_payload { std::uint32_t m_ArrayGUID; int m_SourceIndex; };
+                    const std::uint32_t ThisArrayGUID = bArrayControls
+                        ? xproperty::settings::strguid({ ArrayPrefix.data(), static_cast<std::uint32_t>(ArrayPrefix.size()) })
+                        : 0;
+
+                    if (bArrayControls) ImGui::PushID(static_cast<int>(iE));
+
+                    // Drag handle - leftmost, drawn BEFORE the [i] label itself (Unity convention).
+                    if (bArrayControls)
+                    {
+                        const float Sz = ImGui::GetFrameHeight();
+                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly);
+                        ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // Segoe MDL2 Assets GripperBarHorizontal (U+E76F) - same icon font as the trashcan glyph below
+                        ImGui::EndDisabled();
+                        if (!E.m_Flags.m_bShowReadOnly && ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+                        {
+                            array_reorder_drag_payload Payload{ ThisArrayGUID, CurrentIndex };
+                            ImGui::SetDragDropPayload("XPROP_ARRAY_ELEMENT", &Payload, sizeof(Payload));
+                            ImGui::Text("Move [%d]", CurrentIndex);
+                            ImGui::EndDragDropSource();
+                        }
+                        if (ImGui::BeginDragDropTarget())
+                        {
+                            if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
+                            {
+                                IM_ASSERT(Pay->DataSize == sizeof(array_reorder_drag_payload));
+                                const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
+                                if (P.m_ArrayGUID == ThisArrayGUID && P.m_SourceIndex != CurrentIndex)
+                                    MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                            }
+                            ImGui::EndDragDropTarget();
+                        }
+                        HelpMarker("Drag to reorder this element");
+                        ImGui::SameLine();
+                    }
+
                     bool Open;
                     const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
                     if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
                     else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
+
+                    // Captured right here, before any of the array-control buttons below get drawn -
+                    // otherwise the shared "print help" check further down in Render() would see
+                    // whichever of THOSE was hovered last instead of this label (see bSuppressRowHelp's
+                    // own comment at its declaration).
+                    if (bArrayControls)
+                    {
+                        if (ImGui::IsItemHovered()) Help(E);
+                        bSuppressRowHelp = true;
+                    }
+
+                    if (bArrayControls)
+                    {
+                        const float Sz = ImGui::GetFrameHeight();
+
+                        ImGui::SameLine();
+                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly || !bHasRealSetSize);
+                        if (ImGui::Button("\xEE\x9C\x8E", ImVec2(Sz, Sz))) // Segoe MDL2 Assets ChevronUp (U+E70E)
+                        {
+                            // Insert Above: grow by one, then shift [CurrentIndex..N-1] up into
+                            // [CurrentIndex+1..N] - index CurrentIndex itself is never written by this
+                            // loop, so it keeps holding this element's original value while its shifted
+                            // copy also lands one slot below it, net effect a duplicate now sits above.
+                            SetSize(N + 1);
+                            for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex); --k)
+                                SetValueAt(k, ValueAt(k - 1));
+                            Commit();
+                        }
+                        ImGui::EndDisabled();
+                        HelpMarker("Insert a new element above this one");
+
+                        ImGui::SameLine();
+                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly || !bHasRealSetSize);
+                        if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // Segoe MDL2 Assets ChevronDown (U+E70D)
+                        {
+                            // Insert Below: grow by one, then shift [CurrentIndex+1..N-1] up into
+                            // [CurrentIndex+2..N], then explicitly copy this element's value into the
+                            // one slot the loop above doesn't touch (CurrentIndex+1).
+                            SetSize(N + 1);
+                            for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex) + 1; --k)
+                                SetValueAt(k, ValueAt(k - 1));
+                            SetValueAt(static_cast<std::size_t>(CurrentIndex) + 1, ValueAt(CurrentIndex));
+                            Commit();
+                        }
+                        ImGui::EndDisabled();
+                        HelpMarker("Insert a new element below this one");
+
+                        ImGui::SameLine();
+                        ImGui::BeginDisabled(E.m_Flags.m_bShowReadOnly || !bHasRealSetSize);
+                        if (ImGui::Button("\xEE\x9D\x8D", ImVec2(Sz, Sz))) // same trashcan glyph as "Empty Trashcan"/"Delete Node" elsewhere in this codebase
+                        {
+                            // Shift [CurrentIndex+1..N-1] down into [CurrentIndex..N-2], forward this
+                            // time - opposite direction from insert, since each target here has already
+                            // been read before being overwritten - then shrink by one.
+                            for (std::size_t k = static_cast<std::size_t>(CurrentIndex); k + 1 < N; ++k)
+                                SetValueAt(k, ValueAt(k + 1));
+                            SetSize(N - 1);
+                            Commit();
+                        }
+                        ImGui::EndDisabled();
+                        HelpMarker("Delete this element");
+
+                        ImGui::PopID();
+                    }
                 }
                 else
                 {
@@ -2075,7 +2283,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
 
         // Print the help
-        if ( ImGui::IsItemHovered() && bRenderBlankRight == false )
+        if ( ImGui::IsItemHovered() && bRenderBlankRight == false && bSuppressRowHelp == false )
         {
             Help( E );
         }
