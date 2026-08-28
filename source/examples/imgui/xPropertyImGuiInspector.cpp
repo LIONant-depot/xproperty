@@ -1638,6 +1638,15 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         return;
     }
 
+    // Persists ACROSS loop iterations (unlike everything declared inside the loop body) - true while
+    // a run of consecutive properties are all claiming on_custom_render_block. Without this, a
+    // multi-property block (Start/Middle/End) did its own independent Columns(1)->draw->Columns(2)
+    // round-trip for EACH property, and each round-trip added its own bit of vertical space even for
+    // a property that drew nothing at all (Middle) - confirmed live as unexplained growing gaps
+    // between block properties. Entering Columns(1) once for the whole run and only leaving it once
+    // a property actually declines removes the repeated toggling entirely.
+    bool bInPersistentBlock = false;
+
     //
     // Do all properties
     //
@@ -1714,6 +1723,103 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         m_CurrentProperty = { C.m_Base.first, C.m_Base.second, E.m_Property.m_Path };
 #endif
 
+        // Genuinely leaves the property grid for this one property, unlike the 4 "levels" further
+        // down which all still render inside it - see on_custom_render_block's own comment for the
+        // full design, including why this is split into a dry-run "ask" call and a real "draw" call
+        // rather than one call unconditionally wrapped in Columns(1)/Columns(2). Checked before ANY
+        // other grid-relative logic (including the section-separator block right below) so a block
+        // property is never threaded through column-relative code that assumes a normal row is about
+        // to render. Skipped entirely when nothing's registered - even the ask call isn't free.
+        if ( !m_OnCustomRenderBlock.m_Delegates.empty() )
+        {
+            bool bIsBlockContent = false;
+            const ImColor RowColor = ComputeRowColor( iDepth, GlobalIndex + 1 ); // +1 matches the ++GlobalIndex a normal row applies before computing its own color
+
+            // Ask phase - Columns() is untouched here regardless of bInPersistentBlock, so this costs
+            // nothing beyond the call itself for the overwhelming majority of properties that answer
+            // false.
+            m_OnCustomRenderBlock.NotifyAll( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, RowColor, true, bIsBlockContent );
+
+            if ( bIsBlockContent )
+            {
+                // Enter Columns(1) only on the FIRST property of a run - a multi-property block
+                // (Start/Middle/End) stays in the SAME Columns(1) session across all of them instead
+                // of each one independently round-tripping through Columns(2) and back, which used to
+                // add its own bit of unwanted vertical space per property even when nothing was drawn
+                // (Middle) - confirmed live as a growing gap between block properties.
+                if ( !bInPersistentBlock )
+                {
+                    // Whatever "PropsGrid" session is active right now (the outer per-component one,
+                    // or an earlier block's own resume - see the resume branch's own comment for why
+                    // each of these is a genuinely distinct ImGui id, not the same stored entry) is
+                    // about to be torn down by the Columns(1) below. Capture its current ratio into
+                    // the shared value NOW, while it's still reachable, so a drag that happened on
+                    // THIS session's own divider still propagates forward - the alternative (only
+                    // capturing at the outer loop's own final Columns(1)) would miss any drag that
+                    // happened on a row belonging to a session that closes before then.
+                    if (ImGuiOldColumns* pClosing = ImGui::GetCurrentWindow()->DC.CurrentColumns)
+                        if (pClosing->Columns.Size > 1)
+                            m_SharedColumnRatio = pClosing->Columns[1].OffsetNorm;
+
+                    // Columns(1)'s own automatic border-drawing bookkeeping (for the 2-column grid's
+                    // vertical divider) appears to leave a stray dark band right at a block's own top
+                    // edge - confirmed live as a genuine black gap, specifically only where a block
+                    // starts, nowhere else. Explicit border=false on this transient single-column call
+                    // (Columns(1) never needs a divider anyway - there's nothing to divide) avoids
+                    // whatever that bookkeeping does here, without touching the grid's own border,
+                    // which is a separate, persistent "PropsGrid"-id session resumed further down.
+                    ImGui::Columns( 1, nullptr, false );
+                    bInPersistentBlock = true;
+                }
+
+                bool bIgnored = true;
+                m_OnCustomRenderBlock.NotifyAll( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, RowColor, false, bIgnored );
+
+                ++GlobalIndex;
+                continue;
+            }
+            else if ( bInPersistentBlock )
+            {
+                // This property declined - leave the block NOW, before it falls through to normal
+                // rendering below. Columns(2) always resets the "current column" to 0 (left), but
+                // every entry in this loop is entered expecting to already be resting in column 1
+                // (right), left there by the PREVIOUS entry's own row (see the member_section comment
+                // right below, which relies on the exact same invariant) - one NextColumn() restores
+                // it, confirmed live as a fully swapped/shifted grid without this.
+                //
+                // This Columns() call sits INSIDE Render(), past this component's own top-level
+                // PushTree() (the "Deal with the top most tree" section) - one extra id-stack level
+                // than the OUTER "PropsGrid" establishment in Show()'s per-component loop, which runs
+                // BEFORE Render() is even called. So "PropsGrid" here hashes to a GENUINELY DIFFERENT
+                // stored ImGuiOldColumns entry than the outer one - confirmed live via debug logging
+                // (different pointer, different id, independently drifting OffsetNorm - not a
+                // drift-over-time bug, a different object from the first frame). Plain rows never hit
+                // this, since NextColumn() just reuses whatever window->DC.CurrentColumns already
+                // points to with no id re-lookup - only an actual Columns() call re-resolves by id,
+                // which only a block's own resume does mid-render.
+                //
+                // Forcing this to resolve to the OUTER call's exact id via PushOverrideID was tried
+                // and reverted: it fixed the mismatch, but that outer entry's resize-handle hit-test
+                // button then fired TWICE in one frame under the same id - once here (EndColumns()
+                // closes whatever session preceded this block, using THAT session's own stored
+                // border flag, not this call's request) and once more at the per-component loop's own
+                // final Columns(1) - "2 visible items with conflicting ID!" again, just relocated.
+                // ImGui's classic Columns() assumes one open/close per id per frame; this block
+                // mechanism opens/closes several times a frame by design, so id-sharing can't work.
+                //
+                // Mirroring just the ratio VALUE instead - matching the outer call's own approach,
+                // see m_SharedColumnRatio's comment - keeps this resume's session, and its resize
+                // handle, on its own genuinely distinct id (no collision), while still visually
+                // matching whatever the shared divider's current position is.
+                ImGui::Columns( 2, "PropsGrid" );
+                if (ImGuiOldColumns* pResumed = ImGui::GetCurrentWindow()->DC.CurrentColumns)
+                    if (m_SharedColumnRatio >= 0.0f && pResumed->Columns.Size > 1)
+                        pResumed->Columns[1].OffsetNorm = m_SharedColumnRatio;
+                ImGui::NextColumn();
+                bInPersistentBlock = false;
+            }
+        }
+
         // A member_section tag starts a new named section - draw a separator once, the first time
         // its name is seen at this depth (LastSectionAtDepth is reset to nullptr whenever a new scope
         // is pushed, so a section label never leaks from one object instance into a sibling or a
@@ -1754,9 +1860,41 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // Independent per-column draws, not a merged/full-width one - same trick the top-level
             // scope header above already uses (AddRectFilled in each column separately) to look like
             // one continuous bar without ever touching the column count.
+            //
+            // ImGui::SeparatorText() paints no background of its own (unlike a Framed obj_scope
+            // header, which gets one for free from ImGui's own TreeNodeEx styling) - it draws straight
+            // onto the raw window background, standing out as a stark black bar against the striped
+            // rows around it. Confirmed live as looking "really bad." First fix used this row's own
+            // ComputeRowColor (the same per-row striping gray every normal row uses) - technically a
+            // background, but visually a section header just blended into the plain data rows instead
+            // of reading as its own organizational level. A section sits, hierarchically, between a
+            // component's own header (ImGuiCol_Header, blue) and a plain data row - so its background
+            // is derived from that SAME header color (a lighter tint: same hue, reduced saturation,
+            // raised value) instead of the row-striping palette, reading as "related to the header,
+            // one step down" rather than "just another row." Two earlier attempts both missed: a
+            // lightened tint that ALSO halved saturation read as "too different" (a washed-out pale
+            // blue, not a relative of the header); blending mostly toward the plain row-striping gray
+            // read as barely related to the header at all. What was actually wanted: the EXACT same
+            // hue and saturation as the header, just a higher value (brightness) - a genuinely lighter
+            // shade of the SAME blue, not a desaturated or gray-blended one.
+            const ImColor SectionRowColor = [&]
+            {
+                const ImVec4 Header = ImGui::GetStyle().Colors[ImGuiCol_Header];
+                float h, s, v;
+                ImGui::ColorConvertRGBtoHSV(Header.x, Header.y, Header.z, h, s, v);
+                return ImColor::HSV(h, s, ImMin(v * 1.35f, 1.0f), Header.w);
+            }();
             ImGui::NextColumn();
+            {
+                const ImVec2 P = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddRectFilled(P, ImVec2(P.x + ImGui::GetContentRegionAvail().x, P.y + ImGui::GetFrameHeight() + 1.0f), SectionRowColor);
+            }
             ImGui::SeparatorText(E.m_pSectionName);
             ImGui::NextColumn();
+            {
+                const ImVec2 P = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddRectFilled(P, ImVec2(P.x + ImGui::GetContentRegionAvail().x, P.y + ImGui::GetFrameHeight() + 1.0f), SectionRowColor);
+            }
             // Call the exact same real widget again, with an empty label, instead of hand-drawing a
             // line to approximate it - two attempts at reverse-engineering SeparatorText's internal
             // line-Y math from memory (GetTextLineHeight()*0.5f, then a hand-rolled
@@ -1825,7 +1963,24 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         }
         else
         {
-            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+            // The label itself is always one line - but when this row's VALUE column grows past
+            // one line (APPEND_NEW_LINE), the label's own background must grow to match, or the
+            // extra strip beneath the label falls through to the raw window background same as the
+            // value column's did. This row's real extra height isn't known until the RIGHT column
+            // renders, further down - rather than guess via a formula (which drifted the moment
+            // real frame-height append content, not just plain text, showed up - confirmed live),
+            // use LAST FRAME's actual measured value for this same row (see m_RowExtraHeightCache's
+            // own comment): correct except for one frame right after this row's shape changes,
+            // self-correcting from the next frame on.
+            if (m_Settings.m_bRenderLeftBackground)
+            {
+                const ImVec2 P = ImGui::GetCursorScreenPos();
+                const auto   It = m_RowExtraHeightCache.find(PathHash);
+                const float  ExtraH = (It != m_RowExtraHeightCache.end()) ? It->second : 0.0f;
+                // +1px - see the matching #else branch's own comment for why (kept in sync even
+                // though this branch doesn't currently compile in this build).
+                DrawBackground(iDepth, GlobalIndex, P, P.y + ImGui::GetFrameHeight() + 1.0f + ExtraH);
+            }
         }
 
         /*
@@ -1833,7 +1988,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         {
             ImGuiStyle& style = ImGui::GetStyle();
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 18.0f));
-            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex, ImGui::GetCursorScreenPos(), ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight());
             // Get the bounding box of the last item (the tree node)
             ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0.2f));
             ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, "  %s", E.m_pName);
@@ -1843,12 +1998,34 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         }
         else
         {
-            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+            if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex, ImGui::GetCursorScreenPos(), ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight());
         }
         */
 #else
         const bool bCustomRender = false;
-        if (m_Settings.m_bRenderLeftBackground) DrawBackground(iDepth, GlobalIndex);
+        if (m_Settings.m_bRenderLeftBackground)
+        {
+            const ImVec2 P = ImGui::GetCursorScreenPos();
+            const auto   It = m_RowExtraHeightCache.find(PathHash);
+            const float  ExtraH = (It != m_RowExtraHeightCache.end()) ? It->second : 0.0f;
+            // +1px as a fixed safety margin against sub-pixel drift between this hand-computed EndY
+            // and wherever ImGui's own internal layout actually places the NEXT row's start -
+            // confirmed live as a genuine, real (not just low-contrast) 1px black gap between some
+            // row pairs and not others in the SAME panel, via direct pixel sampling (a plain
+            // GetFrameHeight()-only EndY undershot by ~1px depending on cumulative fractional cursor
+            // position, which varies per-window since cursor coordinates are absolute screen space).
+            // Deliberately a small FIXED margin, not the full ItemSpacing.y - a first attempt used
+            // ItemSpacing.y itself, which "fixed" the gap by swallowing it entirely, and stayed
+            // invisible only because the default spacing is tiny (~1.5px). Stress-testing with a
+            // deliberately large ItemSpacing.y (set live through this same inspector) showed rows
+            // NEVER visually separating no matter how large the setting got - the fix had quietly
+            // made the setting meaningless. The real bug was ~1px of rounding error, not "the whole
+            // gap needs covering" - the gap itself, sized to whatever ItemSpacing.y actually is, is
+            // the correct, intended look (that's what makes the setting visible at all). Overshooting
+            // by 1px is still safe - the next row's own background draws on top of it - just no
+            // longer enough to eat a deliberately large gap.
+            DrawBackground(iDepth, GlobalIndex, P, P.y + ImGui::GetFrameHeight() + 1.0f + ExtraH);
+        }
 #endif
 
         // Handle property groups
@@ -1994,6 +2171,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
                                 const float Sz = ImGui::GetFrameHeight();
                                 ImGui::PushID(static_cast<int>(iE));
+                                // Same transparent-idle-background treatment as the atomic-array
+                                // branch's identical button cluster - see that PushStyleColor's own
+                                // comment.
+                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
                                 ImGui::SameLine();
                                 ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // GripperBarHorizontal
                                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
@@ -2058,6 +2239,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                     Commit();
                                 }
                                 HelpMarker("Delete this element");
+                                ImGui::PopStyleColor();
                                 ImGui::PopID();
                             }
                         }
@@ -2267,7 +2449,11 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         ? xproperty::settings::strguid({ ArrayPrefix.data(), static_cast<std::uint32_t>(ArrayPrefix.size()) })
                         : 0;
 
-                    if (bShowArrayControls) ImGui::PushID(static_cast<int>(iE));
+                    // Transparent idle background, per explicit request ("just a test to see") - only
+                    // ImGuiCol_Button changes, hover/active stay whatever the theme already uses, so
+                    // these still read as clickable on interaction, just without a visible "chip" sitting
+                    // behind the icon at rest.
+                    if (bShowArrayControls) { ImGui::PushID(static_cast<int>(iE)); ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0)); }
 
                     bool Open;
                     const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
@@ -2368,6 +2554,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         }
                         HelpMarker("Delete this element");
 
+                        ImGui::PopStyleColor();
                         ImGui::PopID();
                     }
                 }
@@ -2437,6 +2624,23 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             bool Open;
             const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
+            // When this row's VALUE column grew past one line last frame (APPEND_NEW_LINE - see
+            // m_RowExtraHeightCache's own comment), the LEFT column's label still draws as a single
+            // line and, left alone, sits flush against the row's TOP edge - visually odd once the row
+            // is genuinely taller than the label needs, confirmed live as looking "strange" compared
+            // to sitting centered in the row's own height. Nudging the cursor down by half the cached
+            // extra height centers it instead - same one-frame-lag/self-correcting cache the
+            // background fill already relies on, reused here rather than adding a second mechanism.
+            // Applied before the override-revert button below too, so the button and the label it sits
+            // next to move together instead of the button staying pinned to the top alone. Independent
+            // of m_bRenderLeftBackground - this is about where the label TEXT sits, not whether its
+            // background paints, so it still centers correctly with that setting off.
+            {
+                const auto  ItCenter = m_RowExtraHeightCache.find(PathHash);
+                const float ExtraHForCenter = (ItCenter != m_RowExtraHeightCache.end()) ? ItCenter->second : 0.0f;
+                if (ExtraHForCenter > 0.0f) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ExtraHForCenter * 0.5f);
+            }
+
             // Ask a registered consumer (if any) whether this property currently differs from
             // whatever THEY consider its base value - xproperty never tries to know what "overridden"
             // means itself. E.m_Property.m_Path is the full, canonical path (already embeds any array
@@ -2495,12 +2699,55 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // m_OnCustomRenderReplaceValue for the same property - the automatic NextColumn() between
             // here and the right-column code means one delegate can't draw both halves in a single call.
             // Same "fires for every property, consumer checks Path" idiom as levels 1/2.
+            //
+            // ImGui::TreeNodeEx (the normal path just below, when the consumer declines) reserves
+            // GetTreeNodeToLabelSpacing() of space before its label text even for a leaf node with
+            // NoTreePushOnOpen - confirmed live via pixel sampling: a plain ImGui::TextColored drawn
+            // by a ReplaceRow consumer landed ~15px LEFT of where a sibling row's real label text
+            // started, at any depth, because it never reserved that same space. Bracketing the notify
+            // call in that exact spacing - not just for the "replaced" case, since we don't know
+            // bReplacedRow's value until after the consumer has already drawn - means a consumer who
+            // does nothing more than call TextColored still lands exactly where a normal label would,
+            // matching the block feature's own "framework computes it, consumer doesn't have to know
+            // ImGui's internals" philosophy. Unconditionally paired with Unindent right after, so the
+            // normal TreeNodeEx path below (when the consumer declines) isn't double-offset.
+            const float ReplaceRowSpacing = ImGui::GetTreeNodeToLabelSpacing();
+            ImGui::Indent(ReplaceRowSpacing);
+            const ImVec2 PreReplaceRowPos = ImGui::GetCursorScreenPos();
             m_OnCustomRenderReplaceRow.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedRow);
+            // bReplaceRowDrewSomething (below) compares the cursor against PreReplaceRowPos to tell
+            // "the consumer drew something real" apart from "nothing drew here at all" - that check
+            // must happen BEFORE Unindent, or the Unindent's own X shift would make an untouched
+            // cursor look like it moved, even when the consumer drew nothing.
+            const ImVec2 PostReplaceRowPos = ImGui::GetCursorScreenPos();
+            ImGui::Unindent(ReplaceRowSpacing);
 
             if (!bReplacedRow)
             {
                 if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, pLeftLabel, Open);
                 else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
+            }
+            else
+            {
+                // The TreeNodeEx above (this row's own hoverable item) was skipped, since the
+                // consumer's callback just drew something else in its place - or, for a fully
+                // level-4-suppressed row, drew NOTHING at all. Either way the shared "print help"
+                // check further down must not run for this row: with no real item of its own,
+                // IsItemHovered() there would fall back to whatever item WAS last drawn (a prior
+                // row's), firing that row's tooltip again under this one's mouse position - confirmed
+                // live as two properties' Name/Type/GUID/Help tooltips stacking simultaneously.
+                //
+                // A first attempt just called IsItemHovered() here unconditionally, matching
+                // bShowArrayControls' own capture above - but that array-controls label ALWAYS draws
+                // a real TreeNodeEx first, while a level-4-suppressed row draws nothing at all, so
+                // its own IsItemHovered() falls back to the SAME stale prior-row item and fires
+                // Help() a second time instead of zero times - confirmed live right after the first
+                // attempt. Comparing the cursor to PreReplaceRowPos (captured right before the
+                // NotifyAll call) distinguishes "the consumer drew something real to check hover
+                // against" from "nothing drew here at all, don't check anything."
+                const bool bReplaceRowDrewSomething = PostReplaceRowPos.x != PreReplaceRowPos.x || PostReplaceRowPos.y != PreReplaceRowPos.y;
+                if (bReplaceRowDrewSomething && ImGui::IsItemHovered()) Help(E);
+                bSuppressRowHelp = true;
             }
 
             if (bIsOverridden) ImGui::PopStyleColor();
@@ -2574,7 +2821,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
         if( E.m_bScope || bRenderBlankRight )
         {
-            if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex );
+            if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex, ImGui::GetCursorScreenPos(), ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight() + 1.0f, CRA.x );
 
             if (pScopeToggle)
             {
@@ -2604,12 +2851,22 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
                 if (NewValue && bScopeToggleHasExpandable)
                 {
+                    // Same transparent-idle-background treatment as the array-element controls
+                    // (drag/insert/delete) - explicit user request, "to the point that the O|C
+                    // buttons should do the same." Doubled ChevronUp/ChevronDown glyphs were tried as
+                    // an icon replacement (reusing codepoints already proven to render in this font)
+                    // but reverted - the user immediately flagged them as reading too much like the
+                    // array-element insert-above/insert-below buttons, confusing "expand/collapse all"
+                    // with "insert a new element." Plain " O "/" C " text has no such collision and
+                    // stays back.
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
                     ImGui::SameLine();
                     if ( ImGui::Button( " O " ) ) Tree[iDepth].m_OpenAll = 1;
                     HelpMarker( "Open/Expands all entries in this scope" );
                     ImGui::SameLine();
                     if ( ImGui::Button( " C " ) ) Tree[iDepth].m_OpenAll = -1;
                     HelpMarker( "Closes/Collapses all entries in this scope" );
+                    ImGui::PopStyleColor();
                 }
             }
 
@@ -2651,11 +2908,13 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
              && (E.m_MyDimension < E.m_Dimensions || Tree[iDepth].m_isAtomicArray == false) )
             {
                 if (E.m_Property.m_Path.back() == ']') ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
                 if ( ImGui::Button( " O " ) ) Tree[iDepth-1].m_OpenAll = 1;
                 HelpMarker( "Open/Expands all entries in the list" );
                 ImGui::SameLine();
                 if ( ImGui::Button( " C " ) ) Tree[iDepth-1].m_OpenAll = -1;
                 HelpMarker( "Closes/Collapses all entries in the list" );
+                ImGui::PopStyleColor();
             }
         }
         else if ( E.m_pUserData && std::holds_alternative<xproperty::type::members::function>(E.m_pUserData->m_Variant) )
@@ -2665,7 +2924,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // uses for reflected functions, and notify m_OnChangeEvent the same way a
             // committed value edit would - so undo/log systems already listening don't need
             // a second, action-specific event to subscribe to.
-            if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth, GlobalIndex );
+            if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth, GlobalIndex, ImGui::GetCursorScreenPos(), ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight() + 1.0f, CRA.x );
 
             // E.m_Flags.m_bShowReadOnly is already resolved generically for every member, function
             // entries included (RefreshAllProperties' Flags block runs unconditionally, no branch on
@@ -2695,7 +2954,18 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         }
         else
         {
-            if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth, GlobalIndex );
+            // Unlike the other DrawBackground call sites, this row's content can grow past one
+            // line (APPEND_NEW_LINE below), and the framework has no reliable way to know the
+            // final height up front for arbitrary consumer-drawn append content. So instead of
+            // guessing, defer the actual draw until after the row's content has rendered and its
+            // real final height is known - the channel split keeps it landing BEHIND that content
+            // rather than on top of it, same as if it had been drawn first.
+            ImDrawList* pRowDrawList = ImGui::GetWindowDrawList();
+            if ( m_Settings.m_bRenderRightBackground )
+            {
+                pRowDrawList->ChannelsSplit( 2 );
+                pRowDrawList->ChannelsSetCurrent( 1 );
+            }
 
             int n = 1;
             if (E.m_GroupGUID != 0)
@@ -2830,10 +3100,79 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // character where a fully-blank row's append should have been. Comparing the cursor to
             // rpos (this column's own start position, captured right after NextColumn() above) is a
             // reliable "has anything drawn here yet" check regardless of what the value branch did.
+            // APPEND_NEW_LINE doesn't need a full ImGui::NewLine() - a value widget's own
+            // ItemSize() already leaves the cursor at the start of a fresh line once it's drawn
+            // (that's what makes SameLine() necessary at all for the same-line case below), and
+            // NewLine() advanced a SECOND, entirely blank line on top of that - confirmed live as a
+            // visibly oversized gap. But zero extra gap (relying only on the widget's own automatic
+            // trailing spacing) reads as too cramped between the value and its annotation - confirmed
+            // live right after removing NewLine() outright. One deliberate half-step via Dummy() is
+            // the middle ground between those two confirmed-live extremes.
             const bool bValueColumnHasContent = ImGui::GetCursorScreenPos().x != rpos.x || ImGui::GetCursorScreenPos().y != rpos.y;
-            if (E.m_Flags.m_bAppendNewLine) ImGui::NewLine();
-            else if (bValueColumnHasContent) ImGui::SameLine();
+            // The Dummy() half-step (below, historically) turned out to cost a FULL ItemSpacing.y,
+            // not half: Dummy() is itself a real item, so its OWN ItemSize() adds a SECOND trailing
+            // ItemSpacing.y on top of the explicit height passed in - confirmed live via debug logging
+            // (ItemSpacing.y=2, but the dummy call alone advanced the cursor by 4). Combined with the
+            // value widget's own natural trailing spacing already baked into the cursor position
+            // entering this branch, the appended row sat a full ~6px lower than it needed to - visibly
+            // too tall, per direct user feedback comparing it against the edit box just above it.
+            // Removed entirely: APPEND_NEW_LINE now relies solely on the value widget's own automatic
+            // trailing spacing (the same amount every other row already gets for free), no manufactured
+            // extra gap on top of it.
+            if (!E.m_Flags.m_bAppendNewLine && bValueColumnHasContent) ImGui::SameLine();
             m_OnCustomRenderAppend.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value);
+
+            // Now that this row's content has actually drawn, rpos (its start, captured right
+            // after NextColumn() above) and the current cursor give its real final height. Cache
+            // the extra-beyond-one-line part for the LEFT column to use NEXT frame (see
+            // m_RowExtraHeightCache's own comment) regardless of whether the right background is
+            // currently enabled - cheap to measure, and keeps the cache from going stale if that
+            // setting gets toggled. Clamped to at least one frame height so a normal single-line row
+            // (the overwhelming majority) renders byte-for-byte what DrawBackground always computed.
+            {
+                const float MinEndY = rpos.y + ImGui::GetFrameHeight();
+                // GetCursorScreenPos() always has ONE trailing ItemSpacing.y already baked in
+                // by whatever drew last (ItemSize() adds it immediately, every time) - whether
+                // that's the value widget alone, or - via the SameLine() above - an append
+                // widget drawn after it (e.g. Seed's inline refresh button, Narrow Bool's
+                // "<- appended" text). That trailing spacing IS the row's own normal
+                // end-of-row gap, not extra content height, so it must be stripped before
+                // comparing to MinEndY (a bare, spacing-free single line height). Confirmed
+                // live via pixel sampling: without this, any row with same-line append content
+                // measured ~ItemSpacing.y taller than a plain row, and the LEFT column's
+                // background then swallowed the very gap it should have left visible.
+                const float CurY    = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+                const float FinalEndY = CurY > MinEndY ? CurY : MinEndY;
+                m_RowExtraHeightCache[PathHash] = FinalEndY - MinEndY;
+                if ( m_Settings.m_bRenderRightBackground )
+                {
+                    pRowDrawList->ChannelsSetCurrent( 0 );
+                    // CRA (captured right after NextColumn()/PushItemWidth(), before ANY of this
+                    // row's own content drew) is the correct width - CalcItemWidth()/
+                    // GetContentRegionAvail() called HERE instead (after content already drew) was
+                    // the actual bug: both measure from the CURRENT cursor, and most value widgets
+                    // (sliders, drag floats, ...) leave the cursor mid-line after drawing, so a LATE
+                    // measurement returns whatever sliver is left on that line - confirmed live via a
+                    // debug print showing ColorVScalar1's late-measured width as ~1px while its row
+                    // still visually filled correctly (the SLIDER's own frame, drawn earlier at the
+                    // correct full width, was already sitting there - only the background rect
+                    // computed from the wrong, late measurement was too narrow). A checkbox happened
+                    // to leave the cursor back at the line start after drawing, which coincidentally
+                    // measured correctly and made ONLY non-checkbox rows look broken - backwards from
+                    // what the visual symptom first suggested.
+                    //
+                    // +1px here (draw only - NOT added to FinalEndY itself, which still feeds the
+                    // cache above unchanged) as the same fixed sub-pixel-drift safety margin the
+                    // other DrawBackground call sites use (see the left-column one's own comment for
+                    // why this is a small FIXED margin, not the full ItemSpacing.y) - a row that
+                    // didn't grow (the common case, FinalEndY == MinEndY) can undershoot the NEXT
+                    // row's real start by a fractional pixel depending on this window's absolute
+                    // screen position, confirmed live via direct pixel sampling. Overshooting by 1px
+                    // is safe - the next row's own background draws on top of it.
+                    DrawBackground( iDepth, GlobalIndex, rpos, FinalEndY + 1.0f, CRA.x );
+                    pRowDrawList->ChannelsMerge();
+                }
+            }
 
             // Handle group entry increments
             iE += n - 1;
@@ -2893,8 +3232,27 @@ void xproperty::inspector::Show( void ) noexcept
         {
             ImGui::PushID(&C);
 
-            // Tell ImGui we are going to use 2 columns
-            ImGui::Columns( 2 );
+            // Tell ImGui we are going to use 2 columns for this component's rows.
+            ImGui::Columns( 2, "PropsGrid" );
+
+            // Each component's Columns() call is hashed against its OWN PushID(&C) above, so ImGui
+            // naturally gives every component an independent stored divider - confirmed live as the
+            // divider only moving for whichever component was under the mouse. Forcing them to
+            // resolve to one shared ImGui id instead (via PushOverrideID) was tried first and
+            // reverted: EndColumns()'s own resize-handle hit-test button derives its id directly from
+            // that SAME columns id (see imgui_tables.cpp's EndColumns, `column_id = columns->ID + n`),
+            // so sharing it made ImGui think N simultaneously-visible drag handles (one per component,
+            // all at different screen rects) were the same widget - "2 visible items with conflicting
+            // ID!", exactly the warning the user remembered hitting before.
+            //
+            // Mirroring the stored ratio (OffsetNorm) instead - not a pixel width, see
+            // m_SharedColumnRatio's own comment for why pixels drift across a block's resume - keeps
+            // every component's Columns() session, and its resize handle, genuinely independent (no
+            // id collision), while making them all visually move together: stamp the shared ratio in
+            // before rendering, read back whatever the user actually dragged afterward.
+            ImGuiOldColumns* pCols = ImGui::GetCurrentWindow()->DC.CurrentColumns;
+            if (pCols && m_SharedColumnRatio >= 0.0f && pCols->Columns.Size > 1)
+                pCols->Columns[1].OffsetNorm = m_SharedColumnRatio;
 
             // Let the user change the base pointer if needed...
             void* pBackup = C->m_Base.second;
@@ -2906,8 +3264,22 @@ void xproperty::inspector::Show( void ) noexcept
             // Restore the original base pointer
             C->m_Base.second = pBackup;
 
-            // Reset back to a single column
+            // Reset back to a single column - a live drag is only actually APPLIED to OffsetNorm
+            // inside EndColumns() itself (see imgui_tables.cpp's EndColumns, "Apply dragging after
+            // drawing the column lines"), which Columns(1) triggers here. Reading the ratio BEFORE
+            // this call - as an earlier version did - captured last frame's value, not the drag that
+            // just happened THIS frame: confirmed live as the divider visually following the mouse
+            // while held, then snapping back the instant it was released. pCols itself stays valid
+            // across this call (EndColumns() only clears window->DC.CurrentColumns, it doesn't remove
+            // the entry from window->ColumnsStorage) as long as nothing else allocates a new columns
+            // entry in between, which nothing here does.
             ImGui::Columns( 1 );
+
+            // Capture whatever the user just dragged (in THIS component, including during a block's
+            // own resume - same id within one component, so a mid-block drag is captured too) so
+            // every other component picks it up starting next frame.
+            if (pCols && pCols->Columns.Size > 1)
+                m_SharedColumnRatio = pCols->Columns[1].OffsetNorm;
             ImGui::PopID();
         }
     }
@@ -2963,12 +3335,11 @@ void xproperty::inspector::Show(xproperty::settings::context& Context, std::func
 
 //-------------------------------------------------------------------------------------------------
 
-void xproperty::inspector::DrawBackground( int Depth, int GlobalIndex ) const noexcept
+ImColor xproperty::inspector::ComputeRowColor( int Depth, int GlobalIndex ) const noexcept
 {
-    if( m_Settings.m_bRenderBackgroundDepth == false ) 
+    if( m_Settings.m_bRenderBackgroundDepth == false )
         Depth = 0;
 
-    ImVec2 pos = ImGui::GetCursorScreenPos();
     auto Color = s_ColorCategories[Depth];
 
     float h, s, v;
@@ -2984,12 +3355,46 @@ void xproperty::inspector::DrawBackground( int Depth, int GlobalIndex ) const no
         Color.SetHSV( h, s*m_Settings.m_ColorSScalar, v*m_Settings.m_ColorVScalar2 );
     }
 
+    return Color;
+}
 
+void xproperty::inspector::DrawBackground( int Depth, int GlobalIndex, ImVec2 StartPos, float EndY ) const noexcept
+{
+    // StartPos/EndY are caller-supplied rather than measured here - a row whose content can grow
+    // past one line (the plain-value branch, when APPEND_NEW_LINE draws a second line) defers this
+    // call until after that content has actually drawn, so EndY reflects its real final height
+    // instead of a hardcoded single-line guess. See that call site for the draw-list channel-split
+    // this depends on to still land the rect BEHIND already-drawn content.
+    //
+    // GetContentRegionAvail() here is intentionally indent-aware - correct for the LEFT column,
+    // where an indented label genuinely has less available space before the column boundary. The
+    // RIGHT column's own call sites do NOT use this overload - see the explicit-width one below for
+    // why.
     ImGui::GetWindowDrawList()->AddRectFilled(
-        pos
-        , ImVec2( pos.x + ImGui::GetContentRegionAvail().x
-                , pos.y + ImGui::GetFrameHeight() )
-        , Color );
+        StartPos
+        , ImVec2( StartPos.x + ImGui::GetContentRegionAvail().x, EndY )
+        , ComputeRowColor( Depth, GlobalIndex ) );
+}
+
+void xproperty::inspector::DrawBackground( int Depth, int GlobalIndex, ImVec2 StartPos, float EndY, float Width ) const noexcept
+{
+    // Explicit-width overload for the RIGHT (value) column specifically. A nested scope's own
+    // TreeNodeEx indents its LEFT-column label as intended, but ImGui's indent is a single
+    // window-level DC state, not per-column - NextColumn() does not reset it, so that SAME indent
+    // was leaking into the right column's GetContentRegionAvail() (used by the other overload),
+    // making it under-report available width by roughly the current indent amount. A -1-width
+    // WIDGET (slider, InputInt, ...) doesn't have this problem - it resolves through
+    // ImGui::CalcItemWidth(), which isn't reduced by indent the same way - so a wide value widget's
+    // own opaque frame happened to visually cover the gap, while a narrow one (a checkbox, with
+    // nothing filling the rest of the row) exposed it as a real, visible black sliver at the row's
+    // right edge - confirmed live specifically on nested-scope bool rows with no custom append
+    // content to coincidentally mask it. Callers pass ImGui::CalcItemWidth() explicitly so the
+    // background matches whatever width the row's own value widget is ACTUALLY using, regardless of
+    // indent leakage.
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        StartPos
+        , ImVec2( StartPos.x + Width, EndY )
+        , ComputeRowColor( Depth, GlobalIndex ) );
 }
 
 //-----------------------------------------------------------------------------------

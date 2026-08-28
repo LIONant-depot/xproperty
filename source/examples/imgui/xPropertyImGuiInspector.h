@@ -4,6 +4,7 @@
 
 #include<functional>
 #include<string>
+#include<unordered_map>
 
 #ifndef IMGUI_API
     #include "imgui.h"
@@ -224,15 +225,16 @@ namespace xproperty
 */
 }
 
-//-----------------------------------------------------------------------------------
-// Inspector to display the properties
-//-----------------------------------------------------------------------------------
-
-class xproperty::inspector : public xproperty::base
+// Free-standing (not nested inside xproperty::inspector, unlike its old spot) so the
+// reflected_type<ImVec2> specialization right below it can be visible BEFORE
+// xproperty::inspector::settings (further down, inside the class) declares a plain ImVec2 field -
+// an explicit specialization must be visible before its own template's first (implicit)
+// instantiation, and settings' fields are declared as plain ImVec2 specifically so this redirect
+// resolves them to this struct's XPROPERTY_DEF. aliased back to xproperty::inspector::v2 inside the
+// class below, purely for the familiar short name - nothing outside this file ever names it directly.
+namespace xproperty
 {
-public:
-
-    struct v2 : ImVec2
+    struct inspector_v2 : ImVec2
     {
         using ImVec2::ImVec2;
 
@@ -242,14 +244,47 @@ public:
         , obj_member<"Y", &ImVec2::y, member_ui<float>::scroll_bar<0.0f, 20.0f>, member_help<"Y element of a vector"> >
         )
     };
+}
+
+// ImVec2 itself can't have XPROPERTY_DEF injected into it (it's ImGui's, not ours) - inspector_v2
+// above carries its reflection instead. This is the explicit link
+// xproperty::settings::validate_reflected_object_type() and cast_scope look for when a member is
+// declared as a plain ImVec2. MUST be declared before anything actually uses a plain ImVec2 field
+// (xproperty::inspector::settings, further down) - confirmed live as C2908/C2766 "explicit
+// specialization already instantiated/defined" the first time this was declared AFTER settings
+// instead of before: the compiler locks in the unspecialized primary template at first use and
+// then refuses to let a later specialization override that already-instantiated choice.
+template<> struct xproperty::settings::reflected_type<ImVec2> { using type = xproperty::inspector_v2; };
+
+//-----------------------------------------------------------------------------------
+// Inspector to display the properties
+//-----------------------------------------------------------------------------------
+
+class xproperty::inspector : public xproperty::base
+{
+public:
+
+    // Defined at namespace scope, above this class, as xproperty::inspector_v2 - see that
+    // definition's own comment for why (the reflected_type<ImVec2> specialization it needs must be
+    // visible before settings, right below, uses a plain ImVec2 field).
+    using v2 = xproperty::inspector_v2;
 
     struct settings
     {
-        v2          m_WindowPadding             { 0, 3 };
-        v2          m_FramePadding              { 1, 3.5 };
-        v2          m_ItemSpacing               { 0.5f, 1.5f };
+        // Declared as plain ImVec2, not v2 - v2's OWN registration (XPROPERTY_REG2(v2_props,
+        // xproperty::inspector::v2)) actually populates get_obj_info<ImVec2>, not get_obj_info<v2>,
+        // because v2's XPROPERTY_DEF("ImVec2", ImVec2, ...) uses ImVec2 (not v2) as its object-type
+        // argument - needed to resolve &ImVec2::x/&ImVec2::y, since those are inherited, not v2's own.
+        // A field declared AS v2 directly looks up the never-populated get_obj_info<v2> and asserts
+        // null - confirmed live via 'Assertion failed: type::get_obj_info<key_t> != nullptr' the
+        // first time anything ever called getObject() on this settings struct. Plain ImVec2 correctly
+        // finds v2's reflection through the reflected_type<ImVec2> redirect just above v2's own
+        // definition - exactly the usage that redirect's own comment describes.
+        ImVec2      m_WindowPadding             { 0, 3 };
+        ImVec2      m_FramePadding              { 1, 3.5 };
+        ImVec2      m_ItemSpacing               { 0.5f, 2.0f };
         float       m_IndentSpacing             { 3.5 };
-        v2          m_TableFramePadding         { 2, 6 };
+        ImVec2      m_TableFramePadding         { 2, 6 };
 
         bool        m_bRenderLeftBackground     { true };
         bool        m_bRenderRightBackground    { true };
@@ -258,7 +293,7 @@ public:
         float       m_ColorVScalar2             { 0.4f };
         float       m_ColorSScalar              { 0.4f };
 
-        v2          m_HelpWindowPadding         { 10, 10 };
+        ImVec2      m_HelpWindowPadding         { 10, 10 };
         int         m_HelpWindowSizeInChars     { 50 };
 
         XPROPERTY_DEF
@@ -412,6 +447,42 @@ public:
     // with level 1 (append-after) regardless - that one still fires afterward, on the same row.
     using on_custom_render_replace_row = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, bool&>;
 
+    // Genuinely separate from the 3 levels above, not a 5th one layered on top of them - those all
+    // still render INSIDE the property grid's 2-column layout (just skipping which parts of a single
+    // row's own cells draw). This one actually leaves the grid: fired once per property, BEFORE any
+    // column/row machinery runs at all, with the trailing bool starting false (normal grid rendering).
+    // Setting it true tells Render() to call ImGui::Columns(1) for the duration of this ONE property's
+    // draw, hand the consumer the full window width with none of the row's usual structural extras
+    // (no override-revert button, no help tooltip, no background stripe - real content like a curve
+    // editor needs the whole canvas, not a column-constrained cell fighting those for space), then
+    // restore ImGui::Columns(2) immediately after so whatever property comes next renders normally.
+    // Indentation is NOT reset - ImGui's own indent stack (from real TreePush/TreePop on open ancestor
+    // scopes) is independent of column state, so a block nested inside an expanded scope still lines
+    // up with that scope's other children, matching how nested content reads in other inspectors.
+    // A "block" spanning several properties (a curve editor's title, body, footer as 3 separate
+    // reflected members) is purely consumer-side state, same idiom as level 4 already was - the
+    // consumer's own path-check/running-flag decides which properties set the bool true; Render()
+    // does not need to know a block's extent in advance. The ImColor is this row's own striping
+    // color (identical to what DrawBackground would have used) - handed over rather than applied
+    // automatically, in case the consumer wants to paint their own partial background with it;
+    // ImColor rather than a plain ImVec4 so it converts to whichever of ImU32/ImVec4 the consumer's
+    // own drawing call happens to need, same as DrawBackground's own internal color already does.
+    //
+    // Fires TWICE for a property that claims the block, once for each bool bDryRun value - NOT once.
+    // A first version fired unconditionally-once per property already wrapped in Columns(1)/Columns(2)
+    // before knowing the answer, since there was no other way to let the consumer draw on demand - but
+    // doing that EVERY property (not just claimed ones) corrupted this codebase's Columns()-drawn
+    // vertical grid border for the WHOLE panel, and a genuinely full-width block still ended up
+    // reading as separate one-line rows instead of one continuous span - confirmed live, both
+    // symptoms, in the same session. Splitting into an ask phase (bDryRun=true, decide only - most
+    // properties answer false here and NOTHING about Columns() is ever touched for them) and a draw
+    // phase (bDryRun=false, Columns(1) genuinely active - only reached at all when the ask phase said
+    // yes) keeps every non-block property's grid rendering completely undisturbed. State the consumer
+    // mutates to decide bIsBlockContent (e.g. "are we still inside a block that started earlier") must
+    // update on BOTH calls, not just the live one - a later property's own ask-phase check needs to
+    // see it.
+    using on_custom_render_block = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, ImColor, bool /*bDryRun*/, bool&>;
+
     settings                    m_Settings {};
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
     on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
@@ -453,12 +524,14 @@ public:
     on_custom_render_append         m_OnCustomRenderAppend;         // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
     on_custom_render_replace_value  m_OnCustomRenderReplaceValue;   // Fired once per property BEFORE its value column would normally render - consumer sets the trailing bool true to draw its own widget instead and skip the default one entirely (level 2 of 4)
     on_custom_render_replace_row    m_OnCustomRenderReplaceRow;     // Fired once per property BEFORE its left-column label would normally render - consumer sets the trailing bool true to take over BOTH columns (the override-revert button, if any, still renders regardless) (level 3 of 4)
+    on_custom_render_block          m_OnCustomRenderBlock;          // Fired once per property before ANY grid machinery runs - consumer sets the trailing bool true to escape the 2-column grid entirely for this property's draw (full window width, no structural extras) - see the using declaration's own comment
 
     void RenderBackground()
     {
         if (m_Settings.m_bRenderLeftBackground)
         {
-            DrawBackground(m_SimpleDrawBk.m_iDepth, m_SimpleDrawBk.m_GlobalIndex);
+            const ImVec2 Pos = ImGui::GetCursorScreenPos();
+            DrawBackground(m_SimpleDrawBk.m_iDepth, m_SimpleDrawBk.m_GlobalIndex, Pos, Pos.y + ImGui::GetFrameHeight());
         }
     }
 
@@ -509,7 +582,9 @@ protected:
     void        RefreshAllProperties                ( component& C )                                noexcept;
     void        Render                              ( component& C, int& GlobalIndex )              noexcept;
     void        Show                                ( void )                                        noexcept;
-    void        DrawBackground                      ( int Depth, int GlobalIndex )          const   noexcept;
+    void        DrawBackground                      ( int Depth, int GlobalIndex, ImVec2 StartPos, float EndY ) const noexcept;
+    void        DrawBackground                      ( int Depth, int GlobalIndex, ImVec2 StartPos, float EndY, float Width ) const noexcept;
+    ImColor     ComputeRowColor                      ( int Depth, int GlobalIndex )          const   noexcept;
     void        HelpMarker                          ( const char* desc )                    const   noexcept;
     void        Help                                ( const entry& Entry )                  const   noexcept;
 
@@ -526,6 +601,70 @@ protected:
     cmd_variant                                 m_CmdCurrentEdit{ nullptr };
     simple_draw_background                      m_SimpleDrawBk  {};
 
+    // Every component (and every block-escape's own Columns(1)/Columns(2) resume) gets its OWN,
+    // independently-scoped ImGui Columns() storage - that's deliberate, since forcing them to share
+    // one ImGui id makes ImGui's own resize-handle hit-test buttons collide across simultaneously-
+    // visible components ("2 visible items with conflicting ID!"). Instead, this mirrors the
+    // divider's position across all of them every frame (see the per-component loop in Show()).
+    //
+    // Mirroring via SetColumnWidth()/GetColumnWidth() (pixels) was tried first and reverted: a
+    // column's PIXEL width is computed from its stored ratio times the CURRENT OffMinX/OffMaxX
+    // range, which ImGui recomputes on every single BeginColumns() call - including the block
+    // feature's own Columns(1)->Columns(2) resume - from whatever window->WorkRect happens to be at
+    // that instant. A block's own full-width content transiently changes that work rect, so the
+    // SAME underlying ratio read back as a DIFFERENT pixel width right after a block resumed -
+    // confirmed live via debug logging (294.5 -> 299.8 -> 301.5px across two nested block resumes in
+    // one frame, despite never touching SetColumnWidth in between) and then even more dramatically
+    // once the user dragged the divider near an extreme, where "After Block"'s value column visibly
+    // jumped far right of every normal row's. Mirroring the RATIO instead (ImGuiOldColumns's own
+    // Columns[1].OffsetNorm, 0.0=far left..1.0=far right - a pure fraction, never touched by
+    // OffMinX/OffMaxX) sidesteps this entirely: it's the same quantity ImGui itself persists across a
+    // block's resume, just also propagated across components. Requires imgui_internal.h (already
+    // included in the .cpp for other things). -1 means "no drag yet, leave ImGui's own default
+    // (evenly split) alone".
+    // Every distinct "PropsGrid" Columns() call site - the outer per-component establishment in
+    // Show(), AND each block-escape's own resume inside Render() (a fresh Columns() call made from
+    // one id-stack level deeper, past Render()'s own top-level PushTree() - confirmed live to hash to
+    // a genuinely different ImGuiOldColumns entry than the outer call, not the same one) - keeps its
+    // OWN, independently-scoped ImGui storage on purpose. Forcing any of them to share one ImGui id
+    // (tried twice: once across components, once between a block's resume and the outer call) makes
+    // ImGui's own resize-handle hit-test button collide, since that button's id is derived directly
+    // from the SAME columns id and this mechanism opens/closes several "PropsGrid" sessions per frame
+    // by design (ImGui's classic Columns() only expects one open/close per id per frame) - "2 visible
+    // items with conflicting ID!" both times. Instead, this single shared value is mirrored into
+    // EVERY session (see the per-component loop in Show(), and both block-escape transitions in
+    // Render()): stamped in right after each one establishes, read back right before each one closes
+    // - so a drag on any one of them updates this, and every other session (any component, any block)
+    // picks it up, without any of their underlying Columns() sessions - or resize handles - ever
+    // being the same ImGui widget.
+    //
+    // Mirroring via SetColumnWidth()/GetColumnWidth() (pixels) was tried first and reverted: a
+    // column's PIXEL width is computed from its stored ratio times the CURRENT OffMinX/OffMaxX
+    // range, which ImGui recomputes on every single BeginColumns() call - including a block's own
+    // resume - from whatever window->WorkRect happens to be at that instant. A block's own full-width
+    // content transiently changes that work rect, so the SAME underlying ratio read back as a
+    // DIFFERENT pixel width right after a block resumed - confirmed live via debug logging (294.5 ->
+    // 299.8 -> 301.5px across two nested block resumes in one frame, despite never touching
+    // SetColumnWidth in between) and then even more dramatically once the user dragged the divider
+    // near an extreme, where "After Block"'s value column visibly jumped far right of every normal
+    // row's. Mirroring the RATIO instead (ImGuiOldColumns's own Columns[1].OffsetNorm, 0.0=far
+    // left..1.0=far right - a pure fraction, never touched by OffMinX/OffMaxX) sidesteps this
+    // entirely: it's the same quantity ImGui itself already persists across a block's resume, just
+    // also propagated across every other session. Requires imgui_internal.h (already included in the
+    // .cpp for other things). -1 means "no drag yet, leave ImGui's own default (evenly split) alone".
+    float                                        m_SharedColumnRatio { -1.0f };
+
+    // A row's LEFT background is drawn before its RIGHT (value) column even renders, so it can't
+    // know in advance whether this row is about to grow past one line (APPEND_NEW_LINE). Rather
+    // than guess via a formula - which drifted out of sync the moment real frame-height content
+    // (buttons, not just plain text) appeared on the appended line, confirmed live - this caches
+    // each row's actual extra height, keyed by its PathHash, as measured by the RIGHT column a
+    // moment later in the SAME frame. The LEFT draw then uses LAST frame's cached value, which is
+    // correct except for exactly one frame right after a row's append content genuinely changes
+    // height - self-correcting from the very next frame on, and never wrong for the (overwhelming)
+    // common case of a row whose shape doesn't change frame to frame.
+    std::unordered_map<int, float>              m_RowExtraHeightCache {};
+
     friend struct ui::details::group_render;
 
     XPROPERTY_VDEF
@@ -535,13 +674,8 @@ protected:
 };
 
 XPROPERTY_VREG2(inspect_props,  xproperty::inspector)
-XPROPERTY_REG2(v2_props,        xproperty::inspector::v2)
+XPROPERTY_REG2(v2_props,        xproperty::inspector_v2)
 XPROPERTY_REG2(settings_props,  xproperty::inspector::settings)
 
-// ImVec2 itself can't have XPROPERTY_DEF injected into it (it's ImGui's, not ours) - v2 above carries
-// its reflection instead. This is the explicit link xproperty::settings::validate_reflected_object_type()
-// and cast_scope look for when a member is declared as a plain ImVec2.
-template<> struct xproperty::settings::reflected_type<ImVec2> { using type = xproperty::inspector::v2; };
-
-#pragma warning( pop ) 
+#pragma warning( pop )
 #endif
