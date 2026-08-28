@@ -482,6 +482,7 @@ protected:
         bool                                            m_bDefaultOpen;
         void*                                           m_pInstance = nullptr; // the live class instance this entry belongs to - only meaningful for a member-function entry, which needs it to invoke through
         const char*                                     m_pSectionName = nullptr; // member_section tag value, if any - drives the layout pass's section-separator draw
+        float                                           m_ItemWidth = -1.0f; // member_item_width/member_dynamic_item_width, if any - passed to ImGui::PushItemWidth() for this property's value widget; -1 (fill the column) unless overridden
     };
 
     struct component

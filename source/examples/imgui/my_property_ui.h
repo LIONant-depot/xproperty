@@ -55,6 +55,22 @@ namespace xproperty::settings
         callback* m_pCallback;
     };
 
+    // Controls the width ImGui::PushItemWidth() uses for this property's default value widget -
+    // previously hardcoded to -1 (fill the entire column) everywhere, which is exactly why a wide
+    // widget leaves zero room for a same-line m_OnCustomRenderAppend (see APPEND_NEW_LINE's own
+    // comment). Same ImGui PushItemWidth semantics apply: positive = absolute pixel width, negative =
+    // distance from the column's right edge (e.g. -40 leaves 40px of room at the end).
+    struct member_item_width_t : xproperty::member_user_data<"Item Width">
+    {
+        float m_Width;
+    };
+
+    struct member_dynamic_item_width_t : xproperty::member_user_data<"Dynamic Item Width">
+    {
+        using callback = float(const void*, settings::context&) noexcept;
+        callback* m_pCallback;
+    };
+
     struct list_flags_ui_t : xproperty::member_user_data<"List Flags">
     {
         std::uint32_t m_Flags;
@@ -116,6 +132,33 @@ namespace xproperty
 
         constexpr member_dynamic_flags() noexcept
             : settings::member_dynamic_flags_t{ .m_pCallback = []( const void* pObj, settings::context& C) constexpr noexcept  -> xproperty::flags::type
+                { if constexpr (std::tuple_size_v<typename fn_t::args> == 1) return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj));
+                  else                                                       return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj), C);
+                } } {}
+    };
+
+    // Static width - see settings::member_item_width_t's own comment for the PushItemWidth semantics.
+    template< float T_WIDTH_V >
+    struct member_item_width : settings::member_item_width_t
+    {
+        constexpr member_item_width() noexcept : settings::member_item_width_t{ .m_Width = T_WIDTH_V } {}
+    };
+
+    // Dynamic width - same shape as member_dynamic_flags, for when the reserved space depends on
+    // instance state (e.g. only leave room for an append when some condition is actually true).
+    template< auto T_CALLBACK_V >
+    struct member_dynamic_item_width : settings::member_dynamic_item_width_t
+    {
+        using fn_t = xproperty::details::function_traits<decltype(T_CALLBACK_V)>;
+        static_assert(std::tuple_size_v<typename fn_t::args> <= 2);
+        static_assert(std::is_same_v<typename fn_t::return_type, float>);
+
+        using arg1 = std::tuple_element_t<0, typename fn_t::args>;
+        static_assert( std::is_reference_v<arg1>);
+        using arg1_t = std::remove_reference_t<arg1>;
+
+        constexpr member_dynamic_item_width() noexcept
+            : settings::member_dynamic_item_width_t{ .m_pCallback = []( const void* pObj, settings::context& C) constexpr noexcept -> float
                 { if constexpr (std::tuple_size_v<typename fn_t::args> == 1) return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj));
                   else                                                       return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj), C);
                 } } {}

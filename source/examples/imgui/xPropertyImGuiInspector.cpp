@@ -1358,6 +1358,18 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     return nullptr;
                 }();
 
+            // Same static/dynamic resolution shape as Flags above - see member_item_width_t's own
+            // comment for why this exists (a wide value widget leaves zero room for a same-line
+            // m_OnCustomRenderAppend unless something narrows it).
+            float ItemWidth = [&]() -> float
+                {
+                    if (auto* pDynamicWidth = Member.getUserData<xproperty::settings::member_dynamic_item_width_t>(); pDynamicWidth)
+                        return pDynamicWidth->m_pCallback(pInstance, *m_pContext);
+                    else if (auto* pStaticWidth = Member.getUserData<xproperty::settings::member_item_width_t>(); pStaticWidth)
+                        return pStaticWidth->m_Width;
+                    return -1.0f;
+                }();
+
             bool bScope = std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
                 || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant);
 
@@ -1469,6 +1481,7 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     , bDefaultOpen
                     , const_cast<void*>(pInstance)
                     , pSectionName
+                    , ItemWidth
                 )
             );
         }, true);
@@ -2505,7 +2518,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         //
         ImGui::NextColumn();
         ImGui::AlignTextToFramePadding();
-        ImGui::PushItemWidth( -1 );
+        // E.m_ItemWidth defaults to -1 (fill the column, unchanged from before) - member_item_width/
+        // member_dynamic_item_width let a property narrow this to leave room for something appended
+        // via m_OnCustomRenderAppend on the same line, instead of always needing APPEND_NEW_LINE.
+        ImGui::PushItemWidth( E.m_ItemWidth );
 
         ImVec2 rpos = ImGui::GetCursorScreenPos();
         CRA = ImGui::GetContentRegionAvail();
