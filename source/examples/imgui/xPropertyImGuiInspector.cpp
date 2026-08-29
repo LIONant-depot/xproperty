@@ -1305,6 +1305,12 @@ namespace xproperty::ui::details
                     bHasRealSetSize = !pListProps->m_Table.empty() && pListProps->m_Table[0].m_bHasRealSetSize;
 
                 if (!bHasRealSetSize) Flags.m_bShowReadOnly = true;
+
+                // Declaration-site opt-out (see member_array_size_readonly_t's own comment) - a real,
+                // resizable container whose size is still meant to be read-only in THIS inspector (its
+                // size is driven by something else entirely, e.g. an imported asset's material list).
+                if (const auto* pSizeReadOnly = Entry.getUserData<xproperty::settings::member_array_size_readonly_t>(); pSizeReadOnly && pSizeReadOnly->m_bReadOnly)
+                    Flags.m_bShowReadOnly = true;
             }
 
             // This is super strange... in visual studio 17.11.1 these static assets are failing... Not sure why...
@@ -2674,11 +2680,23 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             bHasRealSetSize = !pListVar->m_Table.empty() && pListVar->m_Table[0].m_bHasRealSetSize;
                     }
 
+                    // An array whose own declaration opted out of user-driven resizing (see
+                    // member_array_size_readonly_t's own comment - e.g. a material list rebuilt from an
+                    // imported asset, where inserting/deleting a slot through this UI would desync it
+                    // from whatever else tracks the same slots by index) - elements stay fully editable,
+                    // only the structural controls are suppressed.
+                    bool bSizeReadOnly = false;
+                    if (bArrayControls)
+                    {
+                        if (const auto* pSizeReadOnly = E.m_pUserData->getUserData<xproperty::settings::member_array_size_readonly_t>(); pSizeReadOnly)
+                            bSizeReadOnly = pSizeReadOnly->m_bReadOnly;
+                    }
+
                     // A non-resizable array (fixed std::array/C-array with no member_overwrite_list_size
                     // override) or a read-only one has nothing these controls can actually do - hidden
                     // entirely rather than shown-but-disabled, decluttering the row instead of leaving a
                     // permanently-greyed-out button cluster nobody can ever use.
-                    const bool bShowArrayControls = bArrayControls && bHasRealSetSize && !E.m_Flags.m_bShowReadOnly;
+                    const bool bShowArrayControls = bArrayControls && bHasRealSetSize && !E.m_Flags.m_bShowReadOnly && !bSizeReadOnly;
 
                     const auto ElementPath = [&](std::size_t Index)
                         {

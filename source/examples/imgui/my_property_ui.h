@@ -214,6 +214,19 @@ namespace xproperty::settings
     {
         bool m_bOpen;
     };
+
+    // Marks an array's SIZE as non-resizable through the inspector - no insert/delete/reorder
+    // controls on the array itself - while leaving each element's own value fully editable. For
+    // arrays whose size is driven by something other than the user directly resizing it through this
+    // UI (e.g. rebuilt from an imported asset's own material list), where bHasRealSetSize would
+    // otherwise show full structural controls just because the backing container happens to be a
+    // real std::vector. Deliberately separate from member_flags<SHOW_READONLY>, which disables the
+    // array's ELEMENTS too - this only ever gates the size/structural controls (see
+    // xPropertyImGuiInspector.cpp's own bShowArrayControls).
+    struct member_array_size_readonly_t : xproperty::member_user_data<"Array Size ReadOnly">
+    {
+        bool m_bReadOnly;
+    };
 }
 
 namespace xproperty
@@ -351,6 +364,12 @@ namespace xproperty
     struct member_ui_open : settings::member_ui_open_t
     {
         constexpr member_ui_open() noexcept : settings::member_ui_open_t{ .m_bOpen = T_OPEN_V } {}
+    };
+
+    template< bool T_READONLY_V = true >
+    struct member_array_size_readonly : settings::member_array_size_readonly_t
+    {
+        constexpr member_array_size_readonly() noexcept : settings::member_array_size_readonly_t{ .m_bReadOnly = T_READONLY_V } {}
     };
 
     namespace ui::undo
