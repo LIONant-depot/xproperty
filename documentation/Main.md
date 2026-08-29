@@ -29,6 +29,10 @@ This example runs a basic unit-code and generates much of the documentation. Hav
 - [Documentation](DetailDocumentation.md)
     - Detailed documentation on how to use the xProperties library.
 
+- [ImGui Inspector Guide](InspectorGuide.md)
+    - Student-friendly, example-first guide to the ImGui property inspector - styling fields, arrays,
+      custom rendering, undo/redo, and multi-field edits.
+
 ## Code folder overview
 
 - **[Source [Dir]](../../tree/master/source)** - Main source code of the library
