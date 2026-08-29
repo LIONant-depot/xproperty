@@ -168,6 +168,36 @@ namespace xproperty::ui::undo
     }
 
     //-----------------------------------------------------------------------------------
+    // The exact set of atomic types xproperty::settings::AnyToString/StringToAny round-trip - kept
+    // as its own check (rather than just calling AnyToString and trusting its result) because
+    // AnyToString's own "unhandled type" path is assert(false) by design, meant to catch a genuinely
+    // new atomic type nobody taught it to print yet. Snapshotting a whole component walks EVERY
+    // leaf, including ones that were never reachable this way before (an enum-backed virtual
+    // property, e.g.) - confirmed live: BeginEdit on a real object containing one crashed a Debug
+    // build outright the first time an array control finally became reachable for it. Skipping those
+    // here (not captured/restored by BeginEdit/CommitEdit yet) is an honest, narrower gap than a
+    // crash - extend this list (and AnyToString/StringToAny) if a type needs to round-trip too.
+    bool bIsSnapshotableType(std::uint32_t GUID) noexcept
+    {
+        return GUID == xproperty::settings::var_type<std::int32_t>::guid_v
+            || GUID == xproperty::settings::var_type<std::uint32_t>::guid_v
+            || GUID == xproperty::settings::var_type<std::int16_t>::guid_v
+            || GUID == xproperty::settings::var_type<std::uint16_t>::guid_v
+            || GUID == xproperty::settings::var_type<std::int8_t>::guid_v
+            || GUID == xproperty::settings::var_type<std::uint8_t>::guid_v
+            || GUID == xproperty::settings::var_type<float>::guid_v
+            || GUID == xproperty::settings::var_type<double>::guid_v
+            || GUID == xproperty::settings::var_type<std::string>::guid_v
+            || GUID == xproperty::settings::var_type<std::wstring>::guid_v
+            || GUID == xproperty::settings::var_type<std::uint64_t>::guid_v
+            || GUID == xproperty::settings::var_type<std::int64_t>::guid_v
+            || GUID == xproperty::settings::var_type<bool>::guid_v
+#ifdef XCORE_PROPERTIES_H
+            || GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v
+#endif
+            ;
+    }
+
     std::string SnapshotToString(const xproperty::type::object& Obj, const void* pInstance, xproperty::settings::context& Context) noexcept
     {
         std::string Snapshot;
@@ -190,6 +220,12 @@ namespace xproperty::ui::undo
                     if (!(NameLen >= 2 && pPropertyName[NameLen - 1] == ']' && pPropertyName[NameLen - 2] == '['))
                         return; // per-dimension index marker, not a settable value
                 }
+
+                // Not one of AnyToString/StringToAny's known atomic types (an enum-backed property,
+                // a reflected member function's own "value", etc.) - see bIsSnapshotableType's own
+                // comment for why this is skipped rather than passed through.
+                if (!bIsSnapshotableType(Value.getTypeGuid()))
+                    return;
 
                 std::array<char, 256> Buffer;
                 const int Len = xproperty::settings::AnyToString(Buffer, Value);
@@ -1674,6 +1710,19 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // render at this same depth, E has moved on to their own first reflected sub-property, so this
         // is the only reliable way to get back to the array's list_table for per-element controls.
         const xproperty::type::members* m_pArrayMember = nullptr;
+        // Cached alongside m_pArrayMember, from the SAME size-marker entry's own E.m_pInstance - the
+        // collector (xproperty::sprop::collector, driving RefreshAllProperties) already walks every
+        // props::m_pCast in the chain from the root down to whatever level this array actually lives
+        // at (see property_sprop_collector.h's DumpObject/ProcessList), so this is the CORRECT, already-
+        // resolved instance for this array - NOT necessarily C.m_Base.second once the array is nested
+        // inside a scope, a genuinely different object, or even a dynamic union/variant view (e.g.
+        // union_variant_properties's "SomeVariant/A" in the xProperty Examples window, which resolves
+        // through a runtime std::variant accessor, not a plain member pointer at all). list_table's own
+        // TrySwap/TrySetSize are raw function pointers compiled against that exact resolved type - unlike
+        // sprop::setProperty (used by the SCALAR array-controls branch), which re-walks the whole path
+        // itself and so tolerates any nesting depth even when hardcoded to C.m_Base.second/first, a raw
+        // list_table call has no such self-healing and needs the real pointer handed to it directly.
+        void*                            m_pArrayInstance = nullptr;
         bool                 m_isOpen          : 1
                              , m_isAtomicArray : 1
                              , m_isReadOnly    : 1
@@ -2305,7 +2354,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 // would silently see the freshly-pushed (empty) level instead of the array's own level
                 // one below it, where this was cached (confirmed live: the whole block below silently
                 // no-opped, no buttons, no error, until this was moved before the push).
-                const xproperty::type::members* pArrayMember = Tree[iDepth].m_pArrayMember;
+                const xproperty::type::members* pArrayMember   = Tree[iDepth].m_pArrayMember;
+                void*                           pArrayInstance = Tree[iDepth].m_pArrayInstance;
 
                 PushTree(Name.data(), bCustomRender, InstancePath, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
 
@@ -2342,39 +2392,38 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             const std::string_view ArrayPrefixView = InstancePath.substr(0, LastOpen);
                             const std::string_view IndexStr        = InstancePath.substr(Colon + 1, InstancePath.size() - 1 - (Colon + 1));
 
-                            // Only a TOP-LEVEL array (declared directly on the component's own
-                            // registered class, not nested inside another object/array) has
-                            // C.m_Base.second as its owning instance - TrySwap/TrySetSize need the
-                            // exact instance T_LAMBDA_V's accessor was compiled against, and a nested
-                            // array's real owning instance isn't reachable from here. Every path always
-                            // carries a leading "ComponentDisplayName/" segment even for a genuinely
-                            // top-level member (confirmed live: "Array Ops Smoke Test/Object List
-                            // (...)" for a directly-declared std::vector) - strip that one component-
-                            // name slash before checking for any FURTHER '/' or '[' that would indicate
-                            // real nesting inside another scope or array.
-                            const auto             FirstSlash    = ArrayPrefixView.find('/');
-                            const std::string_view AfterComponent = FirstSlash != std::string_view::npos ? ArrayPrefixView.substr(FirstSlash + 1) : ArrayPrefixView;
-                            const bool bTopLevel = AfterComponent.find('/') == std::string_view::npos && AfterComponent.find('[') == std::string_view::npos;
-
+                            // No nesting-depth restriction any more - pArrayInstance (cached above from
+                            // the array's own size-marker entry's E.m_pInstance) is whatever instance
+                            // xproperty::sprop::collector already resolved for THIS exact array, via the
+                            // same props::m_pCast chain sprop::setProperty itself walks internally - so
+                            // it's correct regardless of how the array was reached (declared directly on
+                            // the component, nested inside an obj_scope, nested inside a genuinely
+                            // different object, or even behind a dynamic union/variant view like
+                            // union_variant_properties's "SomeVariant"). It's null only if collection
+                            // genuinely never resolved an instance for this member (e.g. a variant
+                            // accessor that returned {nullptr,nullptr} for the currently-inactive
+                            // alternative) - guarded below.
                             int  CurrentIndex = 0;
-                            bool bValidIndex  = bTopLevel && !IndexStr.empty();
+                            bool bValidIndex  = (pArrayInstance != nullptr) && !IndexStr.empty();
                             for (char c : IndexStr) { if (c < '0' || c > '9') { bValidIndex = false; break; } CurrentIndex = CurrentIndex * 10 + (c - '0'); }
 
                             if (bValidIndex && Table.m_bHasRealSetSize && !Tree[iDepth].m_isReadOnly)
                             {
-                                void*      pInstance   = C.m_Base.second;
+                                void*      pInstance   = pArrayInstance;
                                 const auto SizeResult  = Table.TryGetSize(pInstance, *m_pContext);
                                 const std::size_t N    = SizeResult ? SizeResult.value() : 0;
 
                                 const auto KeyOf = [](std::size_t Index) { xproperty::any K; K.set<std::size_t>(Index); return K; };
+                                // Was a hand-built cmd (wrong-shaped: no Original/NewValue, so Undo/Redo
+                                // couldn't actually restore anything) firing m_OnChangeEvent directly -
+                                // same bug already fixed for the ATOMIC array branch's own Commit()
+                                // earlier this session, just missed here since this is a separate,
+                                // parallel implementation. BeginEdit is called at each of the 4 trigger
+                                // sites below, BEFORE any TrySwap/TrySetSize call, same as the atomic
+                                // branch's own pattern.
                                 const auto Commit = [&]
                                     {
-                                        xproperty::ui::undo::cmd Cmd;
-                                        Cmd.m_Name         = std::string(ArrayPrefixView);
-                                        Cmd.m_pClassObject = C.m_Base.second;
-                                        Cmd.m_pPropObject  = C.m_Base.first;
-                                        Cmd.m_bHasChanged  = true;
-                                        m_OnChangeEvent.NotifyAll(*this, Cmd);
+                                        CommitEdit(*m_pContext);
                                     };
                                 const auto SwapAt = [&](std::size_t A, std::size_t B)
                                     {
@@ -2433,7 +2482,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                         {
                                             const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
                                             if (P.m_SourceIndex != CurrentIndex)
+                                            {
+                                                BeginEdit(*C.m_Base.first, C.m_Base.second, "Reorder Array Element");
                                                 MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                            }
                                         }
                                         ImGui::EndDragDropTarget();
                                     }
@@ -2447,6 +2499,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                     // from N down to CurrentIndex via adjacent swaps - unlike the atomic
                                     // branch, there's no generic "copy a whole object" primitive here,
                                     // so the new slot is a blank default rather than a duplicate.
+                                    BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
                                     (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
                                     for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex); --k) SwapAt(k, k - 1);
                                     Commit();
@@ -2456,6 +2509,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 ImGui::SameLine();
                                 if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // ChevronDown
                                 {
+                                    BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
                                     (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
                                     for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex) + 1; --k) SwapAt(k, k - 1);
                                     Commit();
@@ -2465,6 +2519,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 ImGui::SameLine();
                                 if (ImGui::Button("\xEE\x9D\x8D", ImVec2(Sz, Sz))) // Delete (same glyph as elsewhere in this codebase)
                                 {
+                                    BeginEdit(*C.m_Base.first, C.m_Base.second, "Delete Array Element");
                                     for (std::size_t k = static_cast<std::size_t>(CurrentIndex); k + 1 < N; ++k) SwapAt(k, k + 1);
                                     (void)Table.TrySetSize(pInstance, N - 1, *m_pContext);
                                     Commit();
@@ -2545,7 +2600,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 // cached for the object-array index-row branch below, which runs at this same depth
                 // once E has moved on to the element's own first sub-property (see the cache field's
                 // own comment on element::m_pArrayMember).
-                Tree[iDepth].m_pArrayMember = E.m_pUserData;
+                Tree[iDepth].m_pArrayMember   = E.m_pUserData;
+                Tree[iDepth].m_pArrayInstance = E.m_pInstance;
 
                 // Only insert a real, separate [index] row at the DEEPEST size-marker of an object
                 // (non-atomic) array - the transition from "which dimension" bookkeeping into actual
