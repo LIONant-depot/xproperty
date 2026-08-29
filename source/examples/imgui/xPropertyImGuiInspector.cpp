@@ -6,6 +6,8 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <algorithm>
+#include <charconv>
+#include <cstring>
 #include <olectl.h>
 #include <shobjidl.h>
 #include <comdef.h>
@@ -138,7 +140,15 @@ namespace xproperty::ui::undo
 
         auto& Value = m_lCmds[--m_Index];
         std::string Error;
-        xproperty::sprop::setProperty(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_Original }, Context);
+
+        // A cmd built by inspector::BeginEdit/CommitEdit carries a whole-instance text snapshot
+        // (std::string) in m_Original/m_NewValue instead of a single scalar - everything else
+        // (per-row scalar widgets, the function-button/scope-toggle commits) keeps using the
+        // original Path+any scalar shape, so both kinds of cmd share one system unmodified.
+        if (Value.m_Original.is<std::string>())
+            ApplySnapshotFromString(*Value.m_pPropObject, Value.m_pClassObject, Value.m_Original.get<std::string>(), Context);
+        else
+            xproperty::sprop::setProperty(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_Original }, Context);
         return Error;
     }
 
@@ -149,9 +159,115 @@ namespace xproperty::ui::undo
 
         auto& Value = m_lCmds[m_Index++];
         std::string Error;
-        xproperty::sprop::setProperty(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_NewValue }, Context);
+
+        if (Value.m_NewValue.is<std::string>())
+            ApplySnapshotFromString(*Value.m_pPropObject, Value.m_pClassObject, Value.m_NewValue.get<std::string>(), Context);
+        else
+            xproperty::sprop::setProperty(Error, Value.m_pClassObject, *Value.m_pPropObject, xproperty::sprop::container::prop{ Value.m_Name, Value.m_NewValue }, Context);
         return Error;
     }
+
+    //-----------------------------------------------------------------------------------
+    std::string SnapshotToString(const xproperty::type::object& Obj, const void* pInstance, xproperty::settings::context& Context) noexcept
+    {
+        std::string Snapshot;
+        xproperty::sprop::collector(pInstance, Obj, Context, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members& Member, bool isConst, const void*)
+            {
+                if (isConst || Value.m_pType == nullptr) return;
+
+                // Pure grouping entries (scopes, and object-array/props "directory" markers) carry
+                // no independently-settable value of their own - only real leaves and an array's
+                // own size marker (path ending "[]", same convention SetSize() itself writes to)
+                // round-trip through setProperty, so those are the only entries worth recording.
+                if (std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant)
+                 || std::holds_alternative<xproperty::type::members::props>(Member.m_Variant))
+                    return;
+
+                if (std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant)
+                 || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant))
+                {
+                    const auto NameLen = std::strlen(pPropertyName);
+                    if (!(NameLen >= 2 && pPropertyName[NameLen - 1] == ']' && pPropertyName[NameLen - 2] == '['))
+                        return; // per-dimension index marker, not a settable value
+                }
+
+                std::array<char, 256> Buffer;
+                const int Len = xproperty::settings::AnyToString(Buffer, Value);
+
+                // Format assumes no Path or value text embeds a tab/newline - true for every case
+                // this is used against today (scalar/std::string leaves with short display text);
+                // a value that could genuinely contain either would need escaping here first.
+                Snapshot += pPropertyName;
+                Snapshot += '\t';
+                Snapshot += std::to_string(Value.m_pType->m_GUID);
+                Snapshot += '\t';
+                Snapshot.append(Buffer.data(), static_cast<std::size_t>(std::max(0, Len)));
+                Snapshot += '\n';
+            });
+        return Snapshot;
+    }
+
+    void ApplySnapshotFromString(const xproperty::type::object& Obj, void* pInstance, const std::string& Snapshot, xproperty::settings::context& Context) noexcept
+    {
+        std::size_t Pos = 0;
+        while (Pos < Snapshot.size())
+        {
+            const auto LineEndPos = Snapshot.find('\n', Pos);
+            const auto LineEnd    = (LineEndPos == std::string::npos) ? Snapshot.size() : LineEndPos;
+            const std::string_view Line{ Snapshot.data() + Pos, LineEnd - Pos };
+            Pos = (LineEndPos == std::string::npos) ? Snapshot.size() : LineEndPos + 1;
+            if (Line.empty()) continue;
+
+            const auto Tab1 = Line.find('\t');
+            const auto Tab2 = (Tab1 == std::string_view::npos) ? std::string_view::npos : Line.find('\t', Tab1 + 1);
+            if (Tab1 == std::string_view::npos || Tab2 == std::string_view::npos) continue;
+
+            const std::string_view Path     = Line.substr(0, Tab1);
+            const std::string_view GuidText = Line.substr(Tab1 + 1, Tab2 - Tab1 - 1);
+            const std::string_view ValueText= Line.substr(Tab2 + 1);
+
+            std::uint32_t TypeGUID = 0;
+            std::from_chars(GuidText.data(), GuidText.data() + GuidText.size(), TypeGUID);
+
+            std::array<char, 256> Buffer;
+            const std::size_t CopyLen = std::min(ValueText.size(), Buffer.size() - 1);
+            std::memcpy(Buffer.data(), ValueText.data(), CopyLen);
+            Buffer[CopyLen] = '\0';
+
+            xproperty::any Value;
+            if (!xproperty::settings::StringToAny(Value, TypeGUID, { Buffer.data(), static_cast<std::uint32_t>(CopyLen) }))
+                continue;
+
+            std::string Error;
+            xproperty::sprop::setProperty(Error, pInstance, Obj, xproperty::sprop::container::prop{ std::string(Path), Value }, Context);
+        }
+    }
+}
+
+void xproperty::inspector::BeginEdit(const xproperty::type::object& Obj, void* pInstance, std::string_view Name) noexcept
+{
+    xproperty::ui::undo::cmd Cmd;
+    Cmd.m_Name         = Name;
+    Cmd.m_pPropObject  = &Obj;
+    Cmd.m_pClassObject = pInstance;
+    Cmd.m_Original.set<std::string>(xproperty::ui::undo::SnapshotToString(Obj, pInstance, *m_pContext));
+    m_PendingEdit = std::move(Cmd);
+}
+
+void xproperty::inspector::CommitEdit(xproperty::settings::context& Context) noexcept
+{
+    if (!m_PendingEdit.has_value()) return;
+
+    xproperty::ui::undo::cmd Cmd = std::move(*m_PendingEdit);
+    m_PendingEdit.reset();
+
+    const std::string After = xproperty::ui::undo::SnapshotToString(*Cmd.m_pPropObject, Cmd.m_pClassObject, Context);
+    if (After == Cmd.m_Original.get<std::string>())
+        return; // nothing actually changed across this bracket
+
+    Cmd.m_NewValue.set<std::string>(After);
+    Cmd.m_bHasChanged = true;
+    m_OnChangeEvent.NotifyAll(*this, Cmd);
 }
 
 //-----------------------------------------------------------------------------------
@@ -1358,6 +1474,52 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     return nullptr;
                 }();
 
+            xproperty::settings::member_custom_render_block_t::callback* pCustomRenderBlock =
+                [&]() -> xproperty::settings::member_custom_render_block_t::callback*
+                {
+                    if (auto* pTag = Member.getUserData<xproperty::settings::member_custom_render_block_t>(); pTag)
+                        return pTag->m_pCallback;
+                    return nullptr;
+                }();
+
+            // Same "resolve a tag, if any" shape as pCustomRenderBlock above, for the other 3 custom-
+            // render levels plus override check/reset - see each _t struct's own comment.
+            xproperty::settings::member_custom_render_append_t::callback* pCustomRenderAppend =
+                [&]() -> xproperty::settings::member_custom_render_append_t::callback*
+                {
+                    if (auto* pTag = Member.getUserData<xproperty::settings::member_custom_render_append_t>(); pTag)
+                        return pTag->m_pCallback;
+                    return nullptr;
+                }();
+            xproperty::settings::member_custom_render_replace_value_t::callback* pCustomRenderReplaceValue =
+                [&]() -> xproperty::settings::member_custom_render_replace_value_t::callback*
+                {
+                    if (auto* pTag = Member.getUserData<xproperty::settings::member_custom_render_replace_value_t>(); pTag)
+                        return pTag->m_pCallback;
+                    return nullptr;
+                }();
+            xproperty::settings::member_custom_render_replace_row_t::callback* pCustomRenderReplaceRow =
+                [&]() -> xproperty::settings::member_custom_render_replace_row_t::callback*
+                {
+                    if (auto* pTag = Member.getUserData<xproperty::settings::member_custom_render_replace_row_t>(); pTag)
+                        return pTag->m_pCallback;
+                    return nullptr;
+                }();
+            xproperty::settings::member_override_check_t::callback* pOverrideCheck =
+                [&]() -> xproperty::settings::member_override_check_t::callback*
+                {
+                    if (auto* pTag = Member.getUserData<xproperty::settings::member_override_check_t>(); pTag)
+                        return pTag->m_pCallback;
+                    return nullptr;
+                }();
+            xproperty::settings::member_override_reset_t::callback* pOverrideReset =
+                [&]() -> xproperty::settings::member_override_reset_t::callback*
+                {
+                    if (auto* pTag = Member.getUserData<xproperty::settings::member_override_reset_t>(); pTag)
+                        return pTag->m_pCallback;
+                    return nullptr;
+                }();
+
             // Same static/dynamic resolution shape as Flags above - see member_item_width_t's own
             // comment for why this exists (a wide value widget leaves zero room for a same-line
             // m_OnCustomRenderAppend unless something narrows it).
@@ -1482,6 +1644,12 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     , const_cast<void*>(pInstance)
                     , pSectionName
                     , ItemWidth
+                    , pCustomRenderBlock
+                    , pCustomRenderAppend
+                    , pCustomRenderReplaceValue
+                    , pCustomRenderReplaceRow
+                    , pOverrideCheck
+                    , pOverrideReset
                 )
             );
         }, true);
@@ -1647,6 +1815,18 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
     // a property actually declines removes the repeated toggling entirely.
     bool bInPersistentBlock = false;
 
+    // Non-empty while walking the elements/descendant-members of a LIST property whose own SIZE-
+    // MARKER entry ("...[]") just claimed block content (via either mechanism - a member_custom_
+    // render_block tag or the broadcast m_OnCustomRenderBlock delegate). Needed because an element's
+    // own descendant members are a SEPARATE, unrelated reflected type's own declarations (e.g. a
+    // std::vector<curve_keyframe>'s size marker carries the array's own tag/Path, but each element's
+    // Time/Value/etc. are curve_keyframe's OWN Member entries, with no tag and no Path match of their
+    // own) - confirmed live: without this, those inner members fell through and rendered as a normal,
+    // duplicate array section underneath the custom-drawn canvas. A claim on an array's own size
+    // marker implicitly covers its whole subtree; this is the prefix ("...", without the trailing
+    // "[]") used to recognize "still inside that subtree" for every entry that follows.
+    std::string ClaimedArrayPrefix;
+
     //
     // Do all properties
     //
@@ -1729,16 +1909,60 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // rather than one call unconditionally wrapped in Columns(1)/Columns(2). Checked before ANY
         // other grid-relative logic (including the section-separator block right below) so a block
         // property is never threaded through column-relative code that assumes a normal row is about
-        // to render. Skipped entirely when nothing's registered - even the ask call isn't free.
-        if ( !m_OnCustomRenderBlock.m_Delegates.empty() )
+        // to render. Skipped entirely when nothing's registered and we're not already inside a
+        // persistent block - even the ask call isn't free. bInPersistentBlock MUST stay part of this
+        // guard even though it never claims anything on its own: the "resume Columns(2)" cleanup
+        // (the "else if (bInPersistentBlock)" branch below) lives INSIDE this same if - now that every
+        // consumer in this codebase has migrated off the broadcast delegate to per-property
+        // member_custom_render_block tags, m_OnCustomRenderBlock.m_Delegates is empty for entire
+        // inspectors that still use tag-based blocks, so without this the very next (tag-less, non-
+        // array) property after a block ends would skip that cleanup entirely and render stuck inside
+        // the block's own Columns(1) session - confirmed live as "After Block (normal)" losing its
+        // left-column label and spanning the full width like block content, instead of rendering as
+        // the plain two-column row it's supposed to.
+        if ( !m_OnCustomRenderBlock.m_Delegates.empty() || E.m_pCustomRenderBlock || !ClaimedArrayPrefix.empty() || bInPersistentBlock )
         {
             bool bIsBlockContent = false;
             const ImColor RowColor = ComputeRowColor( iDepth, GlobalIndex + 1 ); // +1 matches the ++GlobalIndex a normal row applies before computing its own color
 
+            // Riding along inside a previously-claimed array's own subtree (see ClaimedArrayPrefix's
+            // own comment) - claimed automatically, no ask call needed (an element's own descendant
+            // member has no tag/Path of its own to ask about anyway).
+            const bool bInsideClaimedArray = !ClaimedArrayPrefix.empty()
+                && E.m_Property.m_Path.size() > ClaimedArrayPrefix.size()
+                && E.m_Property.m_Path.compare(0, ClaimedArrayPrefix.size(), ClaimedArrayPrefix) == 0
+                && E.m_Property.m_Path[ClaimedArrayPrefix.size()] == '[';
+
             // Ask phase - Columns() is untouched here regardless of bInPersistentBlock, so this costs
             // nothing beyond the call itself for the overwhelming majority of properties that answer
-            // false.
-            m_OnCustomRenderBlock.NotifyAll( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, RowColor, true, bIsBlockContent );
+            // false. The property's own member_custom_render_block tag (if any) gets first say, since
+            // it's the more specific, declaration-site source of truth; only falls through to the
+            // shared broadcast delegate (still the right tool for a one-off demo flourish tied to a
+            // specific caller, see member_custom_render_block_t's own comment) if the tag didn't claim
+            // it - a property can use either mechanism, never needs both.
+            bool bClaimedByTag = false;
+            if (bInsideClaimedArray)
+            {
+                bIsBlockContent = true;
+            }
+            else
+            {
+                ClaimedArrayPrefix.clear(); // left whatever subtree was previously claimed, if any
+
+                if (E.m_pCustomRenderBlock)
+                {
+                    E.m_pCustomRenderBlock( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, static_cast<ImU32>(RowColor), true, bIsBlockContent );
+                    bClaimedByTag = bIsBlockContent;
+                }
+                if (!bIsBlockContent)
+                    m_OnCustomRenderBlock.NotifyAll( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, RowColor, true, bIsBlockContent );
+
+                // A claim on a LIST's own size-marker ("...[]") implicitly covers every element and
+                // descendant member under it too - see ClaimedArrayPrefix's own comment for why those
+                // can't carry a matching tag/Path of their own.
+                if (bIsBlockContent && E.m_Property.m_Path.ends_with("[]"))
+                    ClaimedArrayPrefix.assign(E.m_Property.m_Path, 0, E.m_Property.m_Path.size() - 2);
+            }
 
             if ( bIsBlockContent )
             {
@@ -1772,8 +1996,15 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     bInPersistentBlock = true;
                 }
 
-                bool bIgnored = true;
-                m_OnCustomRenderBlock.NotifyAll( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, RowColor, false, bIgnored );
+                // Only the entry that just established a NEW claim this iteration actually draws
+                // anything - an entry merely riding along inside an already-claimed array subtree is
+                // claimed-but-silent, same as Block End's own "claimed but nothing to add" rows.
+                if (!bInsideClaimedArray)
+                {
+                    bool bIgnored = true;
+                    if (bClaimedByTag) E.m_pCustomRenderBlock( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, static_cast<ImU32>(RowColor), false, bIgnored );
+                    else               m_OnCustomRenderBlock.NotifyAll( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, RowColor, false, bIgnored );
+                }
 
                 ++GlobalIndex;
                 continue;
@@ -2412,14 +2643,17 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             xproperty::any Value; Value.set<std::size_t>(NewSize);
                             xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, xproperty::sprop::container::prop{ std::format("{}[]", ArrayPrefix), Value }, *m_pContext);
                         };
+                    // BeginEdit must be called BEFORE any Set*/erase call below (it snapshots the
+                    // owning component's pre-edit state) - each trigger site below calls it as its
+                    // first statement, then does its own Set*/SetSize sequence, then calls Commit()
+                    // here, which now just closes the bracket via CommitEdit instead of hand-
+                    // building a cmd - fixes the previous version's broken cmd (m_Name missing the
+                    // "[]" suffix SetSize() actually writes to, m_Original/m_NewValue never
+                    // populated), which made these operations fire a change notification without
+                    // being correctly undoable.
                     const auto Commit = [&]
                         {
-                            xproperty::ui::undo::cmd Cmd;
-                            Cmd.m_Name         = ArrayPrefix;
-                            Cmd.m_pClassObject = C.m_Base.second;
-                            Cmd.m_pPropObject  = C.m_Base.first;
-                            Cmd.m_bHasChanged  = true;
-                            m_OnChangeEvent.NotifyAll(*this, Cmd);
+                            CommitEdit(*m_pContext);
                         };
                     // Moves the element at FromIndex to ToIndex, shifting everything strictly between
                     // them by one - read the whole affected span first (all still pre-edit values, per
@@ -2501,7 +2735,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 {
                                     const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
                                     if (P.m_SourceIndex != CurrentIndex)
+                                    {
+                                        BeginEdit(*C.m_Base.first, C.m_Base.second, "Reorder Array Element");
                                         MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                    }
                                 }
                                 ImGui::EndDragDropTarget();
                             }
@@ -2520,6 +2757,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             // [CurrentIndex+1..N] - index CurrentIndex itself is never written by this
                             // loop, so it keeps holding this element's original value while its shifted
                             // copy also lands one slot below it, net effect a duplicate now sits above.
+                            BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
                             SetSize(N + 1);
                             for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex); --k)
                                 SetValueAt(k, ValueAt(k - 1));
@@ -2533,6 +2771,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             // Insert Below: grow by one, then shift [CurrentIndex+1..N-1] up into
                             // [CurrentIndex+2..N], then explicitly copy this element's value into the
                             // one slot the loop above doesn't touch (CurrentIndex+1).
+                            BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
                             SetSize(N + 1);
                             for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex) + 1; --k)
                                 SetValueAt(k, ValueAt(k - 1));
@@ -2547,6 +2786,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             // Shift [CurrentIndex+1..N-1] down into [CurrentIndex..N-2], forward this
                             // time - opposite direction from insert, since each target here has already
                             // been read before being overwritten - then shrink by one.
+                            BeginEdit(*C.m_Base.first, C.m_Base.second, "Delete Array Element");
                             for (std::size_t k = static_cast<std::size_t>(CurrentIndex); k + 1 < N; ++k)
                                 SetValueAt(k, ValueAt(k + 1));
                             SetSize(N - 1);
@@ -2649,7 +2889,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // second/base object, whichever strategy the consumer uses. The already-resolved current
             // value is passed too so a simple consumer doesn't need to re-fetch it.
             bool bIsOverridden = false;
-            m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden);
+            // Property's own tag gets first say (see member_override_check_t's own comment); falls
+            // through to the broadcast delegate only if the property carries no tag of its own.
+            if (E.m_pOverrideCheck) E.m_pOverrideCheck( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden );
+            else                    m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden);
             if (bIsOverridden)
             {
                 // Tint stays pushed through the label draw below too (matches E20's own convention -
@@ -2657,7 +2900,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 170, 255, 255));
                 if (ImGui::Button(">"))
                 {
-                    m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                    if (E.m_pOverrideReset) E.m_pOverrideReset( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path );
+                    else                    m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
                 }
                 HelpMarker( "This property has been overridden from its base value - click to revert" );
                 ImGui::SameLine();
@@ -2714,7 +2958,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             const float ReplaceRowSpacing = ImGui::GetTreeNodeToLabelSpacing();
             ImGui::Indent(ReplaceRowSpacing);
             const ImVec2 PreReplaceRowPos = ImGui::GetCursorScreenPos();
-            m_OnCustomRenderReplaceRow.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedRow);
+            // Property's own tag gets first say (see member_custom_render_replace_row_t's own
+            // comment); falls through to the broadcast delegate only if the property carries no tag.
+            if (E.m_pCustomRenderReplaceRow) E.m_pCustomRenderReplaceRow( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedRow );
+            else                             m_OnCustomRenderReplaceRow.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedRow);
             // bReplaceRowDrewSomething (below) compares the cursor against PreReplaceRowPos to tell
             // "the consumer drew something real" apart from "nothing drew here at all" - that check
             // must happen BEFORE Unindent, or the Unindent's own X shift would make an untouched
@@ -2992,7 +3239,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // Seeded from bReplacedRow (level 3) rather than always false - a row already fully
             // replaced up in the left-column code has no default value widget left to skip separately.
             bool bReplacedValue = bReplacedRow;
-            m_OnCustomRenderReplaceValue.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedValue);
+            // Property's own tag gets first say (see member_custom_render_replace_value_t's own
+            // comment); falls through to the broadcast delegate only if the property carries no tag.
+            if (E.m_pCustomRenderReplaceValue) E.m_pCustomRenderReplaceValue( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedValue );
+            else                               m_OnCustomRenderReplaceValue.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedValue);
 
             if (!bReplacedValue) if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
             {
@@ -3120,7 +3370,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // trailing spacing (the same amount every other row already gets for free), no manufactured
             // extra gap on top of it.
             if (!E.m_Flags.m_bAppendNewLine && bValueColumnHasContent) ImGui::SameLine();
-            m_OnCustomRenderAppend.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value);
+            // Property's own tag gets first say (see member_custom_render_append_t's own comment);
+            // falls through to the broadcast delegate only if the property carries no tag of its own.
+            if (E.m_pCustomRenderAppend) E.m_pCustomRenderAppend( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value );
+            else                         m_OnCustomRenderAppend.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value);
 
             // Now that this row's content has actually drawn, rpos (its start, captured right
             // after NextColumn() above) and the current cursor give its real final height. Cache

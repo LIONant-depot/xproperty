@@ -3,6 +3,7 @@
 #pragma once
 
 #include<functional>
+#include<optional>
 #include<string>
 #include<unordered_map>
 
@@ -138,6 +139,19 @@ namespace xproperty
             )
         };
         XPROPERTY_REG(system)
+
+        //-----------------------------------------------------------------------------------
+        // Generic whole-object snapshot/restore, used by inspector::BeginEdit/CommitEdit below
+        // to make an edit bracket undoable even when it touches several properties at once (a
+        // custom-render callback moving a curve keyframe, an array insert/delete/reorder) - the
+        // exact "snapshot-before / mutate freely / snapshot-after / diff / commit one step" shape
+        // E27_NodeOS's own xundo-backed commands already use (NodeOS_PropertySerialize.h), just
+        // generalized off xproperty::type::object&/void* instead of a NodeOS-specific node type.
+        // Only genuinely settable leaf members (plain values and array size markers, i.e. what
+        // RefreshAllProperties classifies as NOT a pure scope/group) round-trip through this -
+        // scope/group entries carry no independently-settable value of their own.
+        std::string SnapshotToString      ( const xproperty::type::object& Obj, const void* pInstance, xproperty::settings::context& Context ) noexcept;
+        void        ApplySnapshotFromString( const xproperty::type::object& Obj, void* pInstance, const std::string& Snapshot, xproperty::settings::context& Context ) noexcept;
     }
     namespace ui::details
     {
@@ -379,6 +393,22 @@ public:
                 void        AppendEntity            ( void )                                                noexcept;
                 void        AppendEntityComponent   ( const xproperty::type::object& PropObject, void* pBase, void* pUserData = nullptr) noexcept;
                 void        Show                    ( xproperty::settings::context& Context, std::function<void(void)> Callback ) noexcept;
+
+                // Edit-commit bracket for consumers that mutate properties OUTSIDE the normal
+                // per-row widget flow (custom-render callbacks, array-controls buttons) - the
+                // scalar per-row path (HandleElement, in the .cpp) already tracks its own
+                // isEditing/isChange state per widget via m_CmdCurrentEdit and needs neither of
+                // these. BeginEdit snapshots the WHOLE component instance so a bracket can freely
+                // touch several properties (including ones with no visible row - e.g. a curve
+                // editor's tangent handles) without declaring which one up front; CommitEdit
+                // re-snapshots, diffs, and - only if something actually changed - fires
+                // m_OnChangeEvent exactly once for the whole bracket. Snapshot state lives on the
+                // inspector itself (m_PendingEdit below), not in a value the caller has to carry
+                // across frames - see xPropertyImGuiInspector.cpp's BeginEdit/CommitEdit for why.
+                // Only one bracket may be open at a time (single-cursor ImGui UI, never nested in
+                // practice); a second BeginEdit before a CommitEdit replaces the pending one.
+                void        BeginEdit               ( const xproperty::type::object& Obj, void* pInstance, std::string_view Name ) noexcept;
+                void        CommitEdit              ( xproperty::settings::context& Context ) noexcept;
                 bool        empty                   ( void )                                        const   noexcept { return m_lEntities.empty(); }
     inline      void        setupWindowSize         ( int Width, int Height )                               noexcept { m_Width = Width; m_Height = Height; }
     inline      void        setOpenWindow           ( bool b )                                              noexcept { m_bWindowOpen = b; }
@@ -556,6 +586,18 @@ protected:
         void*                                           m_pInstance = nullptr; // the live class instance this entry belongs to - only meaningful for a member-function entry, which needs it to invoke through
         const char*                                     m_pSectionName = nullptr; // member_section tag value, if any - drives the layout pass's section-separator draw
         float                                           m_ItemWidth = -1.0f; // member_item_width/member_dynamic_item_width, if any - passed to ImGui::PushItemWidth() for this property's value widget; -1 (fill the column) unless overridden
+        xproperty::settings::member_custom_render_block_t::callback*
+                                                          m_pCustomRenderBlock = nullptr; // member_custom_render_block tag value, if any - consulted by Render()'s block-escape check ALONGSIDE (not instead of) the broadcast m_OnCustomRenderBlock delegate, so a property can own its own full-width rendering directly at its declaration site
+        xproperty::settings::member_custom_render_append_t::callback*
+                                                          m_pCustomRenderAppend = nullptr; // same idea, for on_custom_render_append (level 1)
+        xproperty::settings::member_custom_render_replace_value_t::callback*
+                                                          m_pCustomRenderReplaceValue = nullptr; // same idea, for on_custom_render_replace_value (level 2)
+        xproperty::settings::member_custom_render_replace_row_t::callback*
+                                                          m_pCustomRenderReplaceRow = nullptr; // same idea, for on_custom_render_replace_row (level 3)
+        xproperty::settings::member_override_check_t::callback*
+                                                          m_pOverrideCheck = nullptr; // same idea, for on_override_check
+        xproperty::settings::member_override_reset_t::callback*
+                                                          m_pOverrideReset = nullptr; // same idea, for on_override_reset
     };
 
     struct component
@@ -599,6 +641,11 @@ protected:
     bool                                        m_bWindowOpen   { true };
     xproperty::settings::context*               m_pContext      {nullptr};
     cmd_variant                                 m_CmdCurrentEdit{ nullptr };
+
+    // Set by BeginEdit, consumed/cleared by CommitEdit - m_Name/m_pPropObject/m_pClassObject
+    // identify the bracket's target component, m_Original holds its whole-instance text snapshot
+    // (an xproperty::any holding a std::string - see SnapshotToString) taken at BeginEdit time.
+    std::optional<xproperty::ui::undo::cmd>     m_PendingEdit   {};
     simple_draw_background                      m_SimpleDrawBk  {};
 
     // Every component (and every block-escape's own Columns(1)/Columns(2) resume) gets its OWN,

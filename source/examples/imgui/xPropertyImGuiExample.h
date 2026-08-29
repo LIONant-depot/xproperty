@@ -62,14 +62,14 @@ std::array<xproperty::inspector, 2>   Inspector{ "Settings", "xProperty Examples
 
 void DrawPropertyWindow()
 {
-    // Settings
-    // Disabled: walking inspector::settings (which uses v2 : ImVec2 - the "bridge wrapper" pattern
-    // for a foreign type) currently hits `assert(type::get_obj_info<key_t> != nullptr)` at
-    // xproperty.h:2193 - confirmed pre-existing and unrelated to any inspector-button work (still
-    // reproduces against an unmodified xproperty checkout). A compile-time validator for this exact
-    // wrapper pattern was previously removed as a known, documented gap - re-enable once that's
-    // actually fixed, don't just silence this flag.
-    if constexpr ( false )
+    // Settings + the bundled Undo/Redo demo - re-enabled to validate xproperty::inspector::BeginEdit/
+    // CommitEdit end-to-end (curve editor in E04, fixed array-controls undo) through this SAME real
+    // UI, alongside the pre-existing per-row scalar undo path. Previously disabled: walking
+    // inspector::settings (the v2 : ImVec2 "bridge wrapper" pattern for a foreign type) hit
+    // `assert(type::get_obj_info<key_t> != nullptr)` at xproperty.h:2193 - fixed earlier this session
+    // by declaring settings' fields as plain ImVec2 and moving the reflected_type<ImVec2> redirect to
+    // before settings' first use (see xPropertyImGuiInspector.h's own comment on both).
+    if constexpr ( true )
     {
         auto&                               I       = Inspector[0];
         static bool                         Init    = false;

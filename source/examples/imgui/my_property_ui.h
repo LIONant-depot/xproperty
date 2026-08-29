@@ -33,6 +33,13 @@ namespace xproperty::ui::details
     struct member_ui_base;
 }
 
+// Forward declared, not included - my_property_ui.h is reached via my_properties.h, which many
+// property-declaring consumers (plugin DLLs, headless tools) include WITHOUT ever pulling in the
+// ImGui inspector itself. An incomplete type is enough for member_custom_render_block_t below (only
+// ever used behind a reference in a function-pointer TYPE, never dereferenced in this header) - same
+// reason xPropertyImGuiInspector.h itself forward-declares this before using it.
+namespace xproperty { class inspector; }
+
 namespace xproperty::settings
 {
     struct member_ui_t : xproperty::member_user_data<"UI">
@@ -85,6 +92,108 @@ namespace xproperty::settings
         const char* m_pSectionName;
     };
 
+    // Lets a property declare its OWN full-width custom rendering (a curve editor, a graph, anything
+    // that needs to escape the 2-column grid entirely - see inspector::on_custom_render_block's own
+    // comment for the mechanism) directly at the obj_member<> site, instead of a caller having to
+    // register a SHARED inspector-wide delegate and Path.ends_with()-match this property out of every
+    // other property in the system. That broadcast-and-match shape still exists (m_OnCustomRenderBlock)
+    // and is still the right tool for a one-off UI flourish tied to a specific demo/consumer - but a
+    // genuinely reusable, type-level capability (a curve type usable from any struct) belongs on the
+    // property declaration itself, the same way member_section/member_dynamic_flags already do, not
+    // duplicated into every inspector-wiring call site that happens to show that property.
+    // RowColorU32 is a raw ImU32 (not ImColor) specifically so this header - included by plugin
+    // property-declaration code that may not link ImGui at all - never needs an ImGui include; the one
+    // real caller (Render(), which does have ImGui) reads/writes it as an ImU32/ImColor pair via a
+    // trivial implicit conversion.
+    struct member_custom_render_block_t : xproperty::member_user_data<"Custom Render Block">
+    {
+        using callback = void
+        ( xproperty::inspector&           // the inspector doing the drawing - lets the callback call BeginEdit/CommitEdit on it
+        , const xproperty::type::object&  // the reflected type of the owning component
+        , void*                           // the live component instance
+        , std::string_view                // this property's full path
+        , const xproperty::any&           // this property's current (resolved) value
+        , std::uint32_t                   // row background color, as a packed ImU32
+        , bool                            // bDryRun - true for the "ask" call, false for the real draw (see on_custom_render_block's own comment)
+        , bool&                           // bIsBlockContent - set true to claim this property as block content
+        ) noexcept;
+        callback* m_pCallback;
+    };
+
+    // Same rationale as member_custom_render_block_t above, for the other 3 of the 4 planned custom-
+    // rendering levels (see inspector::on_custom_render_append/on_custom_render_replace_value/
+    // on_custom_render_replace_row's own comments for what each level replaces) - a property declares
+    // its own append/replace behavior directly at its obj_member<> site instead of a shared,
+    // inspector-wide delegate having to Path.ends_with()-match it out of every other property. Each
+    // still coexists with its broadcast delegate counterpart, still the right tool for a one-off UI
+    // flourish tied to a specific caller.
+    struct member_custom_render_append_t : xproperty::member_user_data<"Custom Render Append">
+    {
+        using callback = void
+        ( xproperty::inspector&
+        , const xproperty::type::object&
+        , void*
+        , std::string_view
+        , const xproperty::any&
+        ) noexcept;
+        callback* m_pCallback;
+    };
+
+    struct member_custom_render_replace_value_t : xproperty::member_user_data<"Custom Render Replace Value">
+    {
+        using callback = void
+        ( xproperty::inspector&
+        , const xproperty::type::object&
+        , void*
+        , std::string_view
+        , const xproperty::any&
+        , bool&                           // bHandled - set true to skip the default value widget
+        ) noexcept;
+        callback* m_pCallback;
+    };
+
+    struct member_custom_render_replace_row_t : xproperty::member_user_data<"Custom Render Replace Row">
+    {
+        using callback = void
+        ( xproperty::inspector&
+        , const xproperty::type::object&
+        , void*
+        , std::string_view
+        , const xproperty::any&
+        , bool&                           // bHandled - set true to take over the left (label) column too
+        ) noexcept;
+        callback* m_pCallback;
+    };
+
+    // Same rationale again, for on_override_check/on_override_reset - a property declares directly
+    // (via a comparison against whatever it considers its own base value) that it can be "overridden",
+    // instead of a shared delegate Path-matching it. Kept as two separate tags, matching the delegate
+    // pair's own split (a property can be checkable without being resettable, in principle), though in
+    // practice a consumer will normally attach both to the same property.
+    struct member_override_check_t : xproperty::member_user_data<"Override Check">
+    {
+        using callback = void
+        ( xproperty::inspector&
+        , const xproperty::type::object&
+        , void*
+        , std::string_view
+        , const xproperty::any&
+        , bool&                           // bIsOverridden
+        ) noexcept;
+        callback* m_pCallback;
+    };
+
+    struct member_override_reset_t : xproperty::member_user_data<"Override Reset">
+    {
+        using callback = void
+        ( xproperty::inspector&
+        , const xproperty::type::object&
+        , void*
+        , std::string_view
+        ) noexcept;
+        callback* m_pCallback;
+    };
+
     // Presence-only marker (no payload) - a real, normally-reflected bool member carries this when it
     // should also act as its OWN PARENT SCOPE's enable-toggle: rendered as a checkbox merged into the
     // scope's own header row instead of a separate row, with the scope's children only rendering while
@@ -135,6 +244,55 @@ namespace xproperty
                 { if constexpr (std::tuple_size_v<typename fn_t::args> == 1) return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj));
                   else                                                       return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj), C);
                 } } {}
+    };
+
+    // See settings::member_custom_render_block_t's own comment for why this exists alongside
+    // inspector::m_OnCustomRenderBlock rather than replacing it. T_CALLBACK_V's signature must match
+    // member_custom_render_block_t::callback exactly (a plain function pointer, not function_traits-
+    // erased like member_dynamic_flags above) - this tag is for a property that always renders the
+    // same custom way, not one with several arg-count overloads to support.
+    template< auto T_CALLBACK_V >
+    struct member_custom_render_block : settings::member_custom_render_block_t
+    {
+        constexpr member_custom_render_block() noexcept
+            : settings::member_custom_render_block_t{ .m_pCallback = T_CALLBACK_V } {}
+    };
+
+    // Same "plain function pointer, match the callback signature exactly" shape as
+    // member_custom_render_block above, for the other 3 custom-render levels plus override check/reset.
+    template< auto T_CALLBACK_V >
+    struct member_custom_render_append : settings::member_custom_render_append_t
+    {
+        constexpr member_custom_render_append() noexcept
+            : settings::member_custom_render_append_t{ .m_pCallback = T_CALLBACK_V } {}
+    };
+
+    template< auto T_CALLBACK_V >
+    struct member_custom_render_replace_value : settings::member_custom_render_replace_value_t
+    {
+        constexpr member_custom_render_replace_value() noexcept
+            : settings::member_custom_render_replace_value_t{ .m_pCallback = T_CALLBACK_V } {}
+    };
+
+    template< auto T_CALLBACK_V >
+    struct member_custom_render_replace_row : settings::member_custom_render_replace_row_t
+    {
+        constexpr member_custom_render_replace_row() noexcept
+            : settings::member_custom_render_replace_row_t{ .m_pCallback = T_CALLBACK_V } {}
+    };
+
+    template< auto T_CALLBACK_V >
+    struct member_override_check : settings::member_override_check_t
+    {
+        constexpr member_override_check() noexcept
+            : settings::member_override_check_t{ .m_pCallback = T_CALLBACK_V } {}
+    };
+
+    template< auto T_CALLBACK_V >
+    struct member_override_reset : settings::member_override_reset_t
+    {
+        constexpr member_override_reset() noexcept
+            : settings::member_override_reset_t{ .m_pCallback = T_CALLBACK_V } {}
     };
 
     // Static width - see settings::member_item_width_t's own comment for the PushItemWidth semantics.
