@@ -2498,20 +2498,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 }
                                 HelpMarker("Drag to reorder this element");
 
-                                ImGui::SameLine();
-                                if (ImGui::Button("\xEE\x9C\x8E", ImVec2(Sz, Sz))) // ChevronUp
-                                {
-                                    // Insert Above: grow, then bubble the fresh (blank) trailing element
-                                    // from N down to CurrentIndex via adjacent swaps - unlike the atomic
-                                    // branch, there's no generic "copy a whole object" primitive here,
-                                    // so the new slot is a blank default rather than a duplicate.
-                                    BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
-                                    (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
-                                    for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex); --k) SwapAt(k, k - 1);
-                                    Commit();
-                                }
-                                HelpMarker("Insert a new (blank) element above this one");
-
+                                // "Insert Above" (ChevronUp) removed - inserting is now done from the
+                                // single "+" button next to the array's own "Size:" field (always at
+                                // index 0), which covers the one insert case this button duplicated
+                                // (prepending) while dropping the four-icon-per-row clutter. "Insert
+                                // Below" stays - it targets an arbitrary existing row, which the Size
+                                // field's own button can't do.
                                 ImGui::SameLine();
                                 if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // ChevronDown
                                 {
@@ -2763,29 +2755,13 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     // behind the icon at rest.
                     if (bShowArrayControls) { ImGui::PushID(static_cast<int>(iE)); ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0)); }
 
-                    bool Open;
-                    const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
-                    else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
-
-                    // Captured right here, before any of the array-control buttons below get drawn -
-                    // otherwise the shared "print help" check further down in Render() would see
-                    // whichever of THOSE was hovered last instead of this label (see bSuppressRowHelp's
-                    // own comment at its declaration).
-                    if (bShowArrayControls)
-                    {
-                        if (ImGui::IsItemHovered()) Help(E);
-                        bSuppressRowHelp = true;
-                    }
-
-                    // Drag handle - right after the [i] label, matching where it lands for object-array
-                    // elements (that branch draws its own "[i]" via PushTree before it can even reach
-                    // this button cluster, so leftmost was never actually achievable there - matched
-                    // here instead, for one consistent layout across atomic and object elements).
+                    // Icon cluster drawn FIRST, leftmost, before the "[i]" label - explicit request to
+                    // stop trailing these after the label. Only achievable here: the object-array
+                    // branch draws its own "[i]" via PushTree before it can even reach its own button
+                    // cluster (see that branch's own comment on why it stays trailing there).
                     if (bShowArrayControls)
                     {
                         const float Sz = ImGui::GetFrameHeight();
-                        ImGui::SameLine();
                         ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // Segoe MDL2 Assets GripperBarHorizontal (U+E76F) - same icon font as the trashcan glyph below
                         if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
                         {
@@ -2818,27 +2794,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             }
                         }
                         HelpMarker("Drag to reorder this element");
-                    }
 
-                    if (bShowArrayControls)
-                    {
-                        const float Sz = ImGui::GetFrameHeight();
-
-                        ImGui::SameLine();
-                        if (ImGui::Button("\xEE\x9C\x8E", ImVec2(Sz, Sz))) // Segoe MDL2 Assets ChevronUp (U+E70E)
-                        {
-                            // Insert Above: grow by one, then shift [CurrentIndex..N-1] up into
-                            // [CurrentIndex+1..N] - index CurrentIndex itself is never written by this
-                            // loop, so it keeps holding this element's original value while its shifted
-                            // copy also lands one slot below it, net effect a duplicate now sits above.
-                            BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
-                            SetSize(N + 1);
-                            for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex); --k)
-                                SetValueAt(k, ValueAt(k - 1));
-                            Commit();
-                        }
-                        HelpMarker("Insert a new element above this one");
-
+                        // "Insert Above" (ChevronUp) removed - see the object-array branch's identical
+                        // comment on why (the new "+" next to the array's own "Size:" field covers
+                        // prepending; "Insert Below" stays for inserting after an arbitrary row).
                         ImGui::SameLine();
                         if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // Segoe MDL2 Assets ChevronDown (U+E70D)
                         {
@@ -2868,6 +2827,34 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         }
                         HelpMarker("Delete this element");
 
+                        // No extra ItemSpacing here - it would just stack on top of the cursor pull-back
+                        // below.
+                        ImGui::SameLine(0.0f, 0.0f);
+
+                        // TreeNodeEx (below) always reserves its own arrow-width gap before the label
+                        // text - GetTreeNodeToLabelSpacing() worth of blank space - even for a Leaf node
+                        // that never draws an arrow there. That's fine/expected for an ordinary property
+                        // row, but stacked right after the icon cluster it read as a big, unwanted gap
+                        // between the trashcan and "[i]" - explicit user request: "we don't want that
+                        // space at all." Pulling the cursor back by that exact amount cancels it: the
+                        // reserved-but-empty arrow slot ends up sitting UNDER the tail of the delete
+                        // icon's own footprint (already drawn, so this doesn't move it), and the actual
+                        // label text lands flush against it instead.
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() - ImGui::GetTreeNodeToLabelSpacing());
+                    }
+
+                    bool Open;
+                    const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
+                    else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
+
+                    // Captured right here - otherwise the shared "print help" check further down in
+                    // Render() would see whichever of the buttons above was hovered last instead of this
+                    // label (see bSuppressRowHelp's own comment at its declaration).
+                    if (bShowArrayControls)
+                    {
+                        if (ImGui::IsItemHovered()) Help(E);
+                        bSuppressRowHelp = true;
                         ImGui::PopStyleColor();
                         ImGui::PopID();
                     }
@@ -3200,6 +3187,55 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 ImGui::PushItemWidth(40*2);
                 HandleElement( E, E, 0, false );
                 ImGui::PopItemWidth();
+
+                // "+" - prepend a new (blank/default) element at index 0. Replaces the old per-element
+                // "Insert Above" (ChevronUp) button removed from every row (see its own removal
+                // comment) with a single control here instead. Gated the same way the per-element
+                // controls already gate bShowArrayControls: a genuinely 1D (E.m_GroupGUID rules out
+                // whatever multi-property-row case that flags), ordinal (std::size_t-keyed) array whose
+                // size is actually user-resizable (m_bHasRealSetSize) and not opted out via
+                // member_array_size_readonly_t. Restricted to 1D only for now - a deeper dimension
+                // level's own "instance" isn't necessarily Tree[iDepth].m_pArrayInstance the same way
+                // (unverified for N>1), so this doesn't attempt it rather than risk a wrong pointer.
+                // Uses list_table::TryGetSize/TrySetSize/TrySwap directly (the same real primitives the
+                // object-array branch already uses, shared by list_var and list_props alike) instead of
+                // path-string round-trips, so one implementation covers both atomic and object arrays.
+                const auto TryInsertFront = [&](const auto& Table)
+                {
+                    bool bSizeReadOnly = false;
+                    if (const auto* pSizeReadOnly = E.m_pUserData->getUserData<xproperty::settings::member_array_size_readonly_t>(); pSizeReadOnly)
+                        bSizeReadOnly = pSizeReadOnly->m_bReadOnly;
+
+                    void* pInstance = Tree[iDepth].m_pArrayInstance;
+                    if (!Table.m_bHasRealSetSize || bSizeReadOnly || pInstance == nullptr
+                        || Table.m_KeyAtomicType.m_GUID != xproperty::settings::var_type<std::size_t>::guid_v)
+                        return;
+
+                    ImGui::SameLine();
+                    if (ImGui::Button(" + ")) // padded - a bare "+" renders too small/cramped to click comfortably
+                    {
+                        BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
+                        const auto        SizeResult = Table.TryGetSize(pInstance, *m_pContext);
+                        const std::size_t N          = SizeResult ? SizeResult.value() : 0;
+                        (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
+                        for (std::size_t k = N; k > 0; --k)
+                        {
+                            xproperty::any KeyA; KeyA.set<std::size_t>(k);
+                            xproperty::any KeyB; KeyB.set<std::size_t>(k - 1);
+                            (void)Table.TrySwap(pInstance, KeyA, KeyB, *m_pContext);
+                        }
+                        CommitEdit(*m_pContext);
+                    }
+                    HelpMarker("Insert a new (blank) element at the front (index 0)");
+                };
+
+                if (E.m_Dimensions == 1 && !E.m_GroupGUID && !E.m_Flags.m_bShowReadOnly && E.m_pUserData)
+                {
+                    if (const auto* pListVar = std::get_if<xproperty::type::members::list_var>(&E.m_pUserData->m_Variant); pListVar && !pListVar->m_Table.empty())
+                        TryInsertFront(pListVar->m_Table[0]);
+                    else if (const auto* pListProps = std::get_if<xproperty::type::members::list_props>(&E.m_pUserData->m_Variant); pListProps && !pListProps->m_Table.empty())
+                        TryInsertFront(pListProps->m_Table[0]);
+                }
             }
 
             // Requiring bRenderBlankRight here (a prior attempt at this same fix) turned out wrong -
@@ -3726,10 +3762,36 @@ void xproperty::inspector::DrawBackground( int Depth, int GlobalIndex, ImVec2 St
 
 //-----------------------------------------------------------------------------------
 
+namespace
+{
+    // ImGui's own tooltip auto-placement (FindBestWindowPosForPopup) tries to avoid the viewport
+    // edges using the tooltip's PREVIOUS frame size, but has nowhere left to flip to once the mouse
+    // itself is already right at an edge/corner - the wide, multi-line Help() tooltip in particular
+    // then gets clipped past the screen, unreadable (reported live: "the hint window ... gets clipped
+    // outside the screen"). Anchoring the window's OWN pivot corner to whichever side of the viewport
+    // the mouse is on makes it grow back TOWARD the center instead of past the edge, regardless of
+    // content size - simpler and more robust than pre-measuring text to clamp a top-left position.
+    void PlaceTooltipAwayFromEdges() noexcept
+    {
+        const ImGuiViewport* pViewport = ImGui::GetMainViewport();
+        const ImVec2         Mouse     = ImGui::GetIO().MousePos;
+        const ImVec2         Pivot
+        ( (Mouse.x - pViewport->WorkPos.x) > pViewport->WorkSize.x * 0.5f ? 1.0f : 0.0f
+        , (Mouse.y - pViewport->WorkPos.y) > pViewport->WorkSize.y * 0.5f ? 1.0f : 0.0f
+        );
+        // Same small offset ImGui's own default tooltip placement uses, just signed to lead AWAY from
+        // the edge the pivot just chose (e.g. pivot 1.0 on the right edge subtracts, so the window
+        // still clears the cursor instead of sitting under it).
+        constexpr float Offset = 16.0f;
+        ImGui::SetNextWindowPos(ImVec2(Mouse.x + (Pivot.x > 0.0f ? -Offset : Offset), Mouse.y + (Pivot.y > 0.0f ? -Offset : Offset)), ImGuiCond_Always, Pivot);
+    }
+}
+
 void xproperty::inspector::HelpMarker( const char* desc ) const noexcept
 {
     if ( ImGui::IsItemHovered() )
     {
+        PlaceTooltipAwayFromEdges();
         ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, m_Settings.m_HelpWindowPadding );
         ImGui::BeginTooltip();
         ImGui::PushTextWrapPos( ImGui::GetFontSize() * m_Settings.m_HelpWindowSizeInChars );
@@ -3744,6 +3806,7 @@ void xproperty::inspector::HelpMarker( const char* desc ) const noexcept
 
 void xproperty::inspector::Help( const entry& Entry ) const noexcept
 {
+    PlaceTooltipAwayFromEdges();
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, m_Settings.m_HelpWindowPadding );
     ImGui::BeginTooltip();
     ImGui::PushTextWrapPos( ImGui::GetFontSize() * m_Settings.m_HelpWindowSizeInChars );
