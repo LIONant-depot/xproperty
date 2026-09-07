@@ -447,6 +447,18 @@ public:
     using on_override_check = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, bool&>;
     using on_override_reset = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view>;
 
+    // Fired once per component, right where its header row's right column has already been
+    // positioned (background bar already drawn) - lets a consumer draw something there (an enable/
+    // disable checkbox, a delete "[X]" button, a status icon, ...) without needing a per-property tag,
+    // since a component/object has no equivalent to obj_member's per-field tags to hang one off. No
+    // Path parameter (unlike on_override_check et al.) - a component header isn't a property, the
+    // (type::object&, instance) pair alone is enough to identify which one this is (the consumer
+    // already knows how to go from an instance pointer back to whatever type/id it cares about, same
+    // as EntityInspectorComponentMap-style lookups used elsewhere for this exact purpose). Broadcast
+    // (fires for every component; the consumer checks Object/pBase itself) rather than a per-component
+    // registration, matching every other delegate here.
+    using on_component_header_render = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*>;
+
     // First (least invasive) of 4 planned levels of custom-rendering control, in increasing order of
     // how much of a row's normal rendering gets taken over: (1) append after the normal value widget
     // - this one, purely additive, nothing skipped; (2) replace the value widget entirely, left column
@@ -551,6 +563,8 @@ public:
     on_override_check           m_OnOverrideCheck;          // Registered by a consumer that has some notion of "base value" for its own properties (a prefab/template/material-instance source) - called per row; if it reports true, the row renders with an override indicator and a revert button
     on_override_reset           m_OnOverrideReset;          // Fired when the revert button (above) is clicked - consumer's job to actually remove/reset the override however that's meaningful for their own data model
 
+    on_component_header_render  m_OnComponentHeaderRender;  // Fired once per component, right column of its header row already positioned - lets a consumer draw something there (enable/disable, delete, status, ...) - see the using declaration's own comment
+
     on_custom_render_append         m_OnCustomRenderAppend;         // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
     on_custom_render_replace_value  m_OnCustomRenderReplaceValue;   // Fired once per property BEFORE its value column would normally render - consumer sets the trailing bool true to draw its own widget instead and skip the default one entirely (level 2 of 4)
     on_custom_render_replace_row    m_OnCustomRenderReplaceRow;     // Fired once per property BEFORE its left-column label would normally render - consumer sets the trailing bool true to take over BOTH columns (the override-revert button, if any, still renders regardless) (level 3 of 4)
@@ -629,6 +643,18 @@ protected:
     ImColor     ComputeRowColor                      ( int Depth, int GlobalIndex )          const   noexcept;
     void        HelpMarker                          ( const char* desc )                    const   noexcept;
     void        Help                                ( const entry& Entry )                  const   noexcept;
+
+    // The one place every popup in the inspector should open through (the revert-menu popup already
+    // does; any future one - the component-header "[X]" growing into its own menu, an array-element
+    // context menu, etc. - should too) instead of a raw ImGui::BeginPopup. Positions itself away from
+    // whichever viewport edge it's nearest, the same "grow back toward the center" trick
+    // HelpMarker/Help already use for tooltips (see PlaceTooltipAwayFromEdges's own comment) - just
+    // applied once when the popup first appears (ImGuiCond_Appearing) rather than every frame
+    // (ImGuiCond_Always), since a popup - unlike a tooltip - stays open across frames and the user's
+    // mouse may move INTO it; repositioning it every frame the way a tooltip does would make it chase
+    // the cursor instead of sitting still once opened. OpenPopup itself is unchanged (plain
+    // ImGui::OpenPopup(pID)) - only the BeginPopup half needs the custom placement.
+    bool        BeginCustomPopup                    ( const char* pID )                     const   noexcept;
 
 protected:
 

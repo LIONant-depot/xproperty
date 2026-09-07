@@ -1,4 +1,6 @@
 
+#ifndef XPROPERTY_SPROP_CONTAINER_H
+#define XPROPERTY_SPROP_CONTAINER_H
 #pragma once
 namespace xproperty::sprop
 {
@@ -13,4 +15,4 @@ namespace xproperty::sprop
         std::vector<prop>   m_Properties {};
     };
 }
-
+#endif

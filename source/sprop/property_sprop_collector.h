@@ -1,3 +1,5 @@
+#ifndef XPROPERTY_SPROP_COLLECTOR_H
+#define XPROPERTY_SPROP_COLLECTOR_H
 #pragma once
 namespace xproperty::sprop
 {
@@ -303,3 +305,4 @@ namespace xproperty::sprop
         }
     };
 }
+#endif

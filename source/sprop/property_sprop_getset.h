@@ -1,3 +1,5 @@
+#ifndef XPROPERTY_SPROP_GETSET_H
+#define XPROPERTY_SPROP_GETSET_H
 #pragma once
 namespace xproperty::sprop
 {
@@ -374,3 +376,4 @@ namespace xproperty::sprop
         io_property<true>(Error, pObject, PropObject, Property, Context);
     }
 }
+#endif

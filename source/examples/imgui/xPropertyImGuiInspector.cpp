@@ -1377,14 +1377,14 @@ namespace xproperty::ui::details
 
     struct group_render
     {
-        static void RenderElement( inspector::entry& GroupEntry, int iElement, xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags, inspector& Inspector, inspector::entry& IEntry ) noexcept
+        static void RenderElement( inspector::entry& GroupEntry, int iElement, xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags, inspector& Inspector, inspector::entry& IEntry, const xproperty::type::object& Object, void* pInstance ) noexcept
         {
             //
             // Handle the case of vector2
             // All vector 2 should have 2 elements in the following order...
             // [0] = X, [1] = Y
             //
-            if( GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v 
+            if( GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v
              || GroupEntry.m_GroupGUID == xproperty::settings::vector3_group::guid_v)
             {
                 int         MaxElemens = GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v ? 2 : 3;
@@ -1398,8 +1398,22 @@ namespace xproperty::ui::details
                 if (iElement == 0) ImGui::PushItemWidth(Width);
                 else               ImGui::SameLine(0, 2);
 
+                // This specific axis's own override state (IEntry.m_Property.m_Path is THIS axis's
+                // full path, e.g. "Transform/Position/Y" - not the packed group's own "Transform/
+                // Position") - checked BEFORE the label so the "X:"/"Y:"/"Z:" mini-label itself can
+                // tint blue exactly like a regular property's label does (same color, same mechanism
+                // - PushStyleColor(ImGuiCol_Text) - not a separate box/ring convention of its own),
+                // so a packed vector row shows precisely WHICH axis differs, consistent with how every
+                // other overridden property already reads (see the row-level aggregation this pairs
+                // with, just above where this group's header row itself gets drawn).
+                bool bAxisOverridden = false;
+                if (IEntry.m_pOverrideCheck) IEntry.m_pOverrideCheck(Inspector, Object, pInstance, IEntry.m_Property.m_Path, IEntry.m_Property.m_Value, bAxisOverridden);
+                else                         Inspector.m_OnOverrideCheck.NotifyAll(Inspector, Object, pInstance, IEntry.m_Property.m_Path, IEntry.m_Property.m_Value, bAxisOverridden);
+
                 if (Flags.m_bShowReadOnly) ImGui::BeginDisabled(true);
+                if (bAxisOverridden) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 170, 255, 255));
                 ImGui::Text("%c:", Entry.m_pName[0]);
+                if (bAxisOverridden) ImGui::PopStyleColor();
                 if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) Inspector.Help(IEntry);
                 ImGui::SameLine();
@@ -1852,6 +1866,13 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddRectFilled( pos, ImVec2( pos.x + ImGui::GetContentRegionAvail().x, pos.y + ImGui::GetFrameHeight() ), ImGui::GetColorU32( ImGuiCol_Header ) );
+
+        // Right column of the component's own header row - already positioned, background bar already
+        // drawn behind whatever gets drawn here. Fires unconditionally (whether this component's
+        // properties are expanded or collapsed - the header itself always renders) so a consumer can
+        // draw an enable/disable toggle, a delete "[X]", a status icon, etc. right on the header line.
+        m_OnComponentHeaderRender.NotifyAll(*this, *C.m_Base.first, C.m_Base.second);
+
         ImGui::PopStyleVar();
     }
         
@@ -2950,10 +2971,34 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // second/base object, whichever strategy the consumer uses. The already-resolved current
             // value is passed too so a simple consumer doesn't need to re-fetch it.
             bool bIsOverridden = false;
-            // Property's own tag gets first say (see member_override_check_t's own comment); falls
-            // through to the broadcast delegate only if the property carries no tag of its own.
-            if (E.m_pOverrideCheck) E.m_pOverrideCheck( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden );
-            else                    m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden);
+            // A packed group row (vector2/vector3 - E here is the group's own HEADER entry, its Path
+            // is the group's base path e.g. "Transform/Position", NOT any one axis's) has no override
+            // state of its own to check - what a consumer actually tracks is per-axis ("Transform/
+            // Position/Y"), one level down in C.m_List right after this header entry. So this row
+            // reads as overridden if ANY axis differs (OR across the group), not by asking about the
+            // header's own path (which would never match anything a consumer recorded). The revert
+            // click below mirrors this same per-axis walk to know exactly which axes to reset.
+            if (E.m_GroupGUID != 0)
+            {
+                const int GroupN = (E.m_GroupGUID == xproperty::settings::vector2_group::guid_v) ? 2
+                                 : (E.m_GroupGUID == xproperty::settings::vector3_group::guid_v) ? 3 : 1;
+                for (int i = 0; i < GroupN && bIsOverridden == false; ++i)
+                {
+                    if (static_cast<std::size_t>(iE) + 1 + i >= C.m_List.size()) break;
+                    auto& SubEntry = *C.m_List[iE + 1 + i];
+                    bool  bSubOverridden = false;
+                    if (SubEntry.m_pOverrideCheck) SubEntry.m_pOverrideCheck( *this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path, SubEntry.m_Property.m_Value, bSubOverridden );
+                    else                           m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path, SubEntry.m_Property.m_Value, bSubOverridden);
+                    bIsOverridden = bIsOverridden || bSubOverridden;
+                }
+            }
+            else
+            {
+                // Property's own tag gets first say (see member_override_check_t's own comment); falls
+                // through to the broadcast delegate only if the property carries no tag of its own.
+                if (E.m_pOverrideCheck) E.m_pOverrideCheck( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden );
+                else                    m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bIsOverridden);
+            }
             if (bIsOverridden)
             {
                 // Tint stays pushed through the label draw below too (matches E20's own convention -
@@ -2961,8 +3006,55 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 170, 255, 255));
                 if (ImGui::Button(">"))
                 {
-                    if (E.m_pOverrideReset) E.m_pOverrideReset( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path );
-                    else                    m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                    // A group (vector2/vector3) offers a CHOICE instead of always reverting every axis
+                    // at once - "Revert X"/"Revert Y"/"Revert Z" plus "Revert All", an extensible menu
+                    // rather than one all-or-nothing click. A plain (non-group) property still has
+                    // exactly one thing to revert, so it stays a single click with no menu at all - the
+                    // string literal ID below is already uniquely scoped per-row via E.m_LeftUIGUID's
+                    // PushID further up, no extra ID plumbing needed.
+                    if (E.m_GroupGUID != 0) ImGui::OpenPopup("##RevertGroupMenu");
+                    else
+                    {
+                        if (E.m_pOverrideReset) E.m_pOverrideReset( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path );
+                        else                    m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                    }
+                }
+                if (E.m_GroupGUID != 0 && BeginCustomPopup("##RevertGroupMenu"))
+                {
+                    const int GroupN = (E.m_GroupGUID == xproperty::settings::vector2_group::guid_v) ? 2
+                                     : (E.m_GroupGUID == xproperty::settings::vector3_group::guid_v) ? 3 : 1;
+                    for (int i = 0; i < GroupN; ++i)
+                    {
+                        if (static_cast<std::size_t>(iE) + 1 + i >= C.m_List.size()) break;
+                        auto& SubEntry = *C.m_List[iE + 1 + i];
+
+                        // Only offer to revert an axis that's actually overridden - the row-level
+                        // check above already establishes at least one is, but not necessarily this one.
+                        bool bSubOverridden = false;
+                        if (SubEntry.m_pOverrideCheck) SubEntry.m_pOverrideCheck( *this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path, SubEntry.m_Property.m_Value, bSubOverridden );
+                        else                           m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path, SubEntry.m_Property.m_Value, bSubOverridden);
+                        if (bSubOverridden == false) continue;
+
+                        char RevertLabel[32];
+                        snprintf(RevertLabel, sizeof(RevertLabel), "Revert %s", SubEntry.m_pName);
+                        if (ImGui::MenuItem(RevertLabel))
+                        {
+                            if (SubEntry.m_pOverrideReset) SubEntry.m_pOverrideReset( *this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path );
+                            else                           m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path);
+                        }
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Revert All"))
+                    {
+                        for (int i = 0; i < GroupN; ++i)
+                        {
+                            if (static_cast<std::size_t>(iE) + 1 + i >= C.m_List.size()) break;
+                            auto& SubEntry = *C.m_List[iE + 1 + i];
+                            if (SubEntry.m_pOverrideReset) SubEntry.m_pOverrideReset( *this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path );
+                            else                           m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, SubEntry.m_Property.m_Path);
+                        }
+                    }
+                    ImGui::EndPopup();
                 }
                 HelpMarker( "This property has been overridden from its base value - click to revert" );
                 ImGui::SameLine();
@@ -3088,7 +3180,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
             if (ParentEntry.m_GroupGUID)
             {
-                xproperty::ui::details::group_render::RenderElement(ParentEntry, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry);
+                xproperty::ui::details::group_render::RenderElement(ParentEntry, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry, *C.m_Base.first, C.m_Base.second);
             }
             else
             {
@@ -3374,7 +3466,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     for (int i = 0; i < n; ++i)
                     {
                         auto& Entry = *C.m_List[iE + i];
-                        xproperty::ui::details::group_render::RenderElement(E, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry);
+                        xproperty::ui::details::group_render::RenderElement(E, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry, *C.m_Base.first, C.m_Base.second);
                     }
                 }
                 else
@@ -3402,7 +3494,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             {
                                 if (E.m_GroupGUID)
                                 {
-                                    xproperty::ui::details::group_render::RenderElement(E, i, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry);
+                                    xproperty::ui::details::group_render::RenderElement(E, i, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry, *C.m_Base.first, C.m_Base.second);
                                 }
                                 else
                                 {
@@ -3771,7 +3863,14 @@ namespace
     // outside the screen"). Anchoring the window's OWN pivot corner to whichever side of the viewport
     // the mouse is on makes it grow back TOWARD the center instead of past the edge, regardless of
     // content size - simpler and more robust than pre-measuring text to clamp a top-left position.
-    void PlaceTooltipAwayFromEdges() noexcept
+    //
+    // Shared by both tooltips and popups (see inspector::BeginCustomPopup) - only WHEN the position
+    // gets (re)applied differs between the two, hence Cond being a parameter rather than hardcoded:
+    // a tooltip redraws fresh every frame while hovering, so it should track the live mouse position
+    // continuously (ImGuiCond_Always); a popup stays open across frames and the user's mouse may move
+    // INTO it, so it must only be placed ONCE, the frame it first appears (ImGuiCond_Appearing) -
+    // applying this every frame would make an open popup chase the cursor instead of sitting still.
+    void PlaceAwayFromEdges( ImGuiCond Cond, float Offset ) noexcept
     {
         const ImGuiViewport* pViewport = ImGui::GetMainViewport();
         const ImVec2         Mouse     = ImGui::GetIO().MousePos;
@@ -3779,11 +3878,22 @@ namespace
         ( (Mouse.x - pViewport->WorkPos.x) > pViewport->WorkSize.x * 0.5f ? 1.0f : 0.0f
         , (Mouse.y - pViewport->WorkPos.y) > pViewport->WorkSize.y * 0.5f ? 1.0f : 0.0f
         );
-        // Same small offset ImGui's own default tooltip placement uses, just signed to lead AWAY from
-        // the edge the pivot just chose (e.g. pivot 1.0 on the right edge subtracts, so the window
-        // still clears the cursor instead of sitting under it).
-        constexpr float Offset = 16.0f;
-        ImGui::SetNextWindowPos(ImVec2(Mouse.x + (Pivot.x > 0.0f ? -Offset : Offset), Mouse.y + (Pivot.y > 0.0f ? -Offset : Offset)), ImGuiCond_Always, Pivot);
+        // Signed to lead AWAY from the edge the pivot just chose (e.g. pivot 1.0 on the right edge
+        // subtracts, so the window still clears the cursor instead of sitting under/on top of it).
+        ImGui::SetNextWindowPos(ImVec2(Mouse.x + (Pivot.x > 0.0f ? -Offset : Offset), Mouse.y + (Pivot.y > 0.0f ? -Offset : Offset)), Cond, Pivot);
+    }
+
+    inline void PlaceTooltipAwayFromEdges() noexcept
+    {
+        // Same small offset ImGui's own default tooltip placement uses.
+        PlaceAwayFromEdges( ImGuiCond_Always, 16.0f );
+    }
+
+    inline void PlacePopupAwayFromEdges() noexcept
+    {
+        // Tighter than a tooltip's offset - a popup is a real interactive window the user reaches for
+        // right at the button that opened it, not a hover hint growing out from under the cursor.
+        PlaceAwayFromEdges( ImGuiCond_Appearing, 4.0f );
     }
 }
 
@@ -3842,4 +3952,12 @@ void xproperty::inspector::Help( const entry& Entry ) const noexcept
 
     ImGui::EndTooltip();
     ImGui::PopStyleVar();
+}
+
+//-----------------------------------------------------------------------------------
+
+bool xproperty::inspector::BeginCustomPopup( const char* pID ) const noexcept
+{
+    PlacePopupAwayFromEdges();
+    return ImGui::BeginPopup( pID );
 }

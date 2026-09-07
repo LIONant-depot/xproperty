@@ -8,6 +8,7 @@
 
 #include "property_sprop.h"
 #include "dependencies/xtextfile/source/xtextfile.h"
+#include <cstdio>
 
 namespace xproperty::sprop::serializer
 {
@@ -238,6 +239,11 @@ namespace xproperty::sprop::serializer
 
         xproperty::sprop::collector(pObject, PropertyObj, Context, [&](const char* pPropertyName, xproperty::any&& Value, const xproperty::type::members& Member, bool isConst, const void* pInstance)
         {
+            // Persistent (not a one-off) - flushed unconditionally so a crash/hung assert mid-walk
+            // still leaves the exact leaf property that was being processed in the log.
+            std::printf("[sprop::serializer::Stream] visiting '%s'\n", pPropertyName);
+            std::fflush(stdout);
+
             const xproperty::flags::type Flags = [&]
             {
                 if (auto* pDynamicFlags = Member.getUserData<xproperty::settings::member_dynamic_flags_t>(); pDynamicFlags)
