@@ -24,6 +24,17 @@
 
 #include <unordered_map>
 
+// Forward declaration - the real definition lives much further down in this file (right before
+// xproperty::inspector::Help(), which already used it), but the string-truncation/enum-help tooltips
+// inside xproperty::ui::details below were missing this same edge-avoidance placement, so a tooltip
+// hovered near the screen edge got clipped past the viewport instead of flipping toward the center
+// (direct user report). Declared here at GLOBAL scope (not nested inside xproperty::ui::details, which
+// opens right below) specifically so it resolves to the SAME anonymous-namespace entity as the later
+// definition, which is also at global scope - a nested declaration here would silently create an
+// unrelated, never-defined entity instead (an unqualified call at global scope still finds this via
+// ordinary enclosing-scope lookup, even from inside xproperty::ui::details).
+namespace { void PlaceTooltipAwayFromEdges() noexcept; }
+
 namespace xproperty::ui::details
 {
     namespace
@@ -601,6 +612,9 @@ namespace xproperty::ui::details
         if (Overflow > 0.0f && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) )
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            // Flips toward screen center near an edge instead of clipping past it - direct user report
+            // (already applied to Help()'s own tooltip; this one and its siblings were missing it).
+            PlaceTooltipAwayFromEdges();
             // Hard-capped max width - direct user request: a very long string/help text should never let a
             // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
             // content below uses - this bounds the actual WINDOW itself.
@@ -699,6 +713,9 @@ namespace xproperty::ui::details
         if (Overflow > 0.0f && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            // Flips toward screen center near an edge instead of clipping past it - direct user report
+            // (already applied to Help()'s own tooltip; this one and its siblings were missing it).
+            PlaceTooltipAwayFromEdges();
             // Hard-capped max width - direct user request: a very long string/help text should never let a
             // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
             // content below uses - this bounds the actual WINDOW itself.
@@ -1089,6 +1106,9 @@ namespace xproperty::ui::details
         if (Overflow > 0.0f && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            // Flips toward screen center near an edge instead of clipping past it - direct user report
+            // (already applied to Help()'s own tooltip; this one and its siblings were missing it).
+            PlaceTooltipAwayFromEdges();
             // Hard-capped max width - direct user request: a very long string/help text should never let a
             // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
             // content below uses - this bounds the actual WINDOW itself.
@@ -1244,6 +1264,10 @@ namespace xproperty::ui::details
                         if (ImGui::IsItemHovered())
                         {
                             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10,10));
+                            // Flips toward screen center near an edge instead of clipping past it -
+                            // direct user report (already applied to Help()'s own tooltip; this one
+                            // and its siblings were missing it).
+                            PlaceTooltipAwayFromEdges();
                             // Hard-capped max width - direct user request: a very long string/help text should never let a
                             // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
                             // content below uses - this bounds the actual WINDOW itself.
@@ -3913,30 +3937,58 @@ namespace
     // continuously (ImGuiCond_Always); a popup stays open across frames and the user's mouse may move
     // INTO it, so it must only be placed ONCE, the frame it first appears (ImGuiCond_Appearing) -
     // applying this every frame would make an open popup chase the cursor instead of sitting still.
-    void PlaceAwayFromEdges( ImGuiCond Cond, float Offset ) noexcept
+    // AssumedSize: this tooltip's own known/capped content size (see SetNextWindowSizeConstraints at
+    // each call site, 480x400) - a plain "which half of the viewport is the mouse in" split (the
+    // original version of this function) picks a side without ever checking whether that side actually
+    // HAS enough room, so a tooltip could still get clipped up to ~50% in the worst case (direct user
+    // report, after confirming the flip logic existed but wasn't aggressive enough: "about 50% is
+    // being cut off by the screen worse case... you should be careful either edge (left/right)").
+    //
+    // A second attempt checked real remaining space against ImGui::GetMainViewport()'s own
+    // WorkPos/WorkSize - WORSE than the 50% split for the right edge specifically (direct user report,
+    // with a screenshot showing the tooltip rendering entirely past the real screen edge despite a
+    // "correctly" computed flip). Root cause, confirmed via a temporary diagnostic printf in the E10
+    // copy of this function: GetMainViewport()->WorkPos/WorkSize reflects THIS APP WINDOW's own bounds
+    // (e.g. a window sitting at desktop x=1280..2552 on a multi-monitor desktop), NOT the real
+    // monitor/screen edge. There is no ImGui-level source of truth for "where does the real screen
+    // actually end" in a backend that doesn't populate real monitor data (this file already reaches
+    // for raw Win32 elsewhere - <windows.h> is already included above), so the monitor under the
+    // cursor is queried directly instead.
+    void PlaceAwayFromEdges( ImGuiCond Cond, float Offset, ImVec2 AssumedSize ) noexcept
     {
-        const ImGuiViewport* pViewport = ImGui::GetMainViewport();
-        const ImVec2         Mouse     = ImGui::GetIO().MousePos;
-        const ImVec2         Pivot
-        ( (Mouse.x - pViewport->WorkPos.x) > pViewport->WorkSize.x * 0.5f ? 1.0f : 0.0f
-        , (Mouse.y - pViewport->WorkPos.y) > pViewport->WorkSize.y * 0.5f ? 1.0f : 0.0f
+        const ImVec2 MouseF = ImGui::GetIO().MousePos;
+        const POINT  Mouse{ static_cast<LONG>(MouseF.x), static_cast<LONG>(MouseF.y) };
+        const HMONITOR hMonitor = ::MonitorFromPoint(Mouse, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO MonitorInfo{ sizeof(MONITORINFO) };
+        ::GetMonitorInfo(hMonitor, &MonitorInfo);
+
+        const float SpaceRight = static_cast<float>(MonitorInfo.rcWork.right)  - MouseF.x;
+        const float SpaceLeft  = MouseF.x - static_cast<float>(MonitorInfo.rcWork.left);
+        const float SpaceBelow = static_cast<float>(MonitorInfo.rcWork.bottom) - MouseF.y;
+        const float SpaceAbove = MouseF.y - static_cast<float>(MonitorInfo.rcWork.top);
+
+        const ImVec2 Pivot
+        ( (SpaceRight < AssumedSize.x && SpaceLeft  > SpaceRight) ? 1.0f : 0.0f
+        , (SpaceBelow < AssumedSize.y && SpaceAbove > SpaceBelow) ? 1.0f : 0.0f
         );
         // Signed to lead AWAY from the edge the pivot just chose (e.g. pivot 1.0 on the right edge
         // subtracts, so the window still clears the cursor instead of sitting under/on top of it).
-        ImGui::SetNextWindowPos(ImVec2(Mouse.x + (Pivot.x > 0.0f ? -Offset : Offset), Mouse.y + (Pivot.y > 0.0f ? -Offset : Offset)), Cond, Pivot);
+        ImGui::SetNextWindowPos(ImVec2(MouseF.x + (Pivot.x > 0.0f ? -Offset : Offset), MouseF.y + (Pivot.y > 0.0f ? -Offset : Offset)), Cond, Pivot);
     }
 
     inline void PlaceTooltipAwayFromEdges() noexcept
     {
-        // Same small offset ImGui's own default tooltip placement uses.
-        PlaceAwayFromEdges( ImGuiCond_Always, 16.0f );
+        // Same small offset ImGui's own default tooltip placement uses. 480x400 matches every
+        // tooltip's own SetNextWindowSizeConstraints width cap plus a generous height estimate (these
+        // info tooltips run 4-10 rows plus a help paragraph) - a real assumption, not a placeholder.
+        PlaceAwayFromEdges( ImGuiCond_Always, 16.0f, ImVec2(480.0f, 400.0f) );
     }
 
     inline void PlacePopupAwayFromEdges() noexcept
     {
         // Tighter than a tooltip's offset - a popup is a real interactive window the user reaches for
         // right at the button that opened it, not a hover hint growing out from under the cursor.
-        PlaceAwayFromEdges( ImGuiCond_Appearing, 4.0f );
+        PlaceAwayFromEdges( ImGuiCond_Appearing, 4.0f, ImVec2(400.0f, 400.0f) );
     }
 }
 
