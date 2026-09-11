@@ -534,8 +534,9 @@ namespace xproperty::ui::details
        // auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
 
         ImVec2 charSize = ImGui::CalcTextSize("A");
-        float f = ImGui::GetColumnWidth() / charSize.x;
-        float f2 = Value.length() - f;
+        // Declared at function scope (not inside the block below) - the too-long-for-a-tooltip check
+        // at the very end of this function needs it too, same as the old f2 it replaces.
+        float Overflow = 0.0f;
 
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
@@ -543,11 +544,22 @@ namespace xproperty::ui::details
 
             Value.copy(g_ScrachCharBuffer.data(), InputLength );
             g_ScrachCharBuffer[InputLength] = 0;
+
+            // Real pixel width of the actual rendered string - NOT Value.length()*charSize.x, which
+            // assumed every character is exactly as wide as a capital "A": true for a monospace font,
+            // false for a proportional one - direct user report, with a screenshot, once E29's default
+            // font changed from monospace Consolas to proportional Segoe UI: "the end of the string is
+            // poorly aligned and leaves a big gap".
+            Overflow = ImGui::CalcTextSize(g_ScrachCharBuffer.data()).x - ImGui::GetColumnWidth();
+
             ImGui::BeginGroup();
 
             const auto CurPos   = ImGui::GetCursorPosX();
-            const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
-            if( WentOver ) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
+            const bool WentOver = Overflow > 0.0f && Cmd.m_isEditing == false;
+            // Shift left by the REAL overflow plus a small fixed safety margin (direct user tuning:
+            // string lands flush against the column's right edge - only when it's actually too long
+            // to fit, matching the ask exactly.
+            if( WentOver ) ImGui::SetCursorPosX(CurPos - Overflow - 6.0f);
 
             Cmd.m_isChange = ImGui::InputText( "##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
             if( ImGui::IsItemActivated() )
@@ -586,11 +598,15 @@ namespace xproperty::ui::details
         if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
         // For strings that are too long... we will show a tooltip with the full string
-        if (f2 > -1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) )
+        if (Overflow > 0.0f && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) )
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            // Hard-capped max width - direct user request: a very long string/help text should never let a
+            // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
+            // content below uses - this bounds the actual WINDOW itself.
+            ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
             ImGui::BeginTooltip();
-            ImGui::PushTextWrapPos(charSize.x * 100);
+            ImGui::PushTextWrapPos(ImMin(charSize.x * 100, 440.0f)); // capped - see SetNextWindowSizeConstraints above
 
             ImGui::TextUnformatted( Value.c_str() );
 
@@ -605,8 +621,9 @@ namespace xproperty::ui::details
         // auto& I = reinterpret_cast<const xproperty::member_ui<std::string>::data&>(IB);
 
         ImVec2 charSize = ImGui::CalcTextSize("A");
-        float f         = ImGui::GetColumnWidth() / charSize.x;
-        float f2        = Value.length() - f;
+        // Declared at function scope (not inside the block below) - the too-long-for-a-tooltip check
+        // at the very end of this function needs it too, same as the old f2 it replaces.
+        float Overflow  = 0.0f;
 
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
@@ -614,16 +631,26 @@ namespace xproperty::ui::details
 
             Value.copy(g_WScrachCharBuffer.data(), InputLength);
             g_WScrachCharBuffer[InputLength] = 0;
+
+            // convert wide string to narrow to display with imgui - moved up before the overflow math
+            // below so it measures the REAL rendered pixel width of the actual (narrow, UTF8) string,
+            // not Value.length()*charSize.x, which assumed every character is exactly as wide as a
+            // capital "A": true for a monospace font, false for a proportional one - direct user
+            // report, with a screenshot, once E29's default font changed from monospace Consolas to
+            // proportional Segoe UI: "the end of the string is poorly aligned and leaves a big gap".
+            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
+            WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
+
+            Overflow = ImGui::CalcTextSize(g_ScrachCharBuffer.data()).x - ImGui::GetColumnWidth();
+
             ImGui::BeginGroup();
 
             const auto CurPos = ImGui::GetCursorPosX();
-            const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
-            if (WentOver) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
-
-
-            // convert wide string to narrow to display with imgui
-            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
-            WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
+            const bool WentOver = Overflow > 0.0f && Cmd.m_isEditing == false;
+            // Shift left by the REAL overflow plus a small fixed safety margin (direct user tuning:
+            // string lands flush against the column's right edge - only when it's actually too long
+            // to fit, matching the ask exactly.
+            if (WentOver) ImGui::SetCursorPosX(CurPos - Overflow - 6.0f);
 
             // Let IMGUI handle the actual string...
             Cmd.m_isChange = ImGui::InputText("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
@@ -669,11 +696,15 @@ namespace xproperty::ui::details
         if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
         // For strings that are too long... we will show a tooltip with the full string
-        if (f2 > -1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        if (Overflow > 0.0f && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            // Hard-capped max width - direct user request: a very long string/help text should never let a
+            // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
+            // content below uses - this bounds the actual WINDOW itself.
+            ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
             ImGui::BeginTooltip();
-            ImGui::PushTextWrapPos(charSize.x * 100);
+            ImGui::PushTextWrapPos(ImMin(charSize.x * 100, 440.0f)); // capped - see SetNextWindowSizeConstraints above
 
             // convert wide string to narrow to display with imgui
             auto size_needed = WideCharToMultiByte(CP_UTF8, 0, Value.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -900,36 +931,40 @@ namespace xproperty::ui::details
 
         ImVec2 charSize     = ImGui::CalcTextSize("A");
         float ButtonWidth   = charSize.x * 3;
-        float f             = (ImGui::GetColumnWidth() - ButtonWidth) / charSize.x;
-        float f2            = Value.length() - f;
-
-        float ItemWidth = [&]
-        {
-            if( f2 > -1 )
-            {
-                return Value.length() * charSize.x + 3;
-            }
-            else
-            {
-                return ImGui::GetColumnWidth() - ButtonWidth - 3;
-            }            
-        }();
+        // Declared at function scope (not inside the block below) - the too-long-for-a-tooltip check
+        // at the very end of this function needs it too, same as the old f2 it replaces.
+        float Overflow      = 0.0f;
 
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
             Value.copy(g_WScrachCharBuffer.data(), Value.length());
             g_WScrachCharBuffer[Value.length()] = 0;
+
+            // convert wide string to narrow to display with imgui - moved up before the overflow math
+            // below so it measures the REAL rendered pixel width of the actual (narrow, UTF8) string,
+            // not Value.length()*charSize.x, which assumed every character is exactly as wide as a
+            // capital "A": true for a monospace font, false for a proportional one - direct user
+            // report, with a screenshot, once E29's default font changed from monospace Consolas to
+            // proportional Segoe UI: "the end of the string is poorly aligned and leaves a big gap".
+            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
+            WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
+
+            const float TextWidth   = ImGui::CalcTextSize(g_ScrachCharBuffer.data()).x;
+            const float AvailWidth  = ImGui::GetColumnWidth() - ButtonWidth;
+            Overflow                = TextWidth - AvailWidth;
+            // While overflowing (and not mid-edit), widen the widget to the string's own real width so
+            // the shift below can slide the WHOLE string leftward - the excess then clips against the
+            // column's own edge, leaving exactly the tail flush against the right border. Matches the
+            // ask exactly: only kicks in when the string doesn't fit.
+            const float ItemWidth = (Overflow > 0.0f) ? (TextWidth + 3.0f) : (AvailWidth - 3.0f);
+
             ImGui::BeginGroup();
 
             const auto CurPos = ImGui::GetCursorPosX();
-            const bool WentOver = f2 > -1 && Cmd.m_isEditing == false;
-            if (WentOver) ImGui::SetCursorPosX(CurPos - (f2 + 1) * charSize.x);
+            const bool WentOver = Overflow > 0.0f && Cmd.m_isEditing == false;
+            if (WentOver) ImGui::SetCursorPosX(CurPos - Overflow - 6.0f);
 
             if (Cmd.m_isEditing == false) ImGui::PushItemWidth(ItemWidth);
-
-            // convert wide string to narrow to display with imgui
-            auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
-            WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
 
             // Let IMGUI handle the actual string...
             Cmd.m_isChange = ImGui::InputText("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
@@ -1051,11 +1086,15 @@ namespace xproperty::ui::details
         if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
         // For strings that are too long... we will show a tooltip with the full string
-        if (f2 > -1 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        if (Overflow > 0.0f && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 10, 10 });
+            // Hard-capped max width - direct user request: a very long string/help text should never let a
+            // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
+            // content below uses - this bounds the actual WINDOW itself.
+            ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
             ImGui::BeginTooltip();
-            ImGui::PushTextWrapPos(charSize.x * 100);
+            ImGui::PushTextWrapPos(ImMin(charSize.x * 100, 440.0f)); // capped - see SetNextWindowSizeConstraints above
 
             // convert wide string to narrow to display with imgui
             auto size_needed = WideCharToMultiByte(CP_UTF8, 0, Value.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -1205,8 +1244,12 @@ namespace xproperty::ui::details
                         if (ImGui::IsItemHovered())
                         {
                             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10,10));
+                            // Hard-capped max width - direct user request: a very long string/help text should never let a
+                            // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
+                            // content below uses - this bounds the actual WINDOW itself.
+                            ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
                             ImGui::BeginTooltip();
-                            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 50);
+                            ImGui::PushTextWrapPos(ImMin(ImGui::GetFontSize() * 50, 440.0f)); // capped - see SetNextWindowSizeConstraints above
                             ImGui::TextUnformatted(AnyValue.m_pType->m_RegisteredEnumSpan[n].m_pHelp);
                             ImGui::PopTextWrapPos();
                             ImGui::EndTooltip();
@@ -3903,8 +3946,12 @@ void xproperty::inspector::HelpMarker( const char* desc ) const noexcept
     {
         PlaceTooltipAwayFromEdges();
         ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, m_Settings.m_HelpWindowPadding );
+        // Hard-capped max width - direct user request: a very long string/help text should never let a
+        // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
+        // content below uses - this bounds the actual WINDOW itself.
+        ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
         ImGui::BeginTooltip();
-        ImGui::PushTextWrapPos( ImGui::GetFontSize() * m_Settings.m_HelpWindowSizeInChars );
+        ImGui::PushTextWrapPos( ImMin(ImGui::GetFontSize() * m_Settings.m_HelpWindowSizeInChars, 440.0f) ); // capped - see SetNextWindowSizeConstraints above
         ImGui::TextUnformatted( desc );
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
@@ -3918,24 +3965,40 @@ void xproperty::inspector::Help( const entry& Entry ) const noexcept
 {
     PlaceTooltipAwayFromEdges();
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, m_Settings.m_HelpWindowPadding );
+    // Hard-capped max width - direct user request: a very long string/help text should never let a
+    // tooltip grow to fill the whole screen. Independent of whatever wrap-width heuristic the
+    // content below uses - this bounds the actual WINDOW itself.
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
     ImGui::BeginTooltip();
-    ImGui::PushTextWrapPos( ImGui::GetFontSize() * m_Settings.m_HelpWindowSizeInChars );
+    ImGui::PushTextWrapPos( ImMin(ImGui::GetFontSize() * m_Settings.m_HelpWindowSizeInChars, 440.0f) ); // capped - see SetNextWindowSizeConstraints above
 
-    ImGui::TextDisabled("Name:     ");
-    ImGui::SameLine();
-    ImGui::Text("%s", Entry.m_pName);
+    // A real table instead of hand-padded label strings ("Name:     ", "FullName: ", ...) - that
+    // padding was tuned to make every label the same CHARACTER count, which only lines up under a
+    // monospace font; a proportional font (E29's own Segoe UI theme) renders each label at a
+    // different pixel width, breaking the alignment (direct user report, with a screenshot: "It looks
+    // like a mess... I think now we should use a table so that the left fields and the right ones are
+    // all properly align"). A table's own column boundaries align by pixel width, not character
+    // count, so this is correct for any font, proportional or monospace.
+    if (ImGui::BeginTable("##HelpTooltip", 2, ImGuiTableFlags_SizingFixedFit))
+    {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("Name:");
+        ImGui::TableSetColumnIndex(1); ImGui::Text("%s", Entry.m_pName);
 
-    ImGui::TextDisabled("Type:     ");
-    ImGui::SameLine();
-    ImGui::Text("%s", Entry.m_Property.m_Value.m_pType ? Entry.m_Property.m_Value.m_pType->m_pName : "<<Unkown>>");
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("Type:");
+        ImGui::TableSetColumnIndex(1); ImGui::Text("%s", Entry.m_Property.m_Value.m_pType ? Entry.m_Property.m_Value.m_pType->m_pName : "<<Unkown>>");
 
-    ImGui::TextDisabled( "FullName: ");
-    ImGui::SameLine();
-    ImGui::Text( "%s", Entry.m_Property.m_Path.c_str() );
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("FullName:");
+        ImGui::TableSetColumnIndex(1); ImGui::Text("%s", Entry.m_Property.m_Path.c_str());
 
-    ImGui::TextDisabled( "GUID:     " );
-    ImGui::SameLine();
-    ImGui::Text( "0x%x", Entry.m_GUID );
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("GUID:");
+        ImGui::TableSetColumnIndex(1); ImGui::Text("0x%x", Entry.m_GUID);
+
+        ImGui::EndTable();
+    }
 
     ImGui::TextDisabled("Help");
     ImGui::Separator();
