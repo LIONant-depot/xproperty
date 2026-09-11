@@ -613,7 +613,7 @@ namespace xproperty::ui::details
             const auto              InputLength = Value.length();
 
             Value.copy(g_WScrachCharBuffer.data(), InputLength);
-            g_ScrachCharBuffer[InputLength] = 0;
+            g_WScrachCharBuffer[InputLength] = 0;
             ImGui::BeginGroup();
 
             const auto CurPos = ImGui::GetCursorPosX();
