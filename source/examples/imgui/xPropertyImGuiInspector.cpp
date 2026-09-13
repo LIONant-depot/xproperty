@@ -3857,6 +3857,32 @@ void xproperty::inspector::Show(xproperty::settings::context& Context, std::func
 
 //-------------------------------------------------------------------------------------------------
 
+void xproperty::inspector::ShowEmbedded(xproperty::settings::context& Context) noexcept
+{
+    // Deliberately no "if (m_bWindowOpen == false) return;", no SetNextWindowSize, no Begin/End -
+    // see this method's own header comment. The caller already has a window open and is responsible
+    // for its own visibility/open-state; this only ever draws INTO that window.
+    m_pContext = &Context;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, m_Settings.m_WindowPadding);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, m_Settings.m_FramePadding);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, m_Settings.m_ItemSpacing);
+    ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, m_Settings.m_IndentSpacing);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+
+    ImGui::Columns(2);
+    ImGui::Separator();
+
+    Show();
+
+    ImGui::Columns(1);
+    ImGui::Separator();
+    ImGui::PopStyleVar(6);
+}
+
+//-------------------------------------------------------------------------------------------------
+
 ImColor xproperty::inspector::ComputeRowColor( int Depth, int GlobalIndex ) const noexcept
 {
     if( m_Settings.m_bRenderBackgroundDepth == false )

@@ -394,6 +394,18 @@ public:
                 void        AppendEntityComponent   ( const xproperty::type::object& PropObject, void* pBase, void* pUserData = nullptr) noexcept;
                 void        Show                    ( xproperty::settings::context& Context, std::function<void(void)> Callback ) noexcept;
 
+                // Renders the properties into whatever ImGui window is ALREADY open (no Begin/End,
+                // no SetNextWindowSize) - for a caller that owns its own window and wants to draw its
+                // own content (an "Add Component" combo, toolbar, etc.) alongside the inspector in
+                // THAT SAME window. Show(Context, Callback) above always opens its OWN independent
+                // window using m_pName - calling it from inside an already-open window (as E29's
+                // Inspector panel originally did) creates a second, genuinely separate floating
+                // window sharing the same title, not a section of the first. Every other example in
+                // this dependency's consumers legitimately wants that self-contained window and must
+                // keep using Show(Context, Callback) unchanged - this is a strict addition, not a
+                // replacement.
+                void        ShowEmbedded            ( xproperty::settings::context& Context ) noexcept;
+
                 // Edit-commit bracket for consumers that mutate properties OUTSIDE the normal
                 // per-row widget flow (custom-render callbacks, array-controls buttons) - the
                 // scalar per-row path (HandleElement, in the .cpp) already tracks its own
