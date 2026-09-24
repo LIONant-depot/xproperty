@@ -2462,8 +2462,6 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 const xproperty::type::members* pArrayMember   = Tree[iDepth].m_pArrayMember;
                 void*                           pArrayInstance = Tree[iDepth].m_pArrayInstance;
 
-                PushTree(Name.data(), bCustomRender, InstancePath, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
-
                 // Same Unity-style per-element controls as the atomic-array branch above, generalized
                 // to object (list_props) elements. A scalar element's whole value fits in one
                 // xproperty::any, so that branch could build everything from ordinary setProperty-by-
@@ -2474,6 +2472,11 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 // pointer is reachable. E itself is NOT the array's own entry at this point (it's the
                 // element's own first reflected sub-property - see this branch's own comment above), so
                 // the array's Member/list_table comes from the pArrayMember captured just above.
+                //
+                // Drawn BEFORE PushTree below, leftmost - same "icon cluster first, then the [i] label"
+                // layout already used by the atomic-array branch above, made consistent here too instead
+                // of trailing after the label the way this branch alone used to.
+                bool bShowArrayControls = false;
                 if (pArrayMember)
                 {
                     if (const auto* pListProps = std::get_if<xproperty::type::members::list_props>(&pArrayMember->m_Variant);
@@ -2514,6 +2517,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
                             if (bValidIndex && Table.m_bHasRealSetSize && !Tree[iDepth].m_isReadOnly)
                             {
+                                bShowArrayControls = true;
+
                                 void*      pInstance   = pArrayInstance;
                                 const auto SizeResult  = Table.TryGetSize(pInstance, *m_pContext);
                                 const std::size_t N    = SizeResult ? SizeResult.value() : 0;
@@ -2560,73 +2565,109 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                                 // branch's identical button cluster - see that PushStyleColor's own
                                 // comment.
                                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-                                ImGui::SameLine();
-                                ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // GripperBarHorizontal
-                                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+
+                                // Real tree arrow drawn FIRST (leftmost), THEN the icon cluster, THEN the
+                                // "[i]" label text - explicit request: icons belong between the arrow and
+                                // the number, not before the arrow and not after the number. TreeNodeEx
+                                // normally draws an arrow+label as one atomic unit (see PushTree above), so
+                                // getting anything between them means splitting the two apart: draw the
+                                // arrow here with an EMPTY display string (the "%s" overload PushTree
+                                // itself never needed), using Name.data() ("[i]") as the ID so open/collapse
+                                // state persists exactly as it did when PushTree drew it, then draw the
+                                // label as plain text ourselves once the icon cluster is done. Guards the
+                                // WHOLE row (arrow, icons, label) under the same "is the enclosing scope
+                                // open" check PushTree's own arrow draw used - PushID/PushStyleColor above
+                                // stay unconditional so the PopStyleColor/PopID below always stay balanced,
+                                // but nothing actually renders here for a row whose parent is collapsed.
+                                bool Open = iDepth < 0 ? true : Tree[iDepth].m_isOpen;
+                                if (Open)
                                 {
-                                    array_reorder_drag_payload Payload{ pInstance, ThisArrayGUID, CurrentIndex };
-                                    ImGui::SetDragDropPayload("XPROP_ARRAY_ELEMENT", &Payload, sizeof(Payload));
-                                    ImGui::Text("Move [%d]", CurrentIndex);
-                                    ImGui::EndDragDropSource();
-                                }
-                                // Peeked BEFORE BeginDragDropTarget - that call draws the "valid drop
-                                // zone" highlight automatically for ANY matching payload TYPE, before
-                                // the instance/GUID check below ever runs, so every other array in the
-                                // whole inspector would light up as droppable while dragging, only to
-                                // silently reject the drop afterward. Skipping BeginDragDropTarget
-                                // entirely for a genuinely non-matching payload means only the real
-                                // source array's own rows ever highlight at all.
-                                if (const ImGuiPayload* Peek = ImGui::GetDragDropPayload();
-                                    Peek && Peek->IsDataType("XPROP_ARRAY_ELEMENT") && Peek->DataSize == sizeof(array_reorder_drag_payload)
-                                    && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_pOwningInstance == pInstance
-                                    && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_ArrayGUID == ThisArrayGUID)
-                                {
-                                    if (ImGui::BeginDragDropTarget())
+                                    if (iDepth > 0 && Tree[iDepth - 1].m_OpenAll) ImGui::SetNextItemOpen(Tree[iDepth - 1].m_OpenAll > 0);
+                                    const ImGuiTreeNodeFlags TreeFlags = (Tree[iDepth].m_isDefaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0) | ((iDepth == -1) ? ImGuiTreeNodeFlags_Framed : 0);
+                                    Open = ImGui::TreeNodeEx(Name.data(), TreeFlags, "");
+                                    ImGui::SameLine();
+
+                                    ImGui::Button("\xEE\x9D\xAF", ImVec2(Sz, Sz)); // GripperBarHorizontal
+                                    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
                                     {
-                                        if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
-                                        {
-                                            const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
-                                            if (P.m_SourceIndex != CurrentIndex)
-                                            {
-                                                BeginEdit(*C.m_Base.first, C.m_Base.second, "Reorder Array Element");
-                                                MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
-                                            }
-                                        }
-                                        ImGui::EndDragDropTarget();
+                                        array_reorder_drag_payload Payload{ pInstance, ThisArrayGUID, CurrentIndex };
+                                        ImGui::SetDragDropPayload("XPROP_ARRAY_ELEMENT", &Payload, sizeof(Payload));
+                                        ImGui::Text("Move [%d]", CurrentIndex);
+                                        ImGui::EndDragDropSource();
                                     }
-                                }
-                                HelpMarker("Drag to reorder this element");
+                                    // Peeked BEFORE BeginDragDropTarget - that call draws the "valid drop
+                                    // zone" highlight automatically for ANY matching payload TYPE, before
+                                    // the instance/GUID check below ever runs, so every other array in the
+                                    // whole inspector would light up as droppable while dragging, only to
+                                    // silently reject the drop afterward. Skipping BeginDragDropTarget
+                                    // entirely for a genuinely non-matching payload means only the real
+                                    // source array's own rows ever highlight at all.
+                                    if (const ImGuiPayload* Peek = ImGui::GetDragDropPayload();
+                                        Peek && Peek->IsDataType("XPROP_ARRAY_ELEMENT") && Peek->DataSize == sizeof(array_reorder_drag_payload)
+                                        && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_pOwningInstance == pInstance
+                                        && static_cast<const array_reorder_drag_payload*>(Peek->Data)->m_ArrayGUID == ThisArrayGUID)
+                                    {
+                                        if (ImGui::BeginDragDropTarget())
+                                        {
+                                            if (const ImGuiPayload* Pay = ImGui::AcceptDragDropPayload("XPROP_ARRAY_ELEMENT"))
+                                            {
+                                                const auto& P = *static_cast<const array_reorder_drag_payload*>(Pay->Data);
+                                                if (P.m_SourceIndex != CurrentIndex)
+                                                {
+                                                    BeginEdit(*C.m_Base.first, C.m_Base.second, "Reorder Array Element");
+                                                    MoveElement(static_cast<std::size_t>(P.m_SourceIndex), static_cast<std::size_t>(CurrentIndex));
+                                                }
+                                            }
+                                            ImGui::EndDragDropTarget();
+                                        }
+                                    }
+                                    HelpMarker("Drag to reorder this element");
 
-                                // "Insert Above" (ChevronUp) removed - inserting is now done from the
-                                // single "+" button next to the array's own "Size:" field (always at
-                                // index 0), which covers the one insert case this button duplicated
-                                // (prepending) while dropping the four-icon-per-row clutter. "Insert
-                                // Below" stays - it targets an arbitrary existing row, which the Size
-                                // field's own button can't do.
-                                ImGui::SameLine();
-                                if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // ChevronDown
-                                {
-                                    BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
-                                    (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
-                                    for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex) + 1; --k) SwapAt(k, k - 1);
-                                    Commit();
-                                }
-                                HelpMarker("Insert a new (blank) element below this one");
+                                    // "Insert Above" (ChevronUp) removed - inserting is now done from the
+                                    // single "+" button next to the array's own "Size:" field (always at
+                                    // index 0), which covers the one insert case this button duplicated
+                                    // (prepending) while dropping the four-icon-per-row clutter. "Insert
+                                    // Below" stays - it targets an arbitrary existing row, which the Size
+                                    // field's own button can't do.
+                                    ImGui::SameLine();
+                                    if (ImGui::Button("\xEE\x9C\x8D", ImVec2(Sz, Sz))) // ChevronDown
+                                    {
+                                        BeginEdit(*C.m_Base.first, C.m_Base.second, "Insert Array Element");
+                                        (void)Table.TrySetSize(pInstance, N + 1, *m_pContext);
+                                        for (std::size_t k = N; k > static_cast<std::size_t>(CurrentIndex) + 1; --k) SwapAt(k, k - 1);
+                                        Commit();
+                                    }
+                                    HelpMarker("Insert a new (blank) element below this one");
 
-                                ImGui::SameLine();
-                                if (ImGui::Button("\xEE\x9D\x8D", ImVec2(Sz, Sz))) // Delete (same glyph as elsewhere in this codebase)
-                                {
-                                    BeginEdit(*C.m_Base.first, C.m_Base.second, "Delete Array Element");
-                                    for (std::size_t k = static_cast<std::size_t>(CurrentIndex); k + 1 < N; ++k) SwapAt(k, k + 1);
-                                    (void)Table.TrySetSize(pInstance, N - 1, *m_pContext);
-                                    Commit();
+                                    ImGui::SameLine();
+                                    if (ImGui::Button("\xEE\x9D\x8D", ImVec2(Sz, Sz))) // Delete (same glyph as elsewhere in this codebase)
+                                    {
+                                        BeginEdit(*C.m_Base.first, C.m_Base.second, "Delete Array Element");
+                                        for (std::size_t k = static_cast<std::size_t>(CurrentIndex); k + 1 < N; ++k) SwapAt(k, k + 1);
+                                        (void)Table.TrySetSize(pInstance, N - 1, *m_pContext);
+                                        Commit();
+                                    }
+                                    HelpMarker("Delete this element");
+
+                                    ImGui::SameLine();
+                                    ImGui::TextUnformatted(Name.data());
                                 }
-                                HelpMarker("Delete this element");
-                                ImGui::PopStyleColor();
-                                ImGui::PopID();
+
+                                PushTreeStruct(Open, InstancePath, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
                             }
                         }
                     }
+                }
+
+                if (!bShowArrayControls)
+                {
+                    PushTree(Name.data(), bCustomRender, InstancePath, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
+                }
+
+                if (bShowArrayControls)
+                {
+                    ImGui::PopStyleColor();
+                    ImGui::PopID();
                 }
 
                 bRenderBlankRight = true;
@@ -2926,26 +2967,61 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         }
                         HelpMarker("Delete this element");
 
-                        // No extra ItemSpacing here - it would just stack on top of the cursor pull-back
-                        // below.
-                        ImGui::SameLine(0.0f, 0.0f);
+                        if (bCustomRender)
+                        {
+                            // A registered m_OnResourceLeftSize consumer owns this row's whole left-side
+                            // draw and can do anything with it - e.g. xgeom_skin_editor.h's own handler
+                            // draws a REAL ImGuiTreeNodeFlags_Framed background box (a material slot's
+                            // name merged into the label), not a bare reserved-but-invisible Leaf gap.
+                            // The cursor pull-back below assumes the latter; applied here it shoves the
+                            // cursor into the delete icon's own footprint, and since a Framed node
+                            // actually paints a background there (unlike a plain Leaf), it visibly covers
+                            // the icon instead of landing in genuinely empty space (confirmed live: the
+                            // delete icon disappeared under a resizable resource-ref array's custom-
+                            // labelled rows specifically). Zero-spacing SameLine instead - flush against
+                            // the delete icon (matches the non-custom-render branch's own "no gap" look)
+                            // without going negative into its footprint the way the pull-back did.
+                            ImGui::SameLine(0.0f, 0.0f);
+                        }
+                        else
+                        {
+                            // No extra ItemSpacing here - it would just stack on top of the cursor
+                            // pull-back below.
+                            ImGui::SameLine(0.0f, 0.0f);
 
-                        // TreeNodeEx (below) always reserves its own arrow-width gap before the label
-                        // text - GetTreeNodeToLabelSpacing() worth of blank space - even for a Leaf node
-                        // that never draws an arrow there. That's fine/expected for an ordinary property
-                        // row, but stacked right after the icon cluster it read as a big, unwanted gap
-                        // between the trashcan and "[i]" - explicit user request: "we don't want that
-                        // space at all." Pulling the cursor back by that exact amount cancels it: the
-                        // reserved-but-empty arrow slot ends up sitting UNDER the tail of the delete
-                        // icon's own footprint (already drawn, so this doesn't move it), and the actual
-                        // label text lands flush against it instead.
-                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() - ImGui::GetTreeNodeToLabelSpacing());
+                            // TreeNodeEx (below) always reserves its own arrow-width gap before the label
+                            // text - GetTreeNodeToLabelSpacing() worth of blank space - even for a Leaf
+                            // node that never draws an arrow there. That's fine/expected for an ordinary
+                            // property row, but stacked right after the icon cluster it read as a big,
+                            // unwanted gap between the trashcan and "[i]" - explicit user request: "we
+                            // don't want that space at all." Pulling the cursor back by that exact amount
+                            // cancels it: the reserved-but-empty arrow slot ends up sitting UNDER the tail
+                            // of the delete icon's own footprint (already drawn, so this doesn't move it),
+                            // and the actual label text lands flush against it instead. Only safe because
+                            // this branch is the plain built-in bare-Leaf TreeNodeEx below, known for
+                            // certain to never paint anything visible into that reserved gap.
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() - ImGui::GetTreeNodeToLabelSpacing());
+                        }
                     }
 
                     bool Open;
                     const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-                    if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
-                    else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
+                    if (bCustomRender)
+                    {
+                        // A Framed custom-rendered row (xgeom_skin_editor.h's material-slot labels, e.g.)
+                        // carries its own FramePadding.x before its text even starts - the zero-spacing
+                        // SameLine above only removes OUR gap, not that box's internal one, so the number
+                        // still reads as floating away from the trash icon. Tightened just for this call,
+                        // only when the icon cluster is actually showing (an ordinary custom-rendered row
+                        // with no controls keeps its normal padding).
+                        if (bShowArrayControls) ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, ImGui::GetStyle().FramePadding.y));
+                        m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
+                        if (bShowArrayControls) ImGui::PopStyleVar();
+                    }
+                    else
+                    {
+                        ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
+                    }
 
                     // Captured right here - otherwise the shared "print help" check further down in
                     // Render() would see whichever of the buttons above was hovered last instead of this
