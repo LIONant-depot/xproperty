@@ -1,4 +1,15 @@
 #define NOMINMAX
+// Must come before xPropertyImGuiInspector.h: that header falls back to its own bundled example
+// config (a same-directory "my_properties.h" stub with a DIFFERENT guard, MY_PROPERTIES_H, that
+// leaves out several xproperty::inspector members) whenever the real project config hasn't been
+// included yet. Every other translation unit in this project reaches the real config first via
+// some other header's own chain; this file is compiled as its own standalone TU (see this port's
+// CMakeLists.txt XLION_EXTRA_SOURCES) with nothing else pulling it in ahead of time, so without
+// this include it silently built xproperty::inspector 96 bytes smaller than every other TU sees it
+// - a real ODR violation, confirmed via sizeof(xproperty::inspector) differing between TUs, that
+// crashed on the first push_back into any inspector's entity list (an access violation writing to
+// a garbage vector capacity left over from whatever heap bytes happened to be there).
+#include "dependencies/xproperty/source/xcore/my_properties.h"
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 #include "dependencies/xproperty/source/sprop/property_sprop_getset.h"
 #include "dependencies/xproperty/source/sprop/property_sprop_collector.h"
