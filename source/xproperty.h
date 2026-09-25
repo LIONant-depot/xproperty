@@ -1673,6 +1673,9 @@ namespace xproperty
 
                 const std::span<const members>          m_Members;
                 const std::span<const std::uint32_t>    m_Lookup;
+                // Editor-only grouping hint (same GUID source as type::object::m_GroupGUID).
+                // Default 0 / "none" keeps ungrouped scopes identical to pre-GroupGUID behavior.
+                const std::uint32_t                     m_GroupGUID = 0;
 
                 [[nodiscard]] inline const members* findMember( std::uint32_t GUID ) const noexcept
                 {
@@ -3233,6 +3236,23 @@ namespace xproperty
             }
         };
 
+        // Optional obj_group_tag -> GUID (0 = none). Variable template so meta::scope
+        // (defined immediately below) can read it; getGroupGuid later delegates here.
+        namespace details
+        {
+            template< typename T >
+            inline constexpr std::uint32_t group_guid_v = std::tuple_element_t<0, T>::guid_v;
+
+            template<>
+            inline constexpr std::uint32_t group_guid_v<std::tuple<>> = 0;
+
+            template< typename T >
+            consteval std::uint32_t getGroupGuid()
+            {
+                return group_guid_v<T>;
+            }
+        }
+
         //
         // SCOPE
         //
@@ -3244,6 +3264,8 @@ namespace xproperty
         {
             using                      members_t = xproperty::details::filter_by_tag_t< meta::obj_member_tag, T_ARGS... >;
             using                    user_data_t = xproperty::details::filter_by_tag_t< meta::user_data_tag, T_ARGS... >;
+            // Same optional obj_group_tag filter as meta::object - scopes without a group keep GUID 0.
+            using                        group_t = xproperty::details::filter_by_tag_t< meta::obj_group_tag, T_ARGS... >;
 
             inline constexpr static auto name_v    = T_NAME_V;
             inline constexpr static auto members_v = []() consteval
@@ -3272,7 +3294,11 @@ namespace xproperty
 
             consteval static type::members::scope getInfoScope( void ) noexcept
             {
-                return{ .m_Members = members_v, .m_Lookup = lookup_v };
+                return
+                { .m_Members   = members_v
+                , .m_Lookup    = lookup_v
+                , .m_GroupGUID = details::group_guid_v<group_t>
+                };
             }
 
             consteval static type::members getInfo( void ) noexcept
@@ -3337,20 +3363,6 @@ namespace xproperty
             }
         };
 
-        namespace details
-        {
-            template< typename T>
-            consteval std::uint32_t getGroupGuid()
-            {
-                return std::tuple_element_t<0, T>::guid_v;
-            }
-
-            template<>
-            consteval std::uint32_t getGroupGuid<std::tuple<>>()
-            {
-                return 0;
-            }
-        }
 
 
         template< xproperty::details::fixed_string T_NAME_V, typename T_OBJECT_TYPE, typename...T_ARGS >

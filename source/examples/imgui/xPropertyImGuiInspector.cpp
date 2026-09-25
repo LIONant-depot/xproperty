@@ -1683,11 +1683,16 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                 myDimension = -1;
             }
 
+            // props/list_props always carry GroupGUID in Value (may be 0). Scopes only do when the
+            // collector emitted one (obj_scope<"Name", vector3_group, ...>); ungrouped scopes keep
+            // empty any() so m_pType may be null - guard before reading.
             if (std::holds_alternative<xproperty::type::members::props>(Member.m_Variant)
-                || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant))
+                || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant)
+                || std::holds_alternative<xproperty::type::members::scope>(Member.m_Variant))
             {
                 // GUIDs for groups are marked as u32... vs sizes are mark as u64
-                if (Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint32_t>::guid_v)
+                if (Value.m_pType
+                    && Value.m_pType->m_GUID == xproperty::settings::var_type<std::uint32_t>::guid_v)
                 {
                     GroupGUID = Value.get<std::uint32_t>();
                 }
@@ -1842,6 +1847,19 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         return xproperty::settings::strguid({ Str.data(), static_cast<std::uint32_t>(iEnd+1)});
     };
 
+    // Path-segment boundary after a tree node's m_iEnd prefix. ComputeCRC alone is a raw
+    // byte-prefix hash, so a hidden/closed scope named "Rotation" would also match sibling
+    // "RotationDegrees" (first N chars identical) and swallow it - confirmed: removing
+    // member_flags<DONT_SHOW> from Transform's quat Rotation made RotationDegrees appear.
+    // Real children always continue with '/' or '[' after the parent segment.
+    constexpr auto IsPathPrefixAtBoundary = []( std::string_view Path, std::size_t iEnd ) constexpr
+    {
+        if (Path.length() < iEnd) return false;
+        if (Path.length() == iEnd) return true;
+        const char c = Path[iEnd];
+        return c == '/' || c == '[';
+    };
+
     const auto PushTreeStruct = [&]( bool Open, std::string_view Path, int myDimension, bool bDefaultOpen, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
     {
         //
@@ -1994,7 +2012,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         if (Tree[iDepth].m_isHidden)
         {
             const auto& T = Tree[iDepth];
-            if( E.m_Property.m_Path.length() >= T.m_iEnd && ComputeCRC(E.m_Property.m_Path, T.m_iEnd ) == Tree[iDepth].m_CRC)
+            if( E.m_Property.m_Path.length() >= T.m_iEnd
+             && IsPathPrefixAtBoundary(E.m_Property.m_Path, T.m_iEnd)
+             && ComputeCRC(E.m_Property.m_Path, T.m_iEnd ) == Tree[iDepth].m_CRC)
                continue;
 
             --iDepth;
@@ -2015,7 +2035,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
              && Tree[iDepth].m_MyDimension >= E.m_MyDimension
              ) return false;
 
-            return ComputeCRC(E.m_Property.m_Path, T.m_iEnd) == Tree[iDepth].m_CRC;
+            return IsPathPrefixAtBoundary(E.m_Property.m_Path, T.m_iEnd)
+                && ComputeCRC(E.m_Property.m_Path, T.m_iEnd) == Tree[iDepth].m_CRC;
         };
 
         bool bPoped = false;

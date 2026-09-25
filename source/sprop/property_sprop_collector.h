@@ -236,8 +236,13 @@ namespace xproperty::sprop
                 {
                          if constexpr (std::is_same_v<T, scope&> )      
                          {
-                             // Let the user know that we are dumping an object
-                             if (m_bForEditors) CallBack(m_CurrentPath.data(), xproperty::any(), Member, bConst, pClass);
+                             // Editor-only group marker: mirrors props (any(pObj->m_GroupGUID)).
+                             // Ungrouped scopes keep empty any() so existing consumers stay unchanged.
+                             if (m_bForEditors)
+                             {
+                                 if (Arg.m_GroupGUID) CallBack(m_CurrentPath.data(), xproperty::any(Arg.m_GroupGUID), Member, bConst, pClass);
+                                 else                 CallBack(m_CurrentPath.data(), xproperty::any(), Member, bConst, pClass);
+                             }
                              DumpScope(CallBack, pClass, &Arg, bConst);
                          }
                     else if constexpr (std::is_same_v<T, var&>)         {DumpAtomicTypes(CallBack, pClass, Arg, Member, bConst, pClass);}
