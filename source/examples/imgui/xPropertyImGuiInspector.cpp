@@ -1,4 +1,6 @@
-#define NOMINMAX
+#ifndef NOMINMAX
+    #define NOMINMAX
+#endif
 // Must come before xPropertyImGuiInspector.h: that header falls back to its own bundled example
 // config (a same-directory "my_properties.h" stub with a DIFFERENT guard, MY_PROPERTIES_H, that
 // leaves out several xproperty::inspector members) whenever the real project config hasn't been
@@ -1851,13 +1853,15 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
     // byte-prefix hash, so a hidden/closed scope named "Rotation" would also match sibling
     // "RotationDegrees" (first N chars identical) and swallow it - confirmed: removing
     // member_flags<DONT_SHOW> from Transform's quat Rotation made RotationDegrees appear.
-    // Real children always continue with '/' or '[' after the parent segment.
+    // Real children always continue with '/' or '[' after the parent segment. An index level
+    // ("...[G:0]") sets m_iEnd ON its own closing ']' (already inside the CRC), so ']' is a boundary too -
+    // rejecting it popped every object-array element scope straight back out, re-inserting its [i] row forever.
     constexpr auto IsPathPrefixAtBoundary = []( std::string_view Path, std::size_t iEnd ) constexpr
     {
         if (Path.length() < iEnd) return false;
         if (Path.length() == iEnd) return true;
         const char c = Path[iEnd];
-        return c == '/' || c == '[';
+        return c == '/' || c == '[' || c == ']';
     };
 
     const auto PushTreeStruct = [&]( bool Open, std::string_view Path, int myDimension, bool bDefaultOpen, bool isReadOnly, bool isHidden, bool bArray = false, bool bAtomic = false )
@@ -2040,11 +2044,13 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         };
 
         bool bPoped = false;
-        while (CheckSameLevel() == false)
+        // Bounds guard: a path mismatch must never pop past the root into Tree[-1] (unbounded spin).
+        while (iDepth >= 0 && CheckSameLevel() == false)
         {
             PopTree();
             bPoped = true;
         }
+        if (iDepth < 0) continue;
 
         // A scope is hidden...
         if (E.m_Flags.m_bDontShow && E.m_bScope)
