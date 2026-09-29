@@ -2458,7 +2458,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             std::array<char, 128> Name;
             snprintf(Name.data(), Name.size(), "[%d]", Tree[iDepth].m_iArray);
 
-            if (Tree[iDepth].m_isAtomicArray || E.m_GroupGUID)
+            // A group (e.g. a vec3) is a leaf element only when it IS the element ("Arr[G:0]"). An
+            // object element whose first member is a group ("Boxes[G:0]/Offset") still needs its own
+            // [i] scope - treating that member as the element turned every vec3 member into a fake row.
+            if (Tree[iDepth].m_isAtomicArray || (E.m_GroupGUID && E.m_Property.m_Path.back() == ']'))
             {
                 Tree[iDepth].m_iArray++;
                 bool Open;
