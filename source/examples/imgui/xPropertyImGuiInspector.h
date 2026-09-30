@@ -478,6 +478,11 @@ public:
     // the element's ordinal. Only ordinal (std::size_t-keyed) arrays fire it.
     using on_array_element_render = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, int>;
 
+    // Non-replacing: fired right after a row's left-column label has drawn. A consumer that draws something
+    // calls ImGui::SameLine() first, then right-aligns with GetContentRegionAvail() if it wants. The row, its
+    // value column and its help tooltip stay intact (unlike the replace-row level).
+    using on_left_column_append = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view>;
+
     // First (least invasive) of 4 planned levels of custom-rendering control, in increasing order of
     // how much of a row's normal rendering gets taken over: (1) append after the normal value widget
     // - this one, purely additive, nothing skipped; (2) replace the value widget entirely, left column
@@ -583,6 +588,7 @@ public:
     on_override_reset           m_OnOverrideReset;          // Fired when the revert button (above) is clicked - consumer's job to actually remove/reset the override however that's meaningful for their own data model
 
     on_component_header_render  m_OnComponentHeaderRender;  // Fired once per component, right column of its header row already positioned - lets a consumer draw something there (enable/disable, delete, status, ...) - see the using declaration's own comment
+    on_left_column_append       m_OnLeftColumnAppend;       // Fired once per property, after its left-column label - see the using declaration's own comment
     on_array_element_render     m_OnArrayElementRender;     // Fired once per object-array element row, in its (otherwise blank) right column - see the using declaration's own comment
 
     on_custom_render_append         m_OnCustomRenderAppend;         // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
@@ -598,6 +604,12 @@ public:
             DrawBackground(m_SimpleDrawBk.m_iDepth, m_SimpleDrawBk.m_GlobalIndex, Pos, Pos.y + ImGui::GetFrameHeight());
         }
     }
+
+
+    // The common tooltip for anything outside the inspector that wants the same placement (kept on-screen,
+    // growing away from the nearest monitor edge - see PlaceTooltipAwayFromEdges). Call right after the item;
+    // draws only while it is hovered. Pass AllowWhenDisabled to also show it over a disabled item.
+    static void Tooltip                             ( const char* pText, bool bAllowWhenDisabled = false ) noexcept;
 
 protected:
 

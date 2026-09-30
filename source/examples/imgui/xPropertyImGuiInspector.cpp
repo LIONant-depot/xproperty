@@ -3342,6 +3342,21 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 bSuppressRowHelp = true;
             }
 
+            // Left-column append (non-replacing): whatever a consumer draws lands right after the label, on
+            // the same line. The label's own help tooltip is shown here (before the appended item becomes
+            // "the last item") and the shared check below is skipped when something was drawn.
+            if (!bReplacedRow && !bCustomRender)
+            {
+                const bool   bLabelHovered = ImGui::IsItemHovered();
+                const ImGuiID LabelID      = ImGui::GetItemID();
+                m_OnLeftColumnAppend.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                if (ImGui::GetItemID() != LabelID)
+                {
+                    if (bLabelHovered) Help(E);
+                    bSuppressRowHelp = true;
+                }
+            }
+
             if (bIsOverridden) ImGui::PopStyleColor();
         }
 
@@ -4163,6 +4178,20 @@ void xproperty::inspector::HelpMarker( const char* desc ) const noexcept
         ImGui::EndTooltip();
         ImGui::PopStyleVar();
     }
+}
+
+//-----------------------------------------------------------------------------------
+
+void xproperty::inspector::Tooltip( const char* pText, bool bAllowWhenDisabled ) noexcept
+{
+    if ( !ImGui::IsItemHovered( bAllowWhenDisabled ? ImGuiHoveredFlags_AllowWhenDisabled : ImGuiHoveredFlags_None ) ) return;
+    PlaceTooltipAwayFromEdges();
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos( 440.0f );
+    ImGui::TextUnformatted( pText );
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
 }
 
 //-----------------------------------------------------------------------------------
