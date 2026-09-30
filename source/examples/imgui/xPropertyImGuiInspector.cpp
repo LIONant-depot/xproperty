@@ -2342,6 +2342,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
         bool bRenderBlankRight = false;
 
+        // Set by the object-array element row below, consumed by the right column (m_OnArrayElementRender).
+        std::string_view ElementRowArrayPath;
+        int              ElementRowIndex = -1;
+
         // Set by the array-element controls block below (drag handle/insert/delete buttons) - those
         // buttons are drawn right after the row's own [i] label, so by the time the shared "print
         // help" check further down runs ImGui::IsItemHovered(), it would otherwise see whichever of
@@ -2681,6 +2685,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
                                     ImGui::SameLine();
                                     ImGui::TextUnformatted(Name.data());
+
+                                    // Row is really drawn and editable - let the right column offer per-element tools.
+                                    ElementRowArrayPath = ArrayPrefixView;
+                                    ElementRowIndex     = CurrentIndex;
                                 }
 
                                 PushTreeStruct(Open, InstancePath, E.m_MyDimension, Tree[iDepth].m_isDefaultOpen, Tree[iDepth].m_isReadOnly, Tree[iDepth].m_isHidden);
@@ -3406,6 +3414,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         if( E.m_bScope || bRenderBlankRight )
         {
             if ( m_Settings.m_bRenderRightBackground ) DrawBackground( iDepth-1, GlobalIndex, ImGui::GetCursorScreenPos(), ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight() + 1.0f, CRA.x );
+
+            if (ElementRowIndex >= 0)
+                m_OnArrayElementRender.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, ElementRowArrayPath, ElementRowIndex);
 
             if (pScopeToggle)
             {
