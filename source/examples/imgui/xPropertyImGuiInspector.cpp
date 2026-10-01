@@ -488,7 +488,7 @@ namespace xproperty::ui::details
             ImGui::Checkbox("##value", &V);
             V = Value;
         }
-        else 
+        else
         {
             Cmd.m_isChange = ImGui::Checkbox("##value", &V);
             if ( Cmd.m_isChange )
@@ -500,9 +500,12 @@ namespace xproperty::ui::details
             if( Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit() ) Cmd.m_isEditing = false;
         }
 
-        ImGui::SameLine();
-        if (V) ImGui::Text(" True");
-        else   ImGui::Text(" False");
+        if ( Flags.m_bNoBoolText == false )
+        {
+            ImGui::SameLine();
+            if (V) ImGui::Text(" True");
+            else   ImGui::Text(" False");
+        }
     }
 
     //-----------------------------------------------------------------------------------
@@ -1470,13 +1473,24 @@ namespace xproperty::ui::details
                 int         MaxElemens = GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v ? 2 : 3;
                 auto&       I = member_ui<float>::defaults::data_v;
                 ImGuiStyle* style = &ImGui::GetStyle();
-                const auto   Width = (ImGui::GetContentRegionAvail().x - style->ItemInnerSpacing.x - 14* MaxElemens)  / MaxElemens;
+                // The width of one cell, worked out once (by the first axis, when the whole line is still free) so the three fill the line exactly:
+                // what is left after each axis' label ("X:" and the space after it) and the gaps between the cells, shared by the cells.
+                // CalcItemWidth() is the width of the row's value column, as the other value widgets see it; GetContentRegionAvail() would lose the indent
+                // of the scope the row is in (see DrawBackground's comment).
+                static float s_CellWidth = 0.0f;
+                if (iElement == 0)
+                {
+                    const float LabelWidth = ImGui::CalcTextSize("X:").x + style->ItemSpacing.x;
+                    const float Gap        = Flags.m_bNoBoolText ? 10.0f : 2.0f;
+                    s_CellWidth = (ImGui::CalcItemWidth() - LabelWidth * MaxElemens - Gap * (MaxElemens - 1)) / MaxElemens;
+                }
+                const float  Width = s_CellWidth;
                 const auto   Height = ImGui::GetFrameHeight();
                 ImVec2       pos;
                 static constexpr auto Colors = std::array<ImU32, 3>{ 0x440000ff, 0x4400ff00, 0x44ff0000 };
 
                 if (iElement == 0) ImGui::PushItemWidth(Width);
-                else               ImGui::SameLine(0, 2);
+                else               ImGui::SameLine(0, Flags.m_bNoBoolText ? 10.0f : 2.0f);      // (boxes alone get some air before the next axis' label)
 
                 // This specific axis's own override state (IEntry.m_Property.m_Path is THIS axis's
                 // full path, e.g. "Transform/Position/Y" - not the packed group's own "Transform/
@@ -1505,7 +1519,9 @@ namespace xproperty::ui::details
                 ImGui::PopID();
 
                 if( iElement == (MaxElemens-1) ) ImGui::PopItemWidth();
-                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + Width, pos.y + Height), Colors[iElement]);
+                // The tint covers what was drawn: the whole cell for a number, just the box for a checkbox.
+                const float TintWidth = Flags.m_bNoBoolText ? ImGui::GetItemRectSize().x : Width;
+                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + TintWidth, pos.y + Height), Colors[iElement]);
             }
         }
     };
