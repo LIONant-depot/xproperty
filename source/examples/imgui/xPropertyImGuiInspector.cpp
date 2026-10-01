@@ -1813,6 +1813,20 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
 
 //-------------------------------------------------------------------------------------------------
 
+// The label of a list element: its key when the list is keyed by text (a std::map<std::string, ...>: "Settings/Keys[s:Level/Save]"
+// shows "Level/Save"), otherwise its index.
+static void ElementLabel( std::array<char, 128>& Name, std::string_view Path, int Index ) noexcept
+{
+    if( Path.size() > 4 && Path.back() == ']' )
+        if( const auto b = Path.rfind("[s:"); b != std::string_view::npos )
+        {
+            const auto Key = Path.substr( b + 3, Path.size() - b - 4 );
+            snprintf( Name.data(), Name.size(), "%.*s", static_cast<int>(Key.size()), Key.data() );
+            return;
+        }
+    snprintf( Name.data(), Name.size(), "[%d]", Index );
+}
+
 void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 {
     struct element
@@ -2475,7 +2489,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         if (Tree[iDepth].m_bArrayMustInsertIndex)
         {
             std::array<char, 128> Name;
-            snprintf(Name.data(), Name.size(), "[%d]", Tree[iDepth].m_iArray);
+            ElementLabel(Name, E.m_Property.m_Path, Tree[iDepth].m_iArray);
 
             // A group (e.g. a vec3) is a leaf element only when it IS the element ("Arr[G:0]"). An
             // object element whose first member is a group ("Boxes[G:0]/Offset") still needs its own
@@ -2809,7 +2823,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             else
             {
                 std::array<char, 128> Name;
-                snprintf(Name.data(), Name.size(), "[%d]", Tree[iDepth].m_iArray++);
+                ElementLabel(Name, E.m_Property.m_Path, Tree[iDepth].m_iArray++);
 
                 // Atomic array
                 if (Tree[iDepth].m_isAtomicArray || E.m_GroupGUID)
