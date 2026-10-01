@@ -432,6 +432,13 @@ public:
     using on_realtime_change_event  = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
     using on_get_component_pointer  = xdelegate::thread_unsafe<inspector&, const int, void*&, void*>;
 
+    // Fired when a property's help is about to be shown (the hover card of a row). Same subject shape as the other
+    // per-property delegates: the root object + instance and the property path. A listener that draws its own help sets
+    // the trailing bool true and the inspector's built-in help card is skipped; with no listener (or none that
+    // handles it) the built-in card is shown exactly as before. Several listeners may each add to what is shown,
+    // but only the first one that sets the bool decides whether the built-in card is skipped.
+    using on_help                   = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, bool&>;
+
     // All 3 resource-picker callbacks below identify "which property is this" the same way
     // m_OnOverrideCheck/m_OnOverrideReset do - the real (type::object&, instance) pair plus the full
     // canonical property path, instead of an opaque per-widget id or (m_OnResourceLeftSize's old
@@ -550,6 +557,7 @@ public:
     using on_custom_render_block = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, const xproperty::any&, ImColor, bool /*bDryRun*/, bool&>;
 
     settings                    m_Settings {};
+    on_help                     m_OnHelp;                   // Property help hover card; a listener may replace the built-in one (see on_help)
     on_change_event             m_OnChangeEvent;            // This is the official change of value, this is where the undo system should be called
     on_realtime_change_event    m_OnRealtimeChangeEvent;    // When sliders and such happens property can change in real time but they are not yet consider an official change
                                                             //      User should use this to update the property in real time.
@@ -644,6 +652,9 @@ protected:
                                                           m_pOverrideCheck = nullptr; // same idea, for on_override_check
         xproperty::settings::member_override_reset_t::callback*
                                                           m_pOverrideReset = nullptr; // same idea, for on_override_reset
+        const xproperty::type::object*                  m_pRootObject   = nullptr;  // the object this entry's path is relative to (what the per-property delegates receive)
+        void*                                           m_pRootInstance = nullptr;  // ...and its instance
+        const char*                                     m_pDisabledReason = nullptr; // member_dynamic_reason result when the property is unavailable, else null
     };
 
     struct component

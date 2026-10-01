@@ -1603,6 +1603,18 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
 
             Flags.m_bShowReadOnly |= isConst;
 
+            // Unavailable for a stated reason (member_dynamic_reason): shown read-only, and the reason travels with the entry.
+            const char* pDisabledReason = nullptr;
+            if (auto* pReason = Member.getUserData<xproperty::settings::member_dynamic_reason_t>(); pReason)
+            {
+                const char* pText = pReason->m_pCallback(pInstance, *m_pContext);
+                if (pText && pText[0])
+                {
+                    pDisabledReason = pText;
+                    Flags.m_bShowReadOnly = true;
+                }
+            }
+
             const char* pSectionName = [&]() -> const char*
                 {
                     if (auto* pSection = Member.getUserData<xproperty::settings::member_section_t>(); pSection)
@@ -1791,6 +1803,9 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     , pCustomRenderReplaceRow
                     , pOverrideCheck
                     , pOverrideReset
+                    , C.m_Base.first
+                    , C.m_Base.second
+                    , pDisabledReason
                 )
             );
         }, true);
@@ -4198,6 +4213,14 @@ void xproperty::inspector::Tooltip( const char* pText, bool bAllowWhenDisabled )
 
 void xproperty::inspector::Help( const entry& Entry ) const noexcept
 {
+    // A listener may draw the help itself (see on_help); the built-in card below is the default.
+    if( Entry.m_pRootObject )
+    {
+        bool bHandled = false;
+        m_OnHelp.NotifyAll( const_cast<inspector&>(*this), *Entry.m_pRootObject, Entry.m_pRootInstance, Entry.m_Property.m_Path, bHandled );
+        if( bHandled ) return;
+    }
+
     PlaceTooltipAwayFromEdges();
     ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, m_Settings.m_HelpWindowPadding );
     // Hard-capped max width - direct user request: a very long string/help text should never let a
@@ -4233,6 +4256,13 @@ void xproperty::inspector::Help( const entry& Entry ) const noexcept
         ImGui::TableSetColumnIndex(1); ImGui::Text("0x%x", Entry.m_GUID);
 
         ImGui::EndTable();
+    }
+
+    if( Entry.m_pDisabledReason )
+    {
+        ImGui::TextDisabled("Unavailable:");
+        ImGui::SameLine();
+        ImGui::TextUnformatted( Entry.m_pDisabledReason );
     }
 
     ImGui::TextDisabled("Help");

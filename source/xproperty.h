@@ -3236,6 +3236,25 @@ namespace xproperty
             }
         };
 
+        // noexcept member functions are reflected the same as the plain ones (an editor's action is naturally noexcept).
+        template< xproperty::details::fixed_string T_NAME_V, typename T_CLASS, typename...T_FUNC_ARGS, typename T_RETURN, auto T_DATA, typename... T_ARGS  >
+        struct member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...) noexcept, T_DATA, T_ARGS...> : member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...), T_DATA, T_ARGS...>
+        {
+            static consteval xproperty::type::members getInfo( void ) noexcept
+            {
+                return member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...), T_DATA, T_ARGS...>::getInfo(false);
+            }
+        };
+
+        template< xproperty::details::fixed_string T_NAME_V, typename T_CLASS, typename...T_FUNC_ARGS, typename T_RETURN, auto T_DATA, typename... T_ARGS  >
+        struct member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...) const noexcept, T_DATA, T_ARGS...> : member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...), T_DATA, T_ARGS...>
+        {
+            static consteval xproperty::type::members getInfo( void ) noexcept
+            {
+                return member<T_NAME_V, T_RETURN(T_CLASS::*)(T_FUNC_ARGS...), T_DATA, T_ARGS...>::getInfo(true);
+            }
+        };
+
         // Optional obj_group_tag -> GUID (0 = none). Variable template so meta::scope
         // (defined immediately below) can read it; getGroupGuid later delegates here.
         namespace details

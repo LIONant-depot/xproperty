@@ -62,6 +62,16 @@ namespace xproperty::settings
         callback* m_pCallback;
     };
 
+    // Why a property is unavailable right now. Returns nullptr (or "") when it is available, otherwise a short
+    // reason ("nothing selected"). A property with a reason is shown read-only and the reason is shown in its help.
+    // A separate tag from the flags on purpose: it composes with member_flags/member_dynamic_flags instead of
+    // changing their callbacks, and a consumer (an action, a menu) can ask for it without drawing any inspector.
+    struct member_dynamic_reason_t : xproperty::member_user_data<"Dynamic Reason">
+    {
+        using callback = const char*(const void*, settings::context& ) noexcept;
+        callback* m_pCallback;
+    };
+
     // Controls the width ImGui::PushItemWidth() uses for this property's default value widget -
     // previously hardcoded to -1 (fill the entire column) everywhere, which is exactly why a wide
     // widget leaves zero room for a same-line m_OnCustomRenderAppend (see APPEND_NEW_LINE's own
@@ -239,6 +249,24 @@ namespace xproperty
     {
         constexpr member_flags() noexcept
             : settings::member_flags_t{ .m_Flags = xproperty::flags::type{ .m_Value = ( T_V | ...) }  } {}
+    };
+
+    template< auto T_CALLBACK_V >
+    struct member_dynamic_reason : settings::member_dynamic_reason_t
+    {
+        using fn_t = xproperty::details::function_traits<decltype(T_CALLBACK_V)>;
+        static_assert(std::tuple_size_v<typename fn_t::args> <= 2);
+        static_assert(std::is_same_v<typename fn_t::return_type, const char*>);
+
+        using arg1 = std::tuple_element_t<0, typename fn_t::args>;
+        static_assert( std::is_reference_v<arg1>);
+        using arg1_t = std::remove_reference_t<arg1>;
+
+        constexpr member_dynamic_reason() noexcept
+            : settings::member_dynamic_reason_t{ .m_pCallback = []( const void* pObj, settings::context& C) constexpr noexcept  -> const char*
+                { if constexpr (std::tuple_size_v<typename fn_t::args> == 1) return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj));
+                  else                                                       return T_CALLBACK_V(*static_cast<const arg1_t*>(pObj), C);
+                } } {}
     };
 
     template< auto T_CALLBACK_V >
