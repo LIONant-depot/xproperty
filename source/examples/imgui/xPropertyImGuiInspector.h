@@ -432,12 +432,23 @@ public:
     using on_realtime_change_event  = xdelegate::thread_unsafe<inspector&, const xproperty::ui::undo::cmd&, xproperty::settings::context& >;
     using on_get_component_pointer  = xdelegate::thread_unsafe<inspector&, const int, void*&, void*>;
 
-    // Fired when a property's help is about to be shown (the hover card of a row). Same subject shape as the other
-    // per-property delegates: the root object + instance and the property path. A listener that draws its own help sets
-    // the trailing bool true and the inspector's built-in help card is skipped; with no listener (or none that
-    // handles it) the built-in card is shown exactly as before. Several listeners may each add to what is shown,
-    // but only the first one that sets the bool decides whether the built-in card is skipped.
-    using on_help                   = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, std::string_view, bool&>;
+    // What the help of a property says; everything a listener needs to draw it, already resolved.
+    struct help_info
+    {
+        const char*                     m_pName           = "";         // the property's name
+        const char*                     m_pHelp           = nullptr;    // its member_help text (null when it has none)
+        const char*                     m_pTypeName       = "";         // "float", "string"...
+        std::string_view                m_Path;                         // its full path
+        const char*                     m_pDisabledReason = nullptr;    // member_dynamic_reason, when it is unavailable now
+        std::uint32_t                   m_GUID            = 0;
+        const xproperty::type::object*  m_pRootObject     = nullptr;    // the object the path is relative to...
+        void*                           m_pRootInstance   = nullptr;    // ...and its instance
+    };
+
+    // Fired when a property's help is about to be shown (the hover card of a row). A listener that draws the help itself sets the trailing bool
+    // true and the inspector's built-in help card is skipped; with no listener (or none that handles it) the built-in card is shown exactly as before.
+    // Several listeners may each add to what is shown, but only the first one that sets the bool decides whether the built-in card is skipped.
+    using on_help                   = xdelegate::thread_unsafe<inspector&, const help_info&, bool&>;
 
     // All 3 resource-picker callbacks below identify "which property is this" the same way
     // m_OnOverrideCheck/m_OnOverrideReset do - the real (type::object&, instance) pair plus the full

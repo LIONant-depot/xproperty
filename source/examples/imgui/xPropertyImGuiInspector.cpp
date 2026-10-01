@@ -4231,7 +4231,17 @@ void xproperty::inspector::Help( const entry& Entry ) const noexcept
     if( Entry.m_pRootObject )
     {
         bool bHandled = false;
-        m_OnHelp.NotifyAll( const_cast<inspector&>(*this), *Entry.m_pRootObject, Entry.m_pRootInstance, Entry.m_Property.m_Path, bHandled );
+        const help_info Info
+        { Entry.m_pName
+        , Entry.m_pHelp
+        , Entry.m_Property.m_Value.m_pType ? Entry.m_Property.m_Value.m_pType->m_pName : ""
+        , Entry.m_Property.m_Path
+        , Entry.m_pDisabledReason
+        , Entry.m_GUID
+        , Entry.m_pRootObject
+        , Entry.m_pRootInstance
+        };
+        m_OnHelp.NotifyAll( const_cast<inspector&>(*this), Info, bHandled );
         if( bHandled ) return;
     }
 
