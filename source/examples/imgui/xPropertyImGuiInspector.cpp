@@ -520,6 +520,8 @@ namespace xproperty::ui::details
         const auto& Ctx = g_pInspector->m_CurrentProperty;
 
         bool bOpen = false;
+        g_pInspector->m_CurrentProperty.m_Flags          = Flags;
+        g_pInspector->m_CurrentProperty.m_bClearResource = false;
         if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
         {
             g_pInspector->m_OnResourceWigzmos.NotifyAll(*g_pInspector, *Ctx.m_pObject, Ctx.m_pInstance, Ctx.m_Path, bOpen, Value);
@@ -547,7 +549,18 @@ namespace xproperty::ui::details
                     Cmd.m_NewValue.set<xresource::full_guid>(FullGuid);
                 }
             }
+
+            // The clear button of the widget: no resource, of the type the property already has
+            if (g_pInspector->m_CurrentProperty.m_bClearResource && not Value.empty())
+            {
+                xresource::full_guid None;
+                None.m_Type = Value.m_Type;
+                Cmd.m_isEditing = false;
+                Cmd.m_isChange  = true;
+                Cmd.m_NewValue.set<xresource::full_guid>(None);
+            }
         }
+        g_pInspector->m_CurrentProperty.m_bClearResource = false;
     }
 #endif
 
@@ -1521,7 +1534,8 @@ namespace xproperty::ui::details
                 if( iElement == (MaxElemens-1) ) ImGui::PopItemWidth();
                 // The tint covers what was drawn: the whole cell for a number, just the box for a checkbox.
                 const float TintWidth = Flags.m_bNoBoolText ? ImGui::GetItemRectSize().x : Width;
-                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + TintWidth, pos.y + Height), Colors[iElement]);
+                pos.x -= 3;
+                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{pos.x, pos.y}, ImVec2(pos.x + 3/*TintWidth*/, pos.y + Height-1), Colors[iElement]);
             }
         }
     };
@@ -2515,6 +2529,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 Tree[iDepth].m_iArray++;
                 bool Open;
                 const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                if (bCustomRender) m_CurrentProperty.m_Flags = E.m_Flags;
                 if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
                 else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
             }
@@ -3098,6 +3113,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         // only when the icon cluster is actually showing (an ordinary custom-rendered row
                         // with no controls keeps its normal padding).
                         if (bShowArrayControls) ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, ImGui::GetStyle().FramePadding.y));
+                        m_CurrentProperty.m_Flags = E.m_Flags;
                         m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
                         if (bShowArrayControls) ImGui::PopStyleVar();
                     }
@@ -3361,6 +3377,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
             if (!bReplacedRow)
             {
+                if (bCustomRender) m_CurrentProperty.m_Flags = E.m_Flags;
                 if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, pLeftLabel, Open);
                 else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
             }

@@ -15,6 +15,7 @@ namespace xproperty::flags
                 , m_bDontShow       : 1     // Tells the UI not to show this property/ies
                 , m_bAppendNewLine  : 1     // Tells inspector::m_OnCustomRenderAppend's call site to start a new line before invoking the callback, instead of the default ImGui::SameLine() right after the value widget - same idiom as SHOW_READONLY etc., so member_flags<APPEND_NEW_LINE>/member_dynamic_flags<...> already work here for free
                 , m_bNoBoolText     : 1     // Tells the UI not to write True/False next to a bool property's checkbox (a row of axis locks reads better as boxes alone)
+                , m_bSmallResource  : 1     // A resource reference (or a list of them) is drawn small: one line, with its actions in a menu, instead of a thumbnail with buttons
                 ;
         };
     };
@@ -26,6 +27,7 @@ namespace xproperty::flags
     , DONT_SHOW       = std::uint32_t(1<<2)
     , APPEND_NEW_LINE = std::uint32_t(1<<3)
     , NO_BOOL_TEXT    = std::uint32_t(1<<4)
+    , SMALL_RESOURCE  = std::uint32_t(1<<5)
     };
 
 }

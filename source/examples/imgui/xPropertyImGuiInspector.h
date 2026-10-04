@@ -381,13 +381,31 @@ public:
         m_OnResourceLeftSize.Register < [](xproperty::inspector& Inspector, const xproperty::type::object&, void*, std::string_view Path, const xproperty::any&, ImGuiTreeNodeFlags flags, const char* pName, bool& Open)
         {
             Inspector.RenderBackground();
+            // The label of a resource reference is as tall as its widget (a framed row, with the padding that makes it that tall): the name sits in the middle of the picture's height.
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, xproperty::inspector::ResourceRowFramePadding(Inspector.m_CurrentProperty.m_Flags.m_bSmallResource));
             // Path is a stable, genuinely unique identity (unlike pName, which can repeat across
             // sibling rows) - hashed into a void*-shaped id the same way other per-row ids in this
             // file already derive stability from a path hash rather than trusting the label text.
-            if (!Path.empty()) Open = ImGui::TreeNodeEx(reinterpret_cast<void*>(std::hash<std::string_view>{}(Path)), flags, "%s", pName);
-            else                Open = ImGui::TreeNodeEx(pName, flags);
+            if (!Path.empty()) Open = ImGui::TreeNodeEx(reinterpret_cast<void*>(std::hash<std::string_view>{}(Path)), ImGuiTreeNodeFlags_Framed | flags, "%s", pName);
+            else                Open = ImGui::TreeNodeEx(pName, ImGuiTreeNodeFlags_Framed | flags);
+            ImGui::PopStyleVar();
         } > ();
     }
+    // How tall the row of a resource reference is: the widget of the value (the picture beside two lines, or one line in the small form) and the label at its left are as tall as each other.
+    static float ResourceRowHeight(bool bSmall) noexcept
+    {
+        const float Line = ImGui::GetFrameHeight();
+        return bSmall ? Line : Line * 2.0f + ImGui::GetStyle().ItemSpacing.y;
+    }
+
+    // The frame padding that makes the framed label of a resource reference as tall as the widget at its right: push it (ImGuiStyleVar_FramePadding) around the label's TreeNodeEx. Every handler of
+    // m_OnResourceLeftSize that draws a framed label uses it, so a reference row has one height whoever draws its label.
+    static ImVec2 ResourceRowFramePadding(bool bSmall) noexcept
+    {
+        const auto& Style = ImGui::GetStyle();
+        return ImVec2(Style.FramePadding.x, std::max(Style.FramePadding.y, (ResourceRowHeight(bSmall) - ImGui::GetFontSize()) * 0.5f));
+    }
+
     virtual                ~inspector               ( void )                                                noexcept = default;
                 void        clear                   ( void )                                                noexcept;
                 void        AppendEntity            ( void )                                                noexcept;
@@ -599,6 +617,8 @@ public:
         const xproperty::type::object* m_pObject   = nullptr;
         void*                          m_pInstance = nullptr;
         std::string_view               m_Path      = {};
+        xproperty::flags::type         m_Flags     = {};        // the flags of the property being drawn (a resource widget reads SMALL_RESOURCE here)
+        bool                           m_bClearResource = false; // set by the resource widget (m_OnResourceWigzmos) when the person pressed its clear button: the property becomes "none"
     } m_CurrentProperty;
 #endif
     on_resource_leftside        m_OnResourceLeftSize;       // Gets the height of the
