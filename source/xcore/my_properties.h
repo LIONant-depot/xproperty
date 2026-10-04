@@ -20,6 +20,7 @@
 // ------------------------------------------------------------------------------
 #pragma once
 #include<string>
+#include<string_view>
 #include<vector>
 #include<map>
 #include<unordered_map>
@@ -571,6 +572,8 @@ namespace xproperty::settings
 // ------------------------------------------------------------------------------
 namespace xproperty::settings
 {
+    inline std::string wstring_to_utf8(std::wstring_view Wide);       // defined below, with its other half
+
     inline int AnyToString(std::span<char> String, const xproperty::any& Value) noexcept
     {
         switch (Value.getTypeGuid())
@@ -584,7 +587,7 @@ namespace xproperty::settings
         case ::xproperty::settings::var_type<float>::guid_v:                  return sprintf_s(String.data(), String.size(), "%f",    Value.get<float>());
         case ::xproperty::settings::var_type<double>::guid_v:                 return sprintf_s(String.data(), String.size(), "%f",    Value.get<double>());
         case ::xproperty::settings::var_type<std::string>::guid_v:            return sprintf_s(String.data(), String.size(), "%s",    Value.get<std::string>().c_str());
-        case ::xproperty::settings::var_type<std::wstring>::guid_v:           return sprintf_s(String.data(), String.size(), "%ls",   Value.get<std::wstring>().c_str());
+        case ::xproperty::settings::var_type<std::wstring>::guid_v:           return sprintf_s(String.data(), String.size(), "%s",    wstring_to_utf8(Value.get<std::wstring>()).c_str());
         case ::xproperty::settings::var_type<std::uint64_t>::guid_v:          return sprintf_s(String.data(), String.size(), "%llu",  Value.get<std::uint64_t>());
         case ::xproperty::settings::var_type<std::int64_t>::guid_v:           return sprintf_s(String.data(), String.size(), "%lld",  Value.get<std::int64_t>());
         case ::xproperty::settings::var_type<bool>::guid_v:                   return sprintf_s(String.data(), String.size(), "%s",    Value.get<bool>() ? "true" : "false");
@@ -595,16 +598,78 @@ namespace xproperty::settings
         return 0;
     }
 
-    #pragma warning(push)
-    #pragma warning(disable : 4996)
+    // The text of a property as a person writes it (the Inspector, the command line, a script) is UTF-8; a std::wstring is UTF-16 on Windows (UTF-32 elsewhere): these two convert between them
+    // by themselves, not through the locale of the C runtime (in the default "C" locale every byte above 127 became a character of its own: an accented letter was two).
+    // A byte sequence that is not valid UTF-8 becomes U+FFFD, one character for each bad byte.
+    inline
+    std::wstring utf8_to_wstring(std::string_view Utf8)
+    {
+        std::wstring Out;
+        Out.reserve(Utf8.size());
+        const auto Push = [&](std::uint32_t Cp)
+        {
+            if constexpr (sizeof(wchar_t) == 2)
+            {
+                if (Cp >= 0x10000) { Cp -= 0x10000; Out.push_back(static_cast<wchar_t>(0xD800 + (Cp >> 10))); Out.push_back(static_cast<wchar_t>(0xDC00 + (Cp & 0x3FF))); return; }
+            }
+            Out.push_back(static_cast<wchar_t>(Cp));
+        };
+        for (std::size_t i = 0; i < Utf8.size();)
+        {
+            const auto B = static_cast<unsigned char>(Utf8[i]);
+            std::uint32_t Cp = 0xFFFD;
+            std::size_t   Length = 1;
+            if      (B < 0x80)             { Cp = B; }
+            else if ((B & 0xE0) == 0xC0)   { Length = 2; Cp = B & 0x1F; }
+            else if ((B & 0xF0) == 0xE0)   { Length = 3; Cp = B & 0x0F; }
+            else if ((B & 0xF8) == 0xF0)   { Length = 4; Cp = B & 0x07; }
+            if (Length > 1)
+            {
+                bool bGood = i + Length <= Utf8.size();
+                for (std::size_t k = 1; bGood && k < Length; ++k)
+                {
+                    const auto C = static_cast<unsigned char>(Utf8[i + k]);
+                    if ((C & 0xC0) != 0x80) bGood = false; else Cp = (Cp << 6) | (C & 0x3F);
+                }
+                if (!bGood) { Cp = 0xFFFD; Length = 1; }
+            }
+            Push(Cp);
+            i += Length;
+        }
+        return Out;
+    }
+
+    inline
+    std::string wstring_to_utf8(std::wstring_view Wide)
+    {
+        std::string Out;
+        Out.reserve(Wide.size());
+        for (std::size_t i = 0; i < Wide.size(); ++i)
+        {
+            std::uint32_t Cp = static_cast<std::uint32_t>(Wide[i]);
+            if constexpr (sizeof(wchar_t) == 2)
+            {
+                if (Cp >= 0xD800 && Cp <= 0xDBFF && i + 1 < Wide.size())
+                {
+                    const auto Low = static_cast<std::uint32_t>(Wide[i + 1]);
+                    if (Low >= 0xDC00 && Low <= 0xDFFF) { Cp = 0x10000 + ((Cp - 0xD800) << 10) + (Low - 0xDC00); ++i; }
+                }
+            }
+            if      (Cp < 0x80)    { Out.push_back(static_cast<char>(Cp)); }
+            else if (Cp < 0x800)   { Out.push_back(static_cast<char>(0xC0 | (Cp >> 6)));  Out.push_back(static_cast<char>(0x80 | (Cp & 0x3F))); }
+            else if (Cp < 0x10000) { Out.push_back(static_cast<char>(0xE0 | (Cp >> 12))); Out.push_back(static_cast<char>(0x80 | ((Cp >> 6) & 0x3F))); Out.push_back(static_cast<char>(0x80 | (Cp & 0x3F))); }
+            else                   { Out.push_back(static_cast<char>(0xF0 | (Cp >> 18))); Out.push_back(static_cast<char>(0x80 | ((Cp >> 12) & 0x3F))); Out.push_back(static_cast<char>(0x80 | ((Cp >> 6) & 0x3F))); Out.push_back(static_cast<char>(0x80 | (Cp & 0x3F))); }
+        }
+        return Out;
+    }
+
     inline
     std::wstring convert_span_to_wstring(std::span<char> span) {
-        std::wstring wstr(span.size(), L'\0');
-        std::mbstowcs(wstr.data(), span.data(), span.size());
-        return wstr;
+        // the text ends at the first zero byte, or at the end of the span (the span may be a buffer with room to spare)
+        std::size_t Length = 0;
+        while (Length < span.size() && span[Length] != '\0') ++Length;
+        return utf8_to_wstring(std::string_view(span.data(), Length));
     }
-    // Re-enable warning C4996
-    #pragma warning(pop)
 
     inline
     size_t strnlen(const char* str, size_t maxlen)

@@ -684,7 +684,8 @@ namespace xproperty::ui::details
             auto size_needed = WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, nullptr, 0, nullptr, nullptr);
             WideCharToMultiByte(CP_UTF8, 0, g_WScrachCharBuffer.data(), -1, g_ScrachCharBuffer.data(), size_needed, nullptr, nullptr);
 
-            Overflow = ImGui::CalcTextSize(g_ScrachCharBuffer.data()).x - ImGui::GetColumnWidth();
+            // A text with line breaks (member_flags<MULTILINE>) has a box of several lines, where Enter is a line break (the one-line box never overflows to the left: it wraps, and the row grows)
+            if (!Flags.m_bMultiline) Overflow = ImGui::CalcTextSize(g_ScrachCharBuffer.data()).x - ImGui::GetColumnWidth();
 
             ImGui::BeginGroup();
 
@@ -696,11 +697,12 @@ namespace xproperty::ui::details
             if (WentOver) ImGui::SetCursorPosX(CurPos - Overflow - 6.0f);
 
             // Let IMGUI handle the actual string...
-            Cmd.m_isChange = ImGui::InputText("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+            if (Flags.m_bMultiline) Cmd.m_isChange = ImGui::InputTextMultiline("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4.5f));
+            else                    Cmd.m_isChange = ImGui::InputText("##value", g_ScrachCharBuffer.data(), g_ScrachCharBuffer.size(), ImGuiInputTextFlags_EnterReturnsTrue);
 
-            // convert back to wide
-            size_needed = MultiByteToWideChar(CP_ACP, 0, g_ScrachCharBuffer.data(), -1, nullptr, 0);
-            MultiByteToWideChar(CP_ACP, 0, g_ScrachCharBuffer.data(), -1, g_WScrachCharBuffer.data(), size_needed);
+            // convert back to wide (UTF-8, the same as it was converted to narrow above: the code page of the machine turned every accented letter into two characters)
+            size_needed = MultiByteToWideChar(CP_UTF8, 0, g_ScrachCharBuffer.data(), -1, nullptr, 0);
+            MultiByteToWideChar(CP_UTF8, 0, g_ScrachCharBuffer.data(), -1, g_WScrachCharBuffer.data(), size_needed);
 
 
             if (ImGui::IsItemActivated())
@@ -3843,7 +3845,8 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // Removed entirely: APPEND_NEW_LINE now relies solely on the value widget's own automatic
             // trailing spacing (the same amount every other row already gets for free), no manufactured
             // extra gap on top of it.
-            if (!E.m_Flags.m_bAppendNewLine && bValueColumnHasContent) ImGui::SameLine();
+            // (SameLine puts the cursor back at the top of the last widget: a tall one, like the box of a multiline text, would lose its height - the row after it would start inside it)
+            if (!E.m_Flags.m_bAppendNewLine && !E.m_Flags.m_bMultiline && bValueColumnHasContent) ImGui::SameLine();
             // Property's own tag gets first say (see member_custom_render_append_t's own comment);
             // falls through to the broadcast delegate only if the property carries no tag of its own.
             if (E.m_pCustomRenderAppend) E.m_pCustomRenderAppend( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value );
