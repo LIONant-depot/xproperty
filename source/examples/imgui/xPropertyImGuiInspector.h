@@ -820,6 +820,27 @@ protected:
     )
 };
 
+namespace xproperty::ui
+{
+    // A property that names a file of the project's assets (member_ui<std::wstring>::file_dialog: the source file of a descriptor) is drawn by ONE widget for every inspector of the process, set
+    // here once by the application (xresource_editor::RenderAssetReference): the name of the file over its actions (open it, find it in the Assets tab, clear), and the file dragged out of the
+    // Assets tab as a way to set it. Without a widget (an application that does not set it) the property is the text and the "..." button it always was.
+    struct asset_file_request
+    {
+        const std::wstring&                 m_Value;
+        const wchar_t*                      m_pFilter;              // the file types the property takes, as a file dialog takes them ("Name\0*.ext;*.ext\0...")
+        bool                                m_bMakePathRelative;    // the property keeps the path relative to the project ("Assets\Folder\file.png"), not a full path
+        std::function<bool(std::wstring&)>  m_Browse;               // opens the file dialog; true and the chosen path (made relative as the property asks) unless the person cancelled
+    };
+
+    struct asset_file_widget
+    {
+        // Draws the property. True when the person changed the path: NewValue is the new one.
+        std::function<bool(inspector&, const asset_file_request&, std::wstring& NewValue)> m_Draw;
+    };
+    inline asset_file_widget g_AssetFileWidget;
+}
+
 XPROPERTY_VREG2(inspect_props,  xproperty::inspector)
 XPROPERTY_REG2(v2_props,        xproperty::inspector_v2)
 XPROPERTY_REG2(settings_props,  xproperty::inspector::settings)

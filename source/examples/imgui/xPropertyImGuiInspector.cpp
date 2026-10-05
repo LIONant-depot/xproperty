@@ -972,10 +972,108 @@ namespace xproperty::ui::details
 
     //-----------------------------------------------------------------------------------
 
+    // The file (or folder) dialog of a path property: the person picks, and the path comes back made relative the way the property asks (m_bMakePathRelative, counted from the current path
+    // minus m_RelativeCurrentPathMinusCount folders). False when the person cancelled. Shared by the plain path widget and by the asset reference (g_AssetFileWidget).
+    static bool BrowseForFile(const xproperty::member_ui<std::wstring>::data& I, std::wstring& Out) noexcept
+    {
+        // The user can change the path in the dialog... changing the current path.
+        // We want to allow the user to do that because it is more convenient for them...
+        std::wstring CurrentPath;
+        std::array< wchar_t, MAX_PATH > WCurrentPath;
+        {
+            GetCurrentDirectory(static_cast<DWORD>(WCurrentPath.size()), WCurrentPath.data());
+            std::transform(WCurrentPath.begin(), WCurrentPath.end(), std::back_inserter(CurrentPath), [](wchar_t c) {return (char)c; });
+        }
+
+        // Set the scratch file to have nothing on it unless we put something...
+        g_ScrachCharBuffer[0]=0;
+        if (I.m_bFolders)
+        {
+            SelectFolderWithFilters(I.m_pFilter, WCurrentPath.data());
+        }
+        else
+        {
+            OPENFILENAMEW ofn;
+            ZeroMemory(&ofn, sizeof(ofn));
+            ofn.lStructSize     = sizeof(ofn);
+            ofn.hwndOwner       = GetActiveWindow();
+            ofn.lpstrFile       = g_WScrachCharBuffer.data();
+            ofn.lpstrFile[0]    = L'\0';
+            ofn.nMaxFile        = static_cast<std::uint32_t>(g_ScrachCharBuffer.size());
+            ofn.lpstrFilter     = I.m_pFilter;
+            ofn.nFilterIndex    = 1;
+            ofn.lpstrFileTitle  = nullptr;
+            ofn.nMaxFileTitle   = 0;
+            ofn.lpstrInitialDir = CurrentPath.c_str();
+            ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+            if (GetOpenFileNameW(&ofn) == TRUE)
+            {
+                assert(g_WScrachCharBuffer[0]);
+            }
+        }
+
+        if (!g_WScrachCharBuffer[0]) return false;
+
+        if (I.m_bMakePathRelative)
+        {
+            int nPops = 1;
+
+            // Set the expected current path
+            CurrentPath = xproperty::member_ui<std::wstring>::g_CurrentPath;
+
+            // Count the paths for the current path
+            for (const wchar_t* p = CurrentPath.c_str(); *p; p++)
+            {
+                if (*p == '\\' || *p == '/') nPops++;
+            }
+
+            // Add whatever the user requested
+            nPops -= I.m_RelativeCurrentPathMinusCount;
+
+            // Find our relative path and set the new string
+            for (const wchar_t* p = g_WScrachCharBuffer.data(); *p; p++)
+            {
+                if (*p == L'\\' || *p == L'/') nPops--;
+                if (nPops <= 0)
+                {
+                    ++p;
+                    for (int i = 0; g_WScrachCharBuffer[i] = *p; ++i, ++p) {}
+                    break;
+                }
+            }
+        }
+
+        Out = g_WScrachCharBuffer.data();
+        return true;
+    }
+
+    //-----------------------------------------------------------------------------------
+
     template<>
     void draw<std::wstring, style::file_dialog>::Render(int GUID, undo::cmd& Cmd, const std::wstring& Value, const member_ui_base& IB, xproperty::flags::type Flags) noexcept
     {
         auto& I = reinterpret_cast<const xproperty::member_ui<std::wstring>::data&>(IB);
+
+        // A file of the project's assets: the widget every inspector shares (see g_AssetFileWidget). A folder is still a path.
+#ifdef XCORE_PROPERTIES_H
+        if (xproperty::ui::g_AssetFileWidget.m_Draw && !I.m_bFolders && g_pInspector)
+        {
+            g_pInspector->m_CurrentProperty.m_Flags = Flags;
+            const xproperty::ui::asset_file_request Request{ Value, I.m_pFilter, I.m_bMakePathRelative, [&I](std::wstring& Out) { return BrowseForFile(I, Out); } };
+            std::wstring NewValue;
+            if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
+            const bool bChanged = xproperty::ui::g_AssetFileWidget.m_Draw(*g_pInspector, Request, NewValue);
+            if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
+            if (bChanged && NewValue != Value)
+            {
+                Cmd.m_isChange  = true;
+                Cmd.m_isEditing = false;
+                Cmd.m_Original.set<std::wstring>(Value);
+                Cmd.m_NewValue.set<std::wstring>(NewValue);
+            }
+            return;
+        }
+#endif
 
         ImVec2 charSize     = ImGui::CalcTextSize("A");
         float ButtonWidth   = charSize.x * 3;
@@ -1038,74 +1136,12 @@ namespace xproperty::ui::details
             ImGui::SameLine(0, -3);
             if( ImGui::Button("...",ImVec2(0, ButtonWidth-3)) )
             {
-                // The user can change the path in the dialog... changing the current path.
-                // We want to allow the user to do that because it is more convenient for them...
-                std::wstring CurrentPath;// = xproperty::member_ui<std::string>::g_WCurrentPath;
-                std::array< wchar_t, MAX_PATH > WCurrentPath;
-                {
-                    GetCurrentDirectory(static_cast<DWORD>(WCurrentPath.size()), WCurrentPath.data());
-                    std::transform(WCurrentPath.begin(), WCurrentPath.end(), std::back_inserter(CurrentPath), [](wchar_t c) {return (char)c; });
-                }
-
-                // Set the scratch file to have nothing on it unless we put something...
-                g_ScrachCharBuffer[0]=0;
-                if (I.m_bFolders)
-                {
-                    SelectFolderWithFilters(I.m_pFilter, WCurrentPath.data());
-                }
-                else
-                {
-                    OPENFILENAMEW ofn;
-                    ZeroMemory(&ofn, sizeof(ofn));
-                    ofn.lStructSize     = sizeof(ofn);
-                    ofn.hwndOwner       = GetActiveWindow();
-                    ofn.lpstrFile       = g_WScrachCharBuffer.data();
-                    ofn.lpstrFile[0]    = L'\0';
-                    ofn.nMaxFile        = static_cast<std::uint32_t>(g_ScrachCharBuffer.size());
-                    ofn.lpstrFilter     = I.m_pFilter;
-                    ofn.nFilterIndex    = 1;
-                    ofn.lpstrFileTitle  = nullptr;
-                    ofn.nMaxFileTitle   = 0;
-                    ofn.lpstrInitialDir = CurrentPath.c_str();
-                    ofn.Flags           = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-                    if (GetOpenFileNameW(&ofn) == TRUE)
-                    {
-                        assert(g_WScrachCharBuffer[0]);
-                    }
-                }
-
-                if (g_WScrachCharBuffer[0])
+                std::wstring Chosen;
+                if (BrowseForFile(I, Chosen))
                 {
                     Cmd.m_isChange = true;
-
-                    if (I.m_bMakePathRelative)
-                    {
-                        int nPops = 1;
-
-                        // Set the expected current path
-                        CurrentPath = xproperty::member_ui<std::wstring>::g_CurrentPath;
-
-                        // Count the paths for the current path
-                        for (const wchar_t* p = CurrentPath.c_str(); *p; p++)
-                        {
-                            if (*p == '\\' || *p == '/') nPops++;
-                        }
-
-                        // Add whatever the user requested
-                        nPops -= I.m_RelativeCurrentPathMinusCount;
-
-                        // Find our relative path and set the new string
-                        for (const wchar_t* p = g_WScrachCharBuffer.data(); *p; p++)
-                        {
-                            if (*p == L'\\' || *p == L'/') nPops--;
-                            if (nPops <= 0)
-                            {
-                                ++p;
-                                for (int i = 0; g_WScrachCharBuffer[i] = *p; ++i, ++p) {}
-                                break;
-                            }
-                        }
-                    }
+                    Chosen.copy(g_WScrachCharBuffer.data(), Chosen.length());
+                    g_WScrachCharBuffer[Chosen.length()] = 0;
                 }
             }
 
@@ -1472,6 +1508,15 @@ namespace xproperty::ui::details
     }
 
     //=================================================================================================
+
+    // Whether a property is drawn by the asset file widget (g_AssetFileWidget): a std::wstring with the file_dialog style that names a file, not a folder.
+    static bool IsAssetFileProperty(const xproperty::type::members& Entry) noexcept
+    {
+        const auto* pMemberUI = reinterpret_cast<const xproperty::settings::member_ui_t*>(Entry.getUserData<xproperty::settings::member_ui_t>());
+        if (pMemberUI == nullptr || pMemberUI->m_pUIBase == nullptr) return false;
+        if (pMemberUI->m_pUIBase->m_StyleGUID != ui::details::style::file_dialog::guid_v) return false;
+        return !static_cast<const xproperty::member_ui<std::wstring>::data*>(pMemberUI->m_pUIBase)->m_bFolders;
+    }
 
     struct group_render
     {
@@ -2435,7 +2480,10 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         bool   bScopeToggleHasExpandable = false; // does this scope have any child worth bulk open/close-ing? see the O/C scan below
 
 #ifdef XCORE_PROPERTIES_H
-        const bool bCustomRender = E.m_Property.m_Value.m_pType && E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v;
+        // A resource reference, and a file of the project's assets (xproperty::ui::g_AssetFileWidget): both are a framed label as tall as the widget at its right, which is two lines.
+        const bool bCustomRender = E.m_Property.m_Value.m_pType
+            && (E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v
+                || (E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<std::wstring>::guid_v && xproperty::ui::g_AssetFileWidget.m_Draw && E.m_pUserData && xproperty::ui::details::IsAssetFileProperty(*E.m_pUserData)));
 
         if (bCustomRender)
         {
