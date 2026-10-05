@@ -1576,6 +1576,10 @@ static std::array<ImColor, 20> s_ColorCategories =
 
 void xproperty::inspector::clear(void) noexcept
 {
+    // Everything that holds a property value (xproperty::any): its destruction calls the type functions of the property table it came from, which may live in a DLL about to be unloaded
+    // (a copy of the core, the render module, a Game.dll), so a caller that unloads one clears the inspector first - the values of an edit in progress included.
+    m_CmdCurrentEdit = nullptr;
+    m_PendingEdit.reset();
     m_lEntities.clear();
 //    m_UndoSystem.clear();
 }
