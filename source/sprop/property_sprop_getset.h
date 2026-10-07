@@ -3,6 +3,37 @@
 #pragma once
 namespace xproperty::sprop
 {
+    // A value that was read from a file written when its member was narrower (a u32 that has become a u64, like the permanent id
+    // of an entity) still fits the member: widen it, instead of handing the member a value of another type. Storage keeps the
+    // widened value alive; the result is Value itself when there is nothing to widen (same type, not an unsigned integer, or the
+    // member is not wider).
+    inline const xproperty::any& WidenToMember( const xproperty::any& Value, std::uint32_t MemberGuid, xproperty::any& Storage ) noexcept
+    {
+        if( Value.m_pType == nullptr || Value.m_pType->m_GUID == MemberGuid ) return Value;
+
+        const auto SizeOf = []( std::uint32_t Guid ) constexpr noexcept -> int
+        {
+            if( Guid == xproperty::settings::var_type<std::uint8_t >::guid_v ) return 1;
+            if( Guid == xproperty::settings::var_type<std::uint16_t>::guid_v ) return 2;
+            if( Guid == xproperty::settings::var_type<std::uint32_t>::guid_v ) return 4;
+            if( Guid == xproperty::settings::var_type<std::uint64_t>::guid_v ) return 8;
+            return 0;
+        };
+
+        const int From = SizeOf(Value.m_pType->m_GUID);
+        const int To   = SizeOf(MemberGuid);
+        if( From == 0 || To == 0 || To <= From ) return Value;
+
+        const auto V = Value.getCastValue<std::uint64_t>();
+        switch( To )
+        {
+        case 2:  Storage.set<std::uint16_t>( static_cast<std::uint16_t>(V) ); break;
+        case 4:  Storage.set<std::uint32_t>( static_cast<std::uint32_t>(V) ); break;
+        default: Storage.set<std::uint64_t>( V );                             break;
+        }
+        return Storage;
+    }
+
     // A path looks like this: "pepe/somearray[key_type:key_value]/someprop"
     // So it will look physically like this: "pepe/somearray[s:string][i:2132]/someprop"
     // TODO: Maybe we should require quotes around strings that are keys else could run into the issue of treating a ']' inside the string and a terminator
@@ -111,7 +142,7 @@ namespace xproperty::sprop
                             return false;
                         }
 
-                        if constexpr (IS_SET_V) (void)Arg.m_pWriteUnchecked(pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
+                        if constexpr (IS_SET_V) { xproperty::any Widened; (void)Arg.m_pWriteUnchecked(pClass, WidenToMember(m_Property.m_Value, Arg.m_AtomicType.m_GUID, Widened), Arg.m_UnregisteredEnumSpan, m_Context); }
                         else                    (void)Arg.m_pReadUnchecked (pClass, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
 
                         return true;
@@ -160,7 +191,7 @@ namespace xproperty::sprop
                                 return false;
                             }
 
-                            if constexpr (IS_SET_V) (void)Arg.m_pWriteUnchecked( pObject, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
+                            if constexpr (IS_SET_V) { xproperty::any Widened; (void)Arg.m_pWriteUnchecked( pObject, WidenToMember(m_Property.m_Value, Arg.m_AtomicType.m_GUID, Widened), Arg.m_UnregisteredEnumSpan, m_Context); }
                             else                    (void)Arg.m_pReadUnchecked ( pObject, m_Property.m_Value, Arg.m_UnregisteredEnumSpan, m_Context);
                         }
                         return true;
