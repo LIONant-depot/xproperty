@@ -69,8 +69,8 @@ namespace xproperty::settings
 // ADDING THE ACTUAL LIBRARY
 // ------------------------------------------------------------------------------
 
-#include "dependencies\xproperty\source\xproperty.h"
-#include "dependencies\xproperty\source\sprop\property_sprop_container.h"
+#include "dependencies/xproperty/source/xproperty.h"
+#include "dependencies/xproperty/source/sprop/property_sprop_container.h"
 
 // ------------------------------------------------------------------------------
 // POST-MEMORY-CONFIGURATION
@@ -814,7 +814,7 @@ namespace xproperty::settings
 // ------------------------------------------------------------------------------
 //  ADD SUPPORT FOR IMGUI UI/EDITOR
 // ------------------------------------------------------------------------------
-#include "dependencies\xproperty\source\examples\imgui\my_property_ui.h"
+#include "dependencies/xproperty/source/examples/imgui/my_property_ui.h"
 
 // ------------------------------------------------------------------------------
 //  THIRD-PARTY TYPE BRIDGES
@@ -824,8 +824,8 @@ namespace xproperty::settings
 // my_property_ui.h (member_flags/member_ui/drag_bar all live there) so every descriptor sees the same,
 // fully-set-up registration regardless of its own include order, instead of relying on picking up a
 // transitively-included copy at an arbitrary point.
-#include "dependencies\xresource_guid\source\bridges\xresource_xproperty_bridge.h"
-#include "dependencies\xmath\source\bridge\xmath_to_xproperty.h"
+#include "dependencies/xresource_guid/source/bridges/xresource_xproperty_bridge.h"
+#include "dependencies/xmath/source/bridge/xmath_to_xproperty.h"
 
 namespace xprop_ui
 {

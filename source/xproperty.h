@@ -205,7 +205,7 @@ namespace xproperty
     }
 
     template< typename T_TUPLE >
-    inline constexpr bool tuple_has_tags_v = details::has_Tags( reinterpret_cast<T_TUPLE*>(nullptr) );
+    inline constexpr bool tuple_has_tags_v = details::has_Tags( static_cast<T_TUPLE*>(nullptr) );
 
     //
     // Tuple Helpers
@@ -2042,7 +2042,9 @@ namespace xproperty
 
                 for (auto& E : S)
                 {
-                    if (Value.get<std::string>() == E.m_pName)
+                    // delay_linkage keeps the type dependent: var_type<std::string> is specialized later
+                    // (my_properties.h) and standard two-phase lookup would instantiate it here first.
+                    if (Value.get<typename xproperty::details::delay_linkage<std::string, T_ATOMIC>::type>() == E.m_pName)
                     {
                         type::any Resolved;
                         Resolved.set<T_ATOMIC>(static_cast<T_ATOMIC>(E.m_Value));
@@ -2098,7 +2100,7 @@ namespace xproperty
                 //
                 static xproperty::result<void> Read ( const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context )
                 {
-                    details::cacheEnumSpanBestEffort<atomic_t>(S);
+                    xproperty::meta::details::cacheEnumSpanBestEffort<atomic_t>(S);
                     auto& Member = const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(const_cast<void*>(pClass))));
                     if constexpr (type::var_t<t>::is_pointer_v)
                     {
@@ -2110,7 +2112,7 @@ namespace xproperty
 
                 static xproperty::result<void> Write(void* pClass, const type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context)
                 {
-                    details::cacheEnumSpanBestEffort<atomic_t>(S);
+                    xproperty::meta::details::cacheEnumSpanBestEffort<atomic_t>(S);
                     auto& Member = const_cast<xproperty::details::remove_all_const_t<t&>>(T_LAMBDA_V(*static_cast<T_CLASS*>(pClass)));
                     if constexpr (type::var_t<t>::is_pointer_v)
                     {
@@ -2119,9 +2121,9 @@ namespace xproperty
 
                     if constexpr (std::is_enum_v<atomic_t>)
                     {
-                        if (details::isUnresolvedEnumString<atomic_t>(Any))
+                        if (xproperty::meta::details::isUnresolvedEnumString<atomic_t>(Any))
                         {
-                            auto Resolved = details::resolveEnumString<atomic_t>(Any, S);
+                            auto Resolved = xproperty::meta::details::resolveEnumString<atomic_t>(Any, S);
                             if (!Resolved) return Resolved.getError();
 
                             type::var_t<t>::Write(Member, Resolved.value().template get<atomic_t>(), Context);
@@ -2830,7 +2832,7 @@ namespace xproperty
                     {
                         if constexpr (std::is_const_v<T_MEMBER_TYPE> == false)
                         {
-                            details::cacheEnumSpanBestEffort<t>(S);
+                            xproperty::meta::details::cacheEnumSpanBestEffort<t>(S);
 
                             if constexpr ( sizeof...(T_ADDITIONAL) == 0 )
                                 T_LAMBDA_V
@@ -2853,13 +2855,13 @@ namespace xproperty
                     {
                         if constexpr ( is_ready_only_v == false )
                         {
-                            details::cacheEnumSpanBestEffort<t>(S);
+                            xproperty::meta::details::cacheEnumSpanBestEffort<t>(S);
 
                             if constexpr (std::is_enum_v<t>)
                             {
-                                if (details::isUnresolvedEnumString<t>(Any))
+                                if (xproperty::meta::details::isUnresolvedEnumString<t>(Any))
                                 {
-                                    auto Resolved = details::resolveEnumString<t>(Any, S);
+                                    auto Resolved = xproperty::meta::details::resolveEnumString<t>(Any, S);
                                     if (!Resolved) return Resolved.getError();
 
                                     if constexpr (sizeof...(T_ADDITIONAL) == 0)
@@ -3102,7 +3104,7 @@ namespace xproperty
                 , .m_Variant            = xproperty::type::members::list_var
                     { .m_pReadUnchecked          =  +[](const void* pClass, type::any& Any, const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr -> xproperty::result<void>
                                             {
-                                                details::cacheEnumSpanBestEffort<atomic_t>(S);
+                                                xproperty::meta::details::cacheEnumSpanBestEffort<atomic_t>(S);
 
                                                 type::var_t<last_t>::Read
                                                 ( *static_cast<const typename type::var_t<last_t>::specializing_t*>(pClass)
@@ -3114,13 +3116,13 @@ namespace xproperty
                                             
                     , .m_pWriteUnchecked         = is_ready_only_v ? nullptr : +[]( void* pClass, const type::any& Any,const std::span<const type::atomic::enum_item>& S, settings::context& Context) constexpr -> xproperty::result<void>
                                             {
-                                                details::cacheEnumSpanBestEffort<atomic_t>(S);
+                                                xproperty::meta::details::cacheEnumSpanBestEffort<atomic_t>(S);
 
                                                 if constexpr (std::is_enum_v<atomic_t>)
                                                 {
-                                                    if (details::isUnresolvedEnumString<atomic_t>(Any))
+                                                    if (xproperty::meta::details::isUnresolvedEnumString<atomic_t>(Any))
                                                     {
-                                                        auto Resolved = details::resolveEnumString<atomic_t>(Any, S);
+                                                        auto Resolved = xproperty::meta::details::resolveEnumString<atomic_t>(Any, S);
                                                         if (!Resolved) return Resolved.getError();
 
                                                         type::var_t<last_t>::Write

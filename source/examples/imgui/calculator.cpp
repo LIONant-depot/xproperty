@@ -2,7 +2,7 @@
 // Licensed under the MIT License (http://opensource.org/licenses/MIT)
 // https://github.com/aslze/asl-calculator
 
-#include "Calculator.h"
+#include "calculator.h"
 #include <math.h>
 #include <ctype.h>
 

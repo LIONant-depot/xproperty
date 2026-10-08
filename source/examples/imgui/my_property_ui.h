@@ -676,7 +676,9 @@ namespace xproperty
 
         struct data : ui::details::member_ui_base
         {
-            std::span<const xresource::type_guid> m_FilerTypes = {};
+            // No default member initializer: an omitted aggregate member is value-initialized anyway, and
+            // clang rejects a nested class's default member initializer used inside the enclosing class.
+            std::span<const xresource::type_guid> m_FilerTypes;
         };
 
         inline static constexpr auto type_guid_v = xproperty::settings::var_type<xresource::full_guid>::guid_v;

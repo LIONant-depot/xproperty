@@ -83,8 +83,8 @@ namespace xproperty::settings
 Now that we have defined our memory requirements we can Include the actual library
 cpp */
 
-#include "..\..\xproperty.h"
-#include "..\..\sprop\property_sprop_container.h"
+#include "../../xproperty.h"
+#include "../../sprop/property_sprop_container.h"
 
 /* cpp
 ------------------------------------------------------------------------------
