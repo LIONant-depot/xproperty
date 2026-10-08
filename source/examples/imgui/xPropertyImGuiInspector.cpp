@@ -2068,14 +2068,35 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, m_Settings.m_TableFramePadding );
         ImGui::AlignTextToFramePadding();
 
+        // A consumer may give this header a colour of its own (the framed tree node and the bar at the right both read ImGuiCol_Header)
+        ImVec4 HeaderTint{};
+        bool   bHeaderTint = false;
+        m_OnComponentHeaderColor.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, HeaderTint, bHeaderTint);
+        if (bHeaderTint)
+        {
+            // A quarter of the consumer's tint, three quarters of the theme's own header, per channel, in each of the three states (the tint is a hint, not a fill)
+            const auto Fade = [](const ImVec4& Theme, const ImVec4& Tint) { return ImVec4(Theme.x * 0.75f + Tint.x * 0.25f, Theme.y * 0.75f + Tint.y * 0.25f, Theme.z * 0.75f + Tint.z * 0.25f, Theme.w); };
+            const auto Lift = [&](float f) { return ImVec4(std::min(HeaderTint.x * f, 1.0f), std::min(HeaderTint.y * f, 1.0f), std::min(HeaderTint.z * f, 1.0f), HeaderTint.w); };
+            const auto& Style = ImGui::GetStyle();
+            ImGui::PushStyleColor(ImGuiCol_Header,        Fade(Style.Colors[ImGuiCol_Header],        HeaderTint));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Fade(Style.Colors[ImGuiCol_HeaderHovered], Lift(1.15f)));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive,  Fade(Style.Colors[ImGuiCol_HeaderActive],  Lift(1.30f)));
+        }
+
         // If the main tree is Close then forget about it
         PushTree(C.m_Base.first->m_pName, false, C.m_Base.first->m_pName, -1, true, false, false);
+        // The bar at the right is the same bar as the framed node at the left: it takes its top and bottom from the node's own rectangle (the height a framed node has is not always GetFrameHeight(): it
+        // follows the line it is on, and a fractional scroll gives both the same fractional place), so the two pieces are never one pixel apart.
+        const float HeaderTop    = ImGui::GetItemRectMin().y;
+        const float HeaderBottom = ImGui::GetItemRectMax().y;
+        // ...and the same colour: the node at the left is drawn in the state it is in (hovered, pressed), so the bar at the right takes that state's colour too, whole, with the same alpha - one fill, not two shades
+        const ImGuiCol HeaderState = (ImGui::IsItemActive() && ImGui::IsItemHovered()) ? ImGuiCol_HeaderActive : ImGui::IsItemHovered() ? ImGuiCol_HeaderHovered : ImGuiCol_Header;
 
         ImGui::NextColumn();
         ImGui::AlignTextToFramePadding();
 
         ImVec2 pos = ImGui::GetCursorScreenPos();
-        ImGui::GetWindowDrawList()->AddRectFilled( pos, ImVec2( pos.x + ImGui::GetContentRegionAvail().x, pos.y + ImGui::GetFrameHeight() ), ImGui::GetColorU32( ImGuiCol_Header ) );
+        ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( pos.x, HeaderTop ), ImVec2( pos.x + ImGui::GetContentRegionAvail().x, HeaderBottom ), ImGui::GetColorU32( HeaderState ) );
 
         // Right column of the component's own header row - already positioned, background bar already
         // drawn behind whatever gets drawn here. Fires unconditionally (whether this component's
@@ -2083,6 +2104,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // draw an enable/disable toggle, a delete "[X]", a status icon, etc. right on the header line.
         m_OnComponentHeaderRender.NotifyAll(*this, *C.m_Base.first, C.m_Base.second);
 
+        if (bHeaderTint) ImGui::PopStyleColor(3);
         ImGui::PopStyleVar();
     }
         

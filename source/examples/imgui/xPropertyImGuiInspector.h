@@ -507,6 +507,11 @@ public:
     // registration, matching every other delegate here.
     using on_component_header_render = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*>;
 
+    // Fired once per component BEFORE its header is drawn: a consumer that wants this component's header bar in a colour of its own (the prefab
+    // editor tints the components an instance added) sets the ImVec4 and the trailing bool. Both header bars (the tree node at the left, the bar at
+    // the right) use it; hovered and pressed are derived from it. Nobody sets it: the theme's header, as before.
+    using on_component_header_color = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, ImVec4&, bool&>;
+
     // Fired once per object-array ELEMENT row ("[i]"), with the right column already positioned (that
     // column is otherwise blank for these rows) - the per-element counterpart of the component header
     // hook above, for per-element tools (e.g. an "Edit" toggle for one box of a collider's box list).
@@ -627,7 +632,8 @@ public:
     on_override_reset           m_OnOverrideReset;          // Fired when the revert button (above) is clicked - consumer's job to actually remove/reset the override however that's meaningful for their own data model
 
     on_component_header_render  m_OnComponentHeaderRender;  // Fired once per component, right column of its header row already positioned - lets a consumer draw something there (enable/disable, delete, status, ...) - see the using declaration's own comment
-    on_left_column_append       m_OnLeftColumnAppend;       // Fired once per property, after its left-column label - see the using declaration's own comment
+    on_component_header_color   m_OnComponentHeaderColor;   // Fired once per component before its header is drawn - lets a consumer give that header its own colour (see the using declaration's own comment)
+    on_left_column_append       m_OnLeftColumnAppend;      // Fired once per property, after its left-column label - see the using declaration's own comment
     on_array_element_render     m_OnArrayElementRender;     // Fired once per object-array element row, in its (otherwise blank) right column - see the using declaration's own comment
 
     on_custom_render_append         m_OnCustomRenderAppend;         // Fired once per property right after its normal value widget renders - lets a consumer draw additional content on the SAME row without replacing anything (level 1 of 4 planned custom-rendering levels, see the using declaration's own comment)
