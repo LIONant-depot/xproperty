@@ -21,9 +21,11 @@
 #include <algorithm>
 #include <charconv>
 #include <cstring>
+#if defined(_WIN32)
 #include <olectl.h>
 #include <shobjidl.h>
 #include <comdef.h>
+#endif
 //#include <shlwapi.h> // For PathMatchSpecW
 #include "calculator.cpp"
 
@@ -825,6 +827,7 @@ namespace xproperty::ui::details
 
     bool SelectFolderWithFilters( const wchar_t* pFilers, const wchar_t* pInitialPath )
     {
+#if defined(_WIN32)
         struct CFolderFilter : public IFileDialogEvents
         {
             // IUnknown methods
@@ -968,6 +971,9 @@ namespace xproperty::ui::details
         }
 
         return FinalResult;
+    #else
+        (void)pFilers; (void)pInitialPath; return false;   // Linux port: no native folder dialog
+#endif
     }
 
     //-----------------------------------------------------------------------------------

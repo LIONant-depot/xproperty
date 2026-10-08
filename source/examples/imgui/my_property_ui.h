@@ -2,6 +2,17 @@
 #define MY_PROPERTIES_UI_H
 #pragma once
 
+// Linux port: clang (correctly) rejects int->float in a converted constant expression (drag_bar<1, 0, 32> on a
+// float member); MSVC accepts it. Off MSVC the numeric UI parameters are deduced (auto) and converted to T
+// when stored, which gives the same values. MSVC keeps the exact original declarations.
+#ifndef XPROPERTY_UI_NTTP
+    #if defined(_MSC_VER)
+        #define XPROPERTY_UI_NTTP(TYPE) TYPE
+    #else
+        #define XPROPERTY_UI_NTTP(TYPE) auto
+    #endif
+#endif
+
 namespace xproperty::flags
 {
     union type
@@ -493,51 +504,51 @@ namespace xproperty
                 float           m_Speed;
             };
 
-            template< T                                 T_MIN       = std::numeric_limits<T>::lowest()
-                    , T                                 T_MAX       = std::numeric_limits<T>::max()
+            template< XPROPERTY_UI_NTTP(T)                T_MIN       = std::numeric_limits<T>::lowest()
+                    , XPROPERTY_UI_NTTP(T)              T_MAX       = std::numeric_limits<T>::max()
                     , xproperty::details::fixed_string  T_FORMAT    = T_FORMAT_MAIN
                     >
             struct scroll_bar : settings::member_ui_t
             {
                 inline static constexpr data data_v
                 { {.m_TypeGUID = type_guid_v, .m_StyleGUID = ui::details::style::scroll_bar::guid_v }
-                , T_MIN
-                , T_MAX
+                , static_cast<T>(T_MIN)
+                , static_cast<T>(T_MAX)
                 , T_FORMAT
                 , 0
                 };
                 constexpr scroll_bar() : settings::member_ui_t{ .m_pUIBase = &data_v }{}
             };
 
-            template< T                                 T_MIN       = std::numeric_limits<T>::lowest()
-                    , T                                 T_MAX       = std::numeric_limits<T>::max()
+            template< XPROPERTY_UI_NTTP(T)                T_MIN       = std::numeric_limits<T>::lowest()
+                    , XPROPERTY_UI_NTTP(T)              T_MAX       = std::numeric_limits<T>::max()
                     , xproperty::details::fixed_string  T_FORMAT    = T_FORMAT_MAIN
                     >
             struct edit_box : settings::member_ui_t
             {
                 inline static constexpr data data_v
                 { {.m_TypeGUID = type_guid_v, .m_StyleGUID = ui::details::style::edit_box::guid_v }
-                , T_MIN
-                , T_MAX
+                , static_cast<T>(T_MIN)
+                , static_cast<T>(T_MAX)
                 , T_FORMAT
                 , 0
                 };
                 constexpr edit_box() : settings::member_ui_t{ .m_pUIBase = &data_v }{}
             };
 
-            template< float                             T_SPEED     = 0.5f
-                    , T                                 T_MIN       = std::numeric_limits<T>::lowest()
-                    , T                                 T_MAX       = std::numeric_limits<T>::max()
+            template< XPROPERTY_UI_NTTP(float)            T_SPEED     = 0.5f
+                    , XPROPERTY_UI_NTTP(T)              T_MIN       = std::numeric_limits<T>::lowest()
+                    , XPROPERTY_UI_NTTP(T)              T_MAX       = std::numeric_limits<T>::max()
                     , xproperty::details::fixed_string  T_FORMAT    = T_FORMAT_MAIN
                     >
             struct drag_bar : settings::member_ui_t
             {
                 inline static constexpr data data_v
                 { { .m_TypeGUID = type_guid_v, .m_StyleGUID = ui::details::style::drag_bar::guid_v }
-                , T_MIN
-                , T_MAX
+                , static_cast<T>(T_MIN)
+                , static_cast<T>(T_MAX)
                 , T_FORMAT
-                , T_SPEED
+                , static_cast<float>(T_SPEED)
                 };
                 constexpr drag_bar() : settings::member_ui_t{ .m_pUIBase  = &data_v }{}
             };
