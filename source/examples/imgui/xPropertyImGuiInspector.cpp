@@ -1043,7 +1043,7 @@ namespace xproperty::ui::details
                 if (nPops <= 0)
                 {
                     ++p;
-                    for (int i = 0; g_WScrachCharBuffer[i] = *p; ++i, ++p) {}
+                    for (int i = 0; (g_WScrachCharBuffer[i] = *p) != 0; ++i, ++p) {}
                     break;
                 }
             }
@@ -3800,7 +3800,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if (E.m_pCustomRenderReplaceValue) E.m_pCustomRenderReplaceValue( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedValue );
             else                               m_OnCustomRenderReplaceValue.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, bReplacedValue);
 
-            if (!bReplacedValue) if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
+            if (!bReplacedValue) { if ( E.m_Flags.m_bShowReadOnly || Tree[iDepth].m_isReadOnly )
             {
                 E.m_Flags.m_bShowReadOnly = true;
 
@@ -3882,7 +3882,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     HandleElement(Entry, E, i, true);
 
                 }( *C.m_List[iE + i] );
-            }
+            } } // !bReplacedValue
 
             // Level 1 custom-rendering hook - fired once per entry regardless of which of the three
             // branches above actually rendered the value column this frame (read-only, mid-edit-
