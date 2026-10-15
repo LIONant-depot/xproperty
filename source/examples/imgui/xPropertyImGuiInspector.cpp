@@ -524,7 +524,7 @@ namespace xproperty::ui::details
         bool bOpen = false;
         g_pInspector->m_CurrentProperty.m_Flags          = Flags;
         g_pInspector->m_CurrentProperty.m_bClearResource = false;
-        if (Flags.m_bShowReadOnly) ImGui::BeginDisabled();
+        // Not disabled when read only: the widget draws itself read only (m_CurrentProperty.m_Flags); its open-in-editor and find buttons change nothing about the reference
         {
             g_pInspector->m_OnResourceWigzmos.NotifyAll(*g_pInspector, *Ctx.m_pObject, Ctx.m_pInstance, Ctx.m_Path, bOpen, Value);
             if (bOpen && Cmd.m_isEditing == false)
@@ -533,7 +533,6 @@ namespace xproperty::ui::details
             }
             if (Cmd.m_isEditing && ImGui::IsItemDeactivatedAfterEdit()) Cmd.m_isEditing = false;
         }
-        if (Flags.m_bShowReadOnly) ImGui::EndDisabled();
 
         if (not Flags.m_bShowReadOnly)
         {
