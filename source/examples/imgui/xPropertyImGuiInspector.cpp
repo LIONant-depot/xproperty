@@ -1656,6 +1656,45 @@ void xproperty::inspector::AppendEntityComponent(const xproperty::type::object& 
 //-------------------------------------------------------------------------------------------------
 
 
+bool xproperty::inspector::ListStartsOpen( const xproperty::type::members& Member, std::size_t Count ) noexcept
+{
+    if( Count > max_open_list_entries_v ) return false;
+    if( auto* pDefaultOpen = Member.getUserData<xproperty::settings::member_ui_open_t>(); pDefaultOpen ) return pDefaultOpen->m_bOpen;
+    return false;
+}
+
+bool xproperty::inspector::isVirtualList( const xproperty::type::members& Member, std::size_t Count ) noexcept
+{
+    if( Count <= max_open_list_entries_v ) return false;
+    const auto isIndexed = [](const auto& Table) { return Table.size() == 1 && Table[0].m_KeyAtomicType.m_GUID == xproperty::settings::var_type<std::size_t>::guid_v; };
+    if( const auto* pList = std::get_if<xproperty::type::members::list_props>(&Member.m_Variant) ) return isIndexed(pList->m_Table);
+
+    // A list of values: only when it cannot be resized here, as its insert/delete/reorder controls need every value of it
+    if( const auto* pList = std::get_if<xproperty::type::members::list_var>(&Member.m_Variant); pList && isIndexed(pList->m_Table) )
+    {
+        const auto* pSizeReadOnly = Member.getUserData<xproperty::settings::member_array_size_readonly_t>();
+        return !pList->m_Table[0].m_bHasRealSetSize || (pSizeReadOnly && pSizeReadOnly->m_bReadOnly);
+    }
+    return false;
+}
+
+xproperty::sprop::collector::list_range xproperty::inspector::getListWalk( const char* pListPath, std::size_t Count, const xproperty::type::members& Member ) const noexcept
+{
+    constexpr std::size_t first_walk_v = 64;        // a virtual list never drawn open yet: its first elements (the next frame walks the ones on the screen)
+
+    // About to open: the mouse presses (or lets go of) its node now, so the node opens in this frame's Render, and this walk already has its elements
+    bool bOpen;
+    if( auto It = m_ListOpen.find(pListPath); It != m_ListOpen.end() )
+        bOpen = It->second.m_bOpen
+             || ((ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseReleased(ImGuiMouseButton_Left)) && ImGui::IsMouseHoveringRect(It->second.m_Min, It->second.m_Max, false));
+    else
+        bOpen = ListStartsOpen(Member, Count);
+    if( !bOpen ) return { 0, 0 };
+    if( !isVirtualList(Member, Count) ) return {};
+    if( auto It = m_ListViews.find(pListPath); It != m_ListViews.end() ) return { It->second.m_Begin, It->second.m_End };
+    return { 0, std::min(Count, first_walk_v) };
+}
+
 void xproperty::inspector::RefreshAllProperties(component& C) noexcept
 {
     C.m_List.clear();
@@ -1771,7 +1810,7 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
 
             const bool bAtomicArray = std::holds_alternative<xproperty::type::members::list_var>(Member.m_Variant);
 
-            const bool bDefaultOpen = [&]
+            bool bDefaultOpen = [&]
                 {
                     if (auto* pDefaultOpen = Member.getUserData<xproperty::settings::member_ui_open_t>(); pDefaultOpen) return pDefaultOpen->m_bOpen;
                     return !(bAtomicArray || std::holds_alternative<xproperty::type::members::list_props>(Member.m_Variant));
@@ -1856,6 +1895,9 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     // We don't deal with zero size arrays...
                     if (0 == Value.get<std::size_t>())
                         return;
+
+                    // A long list starts folded (max_open_list_entries_v)
+                    bDefaultOpen = ListStartsOpen(Member, Value.get<std::size_t>());
                 }
                 else
                 {
@@ -1894,7 +1936,8 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
                     , pDisabledReason
                 )
             );
-        }, true);
+        }, true
+        , [this](const char* pListPath, std::size_t Count, const xproperty::type::members& Member) { return getListWalk(pListPath, Count, Member); });     // a folded list: not walked; a virtual one: what is on the screen
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1943,6 +1986,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // itself and so tolerates any nesting depth even when hardcoded to C.m_Base.second/first, a raw
         // list_table call has no such self-healing and needs the real pointer handed to it directly.
         void*                            m_pArrayInstance = nullptr;
+        list_view*                       m_pListView      = nullptr;   // this level is a virtual list (isVirtualList): what it draws of it
         bool                 m_isOpen          : 1
                              , m_isAtomicArray : 1
                              , m_isReadOnly    : 1
@@ -2026,6 +2070,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         L.m_MyDimension     = myDimension;
         L.m_isHidden        = isHidden;
         L.m_bArrayMustInsertIndex = false;
+        L.m_pListView       = nullptr;
 
         return Open;
     };
@@ -2047,8 +2092,57 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         return Open;
     };
 
+    // A virtual list (list_view): the height of its elements a..b-1 (as last drawn, one row when not drawn yet); space of a height, in a row of its own
+    // (the left column, then the right); and its end: the space of the elements after the ones drawn, and which ones the next refresh walks (the ones
+    // on the screen, from where its element 0 is and their heights, and a few around them)
+    const auto ListRow = [&]( const list_view& V ) { return V.m_RowHeight > 0 ? V.m_RowHeight : ImGui::GetFrameHeightWithSpacing(); };
+    const auto ListHeight = [&]( const list_view& V, std::size_t a, std::size_t b )
+    {
+        float H = 0;
+        for( std::size_t k = a; k < b; ++k ) H += V.m_Heights[k] > 0 ? V.m_Heights[k] : ListRow(V);
+        return H;
+    };
+    const auto ListSpace = [&]( const list_view& V, float H )
+    {
+        ImGui::NextColumn();
+        if( const float Spacing = ImGui::GetStyle().ItemSpacing.y; H > Spacing ) ImGui::Dummy(ImVec2(1.0f, H - Spacing));
+        GlobalIndex += static_cast<int>(H / ListRow(V) + 0.5f);        // the rows it stands for: the stripes of the rows drawn keep their colour while it scrolls
+        ImGui::NextColumn();
+    };
+    const auto ListElementHeight = [&]( list_view& V, float Y )
+    {
+        const float h = Y - V.m_CurY;
+        V.m_Heights[V.m_iCur] = h;
+        if( h > 1.0f && (V.m_RowHeight <= 0 || h < V.m_RowHeight) ) V.m_RowHeight = h;
+    };
+    const auto ListEnd = [&]( list_view& V )
+    {
+        const std::size_t n = V.m_Heights.size();
+        ImGui::NextColumn();
+        const float Y = ImGui::GetCursorScreenPos().y;
+        ImGui::NextColumn();
+        if( V.m_bStarted ) ListElementHeight(V, Y);
+        else               V.m_TopY = Y;                             // none walked (off the screen): all of it is space
+        ListSpace(V, ListHeight(V, V.m_bStarted ? V.m_iCur + 1 : 0, n));
+
+        constexpr std::size_t margin_v = 4;
+        const float ClipMin = ImGui::GetWindowDrawList()->GetClipRectMin().y, ClipMax = ImGui::GetWindowDrawList()->GetClipRectMax().y;
+        std::size_t b = n, e = n;
+        float       y = V.m_TopY;
+        for( std::size_t k = 0; k < n; ++k )
+        {
+            if( y >= ClipMax ) { e = k; break; }
+            const float h = V.m_Heights[k] > 0 ? V.m_Heights[k] : ListRow(V);
+            if( b == n && y + h > ClipMin ) b = k;
+            y += h;
+        }
+        if( b == n ) V.m_Begin = V.m_End = 0;                        // all of it above the screen
+        else         { V.m_Begin = b > margin_v ? b - margin_v : 0; V.m_End = std::min(n, std::max(b, e) + margin_v); }
+    };
+
     auto PopTree = [ & ]()
     {
+        if( Tree[iDepth].m_pListView ) ListEnd(*Tree[iDepth].m_pListView);
         // Handle muti-dimensional array increment of entries
         if ( iDepth >= 1 )
         {
@@ -2455,12 +2549,41 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             ImGui::SeparatorText("");
         }
 
+        // An element of a virtual list starts (list_view): its index, from its path ("List[G:i]..."); the space of the elements before it when it is the first drawn
+        list_view*  pElementView = nullptr;
+        std::size_t iElement     = 0;
+        if (Tree[iDepth].m_pListView)
+        {
+            const std::string_view List = Tree[iDepth].m_Path.substr(0, Tree[iDepth].m_Path.size() - 2);       // without its "[]"
+            const std::string_view Path = E.m_Property.m_Path;
+            const std::size_t      Colon = Path.find(':', List.size()), Close = Path.find(']', List.size());
+            bool bIndex = Path.size() > List.size() && Path.compare(0, List.size(), List) == 0 && Path[List.size()] == '['
+                       && Colon == List.size() + 2 && Close != std::string_view::npos && Close > Colon + 1;
+            for (std::size_t k = Colon + 1; bIndex && k < Close; ++k) { if (Path[k] < '0' || Path[k] > '9') bIndex = false; else iElement = iElement * 10 + (Path[k] - '0'); }
+            const auto& V = *Tree[iDepth].m_pListView;
+            if (bIndex && iElement < V.m_Heights.size() && !(V.m_bStarted && V.m_iCur == iElement))
+            {
+                pElementView = Tree[iDepth].m_pListView;
+                if (!pElementView->m_bStarted) ListSpace(*pElementView, ListHeight(*pElementView, 0, iElement));
+            }
+        }
+
         //
         // Render the left column
         //
         ++GlobalIndex;
         ImGui::NextColumn();
         ImGui::AlignTextToFramePadding();
+        if (pElementView)
+        {
+            auto& V = *pElementView;
+            const float Y = ImGui::GetCursorScreenPos().y;
+            if (V.m_bStarted) ListElementHeight(V, Y);
+            else              { V.m_bStarted = true; V.m_TopY = Y - ListHeight(V, 0, iElement); }
+            V.m_iCur = iElement;
+            V.m_CurY = Y;
+            Tree[iDepth].m_iArray = static_cast<int>(iElement);        // its label and ids: as if every element before it was drawn
+        }
     //    ImVec2 lpos = ImGui::GetCursorScreenPos();
         auto CRA = ImGui::GetContentRegionAvail();
         // E.m_GUID (a per-MEMBER constant, same for every element of an array) plus a per-tree-level
@@ -2911,7 +3034,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     }
                 }
                 snprintf(&Name[NameOffset], Name.size() - NameOffset, " ");
+                const bool bListShown = iDepth < 0 || Tree[iDepth].m_isOpen;      // its parent is open: its node is drawn
                 PushTree(Name.data(), bCustomRender, E.m_Property.m_Path, E.m_MyDimension, E.m_bDefaultOpen, E.m_Flags.m_bShowReadOnly, false, true, E.m_bAtomicArray);
+                if (bListShown) m_ListOpen[E.m_Property.m_Path] = { Tree[iDepth].m_isOpen, ImGui::GetItemRectMin(), ImGui::GetItemRectMax() };   // what the next refresh walks (getListWalk)
 
                 // E.m_pUserData is genuinely the array's own list_props/list_var Member right here -
                 // cached for the object-array index-row branch below, which runs at this same depth
@@ -2930,6 +3055,16 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 if (Tree[iDepth].m_isAtomicArray == false && E.m_MyDimension == E.m_Dimensions)
                 {
                     Tree[iDepth].m_bArrayMustInsertIndex = true;
+                }
+
+                // A long list of objects, open: drawn virtually (list_view), the elements the refresh walked and the space of the others
+                if (const std::size_t Count = E.m_Property.m_Value.get<std::size_t>();
+                    Tree[iDepth].m_isOpen && E.m_MyDimension == E.m_Dimensions && E.m_Dimensions == 1 && E.m_pUserData && isVirtualList(*E.m_pUserData, Count))
+                {
+                    auto& V = m_ListViews[E.m_Property.m_Path];
+                    V.m_Heights.resize(Count, 0.0f);
+                    V.m_bStarted = false;
+                    Tree[iDepth].m_pListView = &V;
                 }
             }
             else

@@ -1,6 +1,7 @@
 #ifndef XPROPERTY_SPROP_COLLECTOR_H
 #define XPROPERTY_SPROP_COLLECTOR_H
 #pragma once
+#include <functional>
 namespace xproperty::sprop
 {
 
@@ -46,6 +47,22 @@ namespace xproperty::sprop
             PopPath();
         }
 
+        // The same, with a filter of the lists: ListFilter(pListPath, Count, Member) is asked for every list that is not empty, after its size
+        // ("Path[]") was given to the callback, which of its elements are walked: [m_Begin, m_End) in their order (an editor's list that is folded:
+        // none, nothing of it is shown; a long one that is open: the ones on the screen)
+        struct list_range { std::size_t m_Begin = 0, m_End = ~std::size_t(0); };
+        using list_filter = std::function<list_range(const char* pListPath, std::size_t Count, const xproperty::type::members& Member)>;
+        template<typename T_CALLBACK >
+        collector( const void* pObject, const xproperty::type::object& PropertyObj, xproperty::settings::context& context, T_CALLBACK&& CallBack, bool bForEditors, list_filter ListFilter ) noexcept
+            : m_pContext   (&context)
+            , m_bForEditors(bForEditors)
+            , m_ListFilter (std::move(ListFilter))
+        {
+            PushPath(PropertyObj.m_pName);
+            DumpObject( std::move(CallBack), const_cast<void*>(pObject), PropertyObj, false);
+            PopPath();
+        }
+
     protected:
 
         struct node
@@ -59,6 +76,7 @@ namespace xproperty::sprop
         std::vector<node>                       m_PathStack        {};
         bool                                    m_bForEditors      {false};
         std::array<char, 256>                   m_CurrentPath;
+        list_filter                             m_ListFilter       {};
 
         //----------------------------------------------------------------------------------------------
 
@@ -133,6 +151,7 @@ namespace xproperty::sprop
             // Declared outside the block below (not just the pre-existing commented-out early-return)
             // because the element loop further down now needs it too - see its own comment.
             const auto Count = EndIterator.getSize();
+            list_range Range;                                       // the elements walked (m_ListFilter)
             {
                 // We will write the size for each dimension as a xproperty
                 xproperty::any Value;
@@ -141,10 +160,11 @@ namespace xproperty::sprop
 
                 // Let the user know that we got properties
                 CallBack(m_CurrentPath.data(), std::move(Value), Members, isConst, pClass);
-                m_iCurrentPath -= 2;
 
-                // If we have zero entries there is nothing else to do...
-                if( Count == 0 ) return;
+                // If we have zero entries there is nothing else to do... nor when the filter leaves this list's elements out
+                if (Count != 0 && m_ListFilter) Range = m_ListFilter(m_CurrentPath.data(), Count, Members);
+                m_iCurrentPath -= 2;
+                if( Count == 0 || Range.m_Begin >= Range.m_End ) return;
             }
 
             auto iStringPop = m_iCurrentPath;
@@ -167,6 +187,8 @@ namespace xproperty::sprop
                 if (pObject == nullptr) continue;
 
                 ++iVisited;
+                if (iVisited - 1 <  Range.m_Begin) continue;          // the filter leaves it out
+                if (iVisited - 1 >= Range.m_End)   break;
 
                 // Reset the string
                 m_iCurrentPath = iStringPop;

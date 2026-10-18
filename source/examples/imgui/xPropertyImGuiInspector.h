@@ -440,6 +440,18 @@ public:
                 void        BeginEdit               ( const xproperty::type::object& Obj, void* pInstance, std::string_view Name ) noexcept;
                 void        CommitEdit              ( xproperty::settings::context& Context ) noexcept;
                 bool        empty                   ( void )                                        const   noexcept { return m_lEntities.empty(); }
+    // A list with more entries than this starts folded (when it would otherwise start open: a list of materials), so a long one (an import's 1306 entries) is
+    // neither shown nor walked until it is opened
+    static constexpr std::size_t max_open_list_entries_v = 32;
+    // Which of a list's elements are walked this frame (the collector's list filter): all while it is open (as the last frame drew it, or about to be: the mouse
+    // presses its node now; never drawn: as it starts), none while folded, and of a virtual one (isVirtualList) the ones the last frame had on the screen.
+    // ListPath: its size's path ("Path[]")
+                xproperty::sprop::collector::list_range getListWalk( const char* pListPath, std::size_t Count, const xproperty::type::members& Member ) const noexcept;
+    // A list drawn virtually when open: only the elements on the screen (and a few around them) are walked and drawn, the others are their height of space
+    // (list_view). One of more than max_open_list_entries_v objects (or values, when it cannot be resized here), of one dimension, indexed by position
+    static      bool        isVirtualList           ( const xproperty::type::members& Member, std::size_t Count ) noexcept;
+    // Whether a list starts open: as its member says (member_ui_open; a list starts folded otherwise), and never with more than max_open_list_entries_v entries
+    static      bool        ListStartsOpen          ( const xproperty::type::members& Member, std::size_t Count ) noexcept;
     inline      void        setupWindowSize         ( int Width, int Height )                               noexcept { m_Width = Width; m_Height = Height; }
     inline      void        setOpenWindow           ( bool b )                                              noexcept { m_bWindowOpen = b; }
     constexpr   bool        isWindowOpen            ( void )                                        const   noexcept { return m_bWindowOpen; }
@@ -752,6 +764,20 @@ protected:
     // identify the bracket's target component, m_Original holds its whole-instance text snapshot
     // (an xproperty::any holding a std::string - see SnapshotToString) taken at BeginEdit time.
     std::optional<xproperty::ui::undo::cmd>     m_PendingEdit   {};
+    struct list_node { bool m_bOpen = false; ImVec2 m_Min{}, m_Max{}; };
+    std::unordered_map<std::string, list_node>  m_ListOpen      {};     // per list drawn (its size's path): open in the last frame, and where its node is (getListWalk)
+    // A virtual list (isVirtualList) as the last frame drew it: the height of each element (0: not drawn yet, one row), and the elements the next refresh walks
+    struct list_view
+    {
+        std::vector<float>  m_Heights;
+        float               m_RowHeight = 0;            // the smallest element drawn (one folded element: its row)
+        std::size_t         m_Begin = 0, m_End = 0;     // the elements the next refresh walks (the ones on the screen and a few around them)
+        bool                m_bStarted  = false;        // Render: its first element walked is drawn
+        std::size_t         m_iCur      = 0;            // Render: the element being drawn, and where it started
+        float               m_CurY      = 0;
+        float               m_TopY      = 0;            // Render: where its element 0 is (or would be)
+    };
+    std::unordered_map<std::string, list_view>  m_ListViews     {};     // per virtual list open (its size's path)
     simple_draw_background                      m_SimpleDrawBk  {};
 
     // Every component (and every block-escape's own Columns(1)/Columns(2) resume) gets its OWN,
