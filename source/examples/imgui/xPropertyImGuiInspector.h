@@ -382,12 +382,21 @@ public:
         {
             Inspector.RenderBackground();
             // The label of a resource reference is as tall as its widget (a framed row, with the padding that makes it that tall): the name sits in the middle of the picture's height.
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, xproperty::inspector::ResourceRowFramePadding(Inspector.m_CurrentProperty.m_Flags.m_bSmallResource));
+            // A framed leaf has no arrow slot, so ImGui puts its text right at the frame's edge: as much padding as the arrow slot the other rows keep
+            // (GetTreeNodeToLabelSpacing) lines its name up with theirs, at any depth.
+            auto Padding = xproperty::inspector::ResourceRowFramePadding(Inspector.m_CurrentProperty.m_Flags.m_bSmallResource);
+            if (flags & ImGuiTreeNodeFlags_Leaf) Padding.x = ImGui::GetTreeNodeToLabelSpacing();
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, Padding);
             // Path is a stable, genuinely unique identity (unlike pName, which can repeat across
             // sibling rows) - hashed into a void*-shaped id the same way other per-row ids in this
             // file already derive stability from a path hash rather than trusting the label text.
+            // The frame is only there for the row's height: its colour is the row's background (RenderBackground, above), as every other row's label
+            ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(0, 0, 0, 0));
             if (!Path.empty()) Open = ImGui::TreeNodeEx(reinterpret_cast<void*>(std::hash<std::string_view>{}(Path)), ImGuiTreeNodeFlags_Framed | flags, "%s", pName);
             else                Open = ImGui::TreeNodeEx(pName, ImGuiTreeNodeFlags_Framed | flags);
+            ImGui::PopStyleColor(3);
             ImGui::PopStyleVar();
         } > ();
     }
@@ -704,6 +713,7 @@ protected:
         const xproperty::type::object*                  m_pRootObject   = nullptr;  // the object this entry's path is relative to (what the per-property delegates receive)
         void*                                           m_pRootInstance = nullptr;  // ...and its instance
         const char*                                     m_pDisabledReason = nullptr; // member_dynamic_reason result when the property is unavailable, else null
+        std::string                                     m_Label;                     // a sprop_union_group row: its name's last "/" section (m_pName points at it)
     };
 
     struct component

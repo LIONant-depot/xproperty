@@ -15,6 +15,7 @@
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 #include "dependencies/xproperty/source/sprop/property_sprop_getset.h"
 #include "dependencies/xproperty/source/sprop/property_sprop_collector.h"
+#include "dependencies/xproperty/source/examples/imgui/ok_color_picker.h"     // the colour groups' picker (before windows.h: its min/max)
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -1523,6 +1524,16 @@ namespace xproperty::ui::details
         return !static_cast<const xproperty::member_ui<std::wstring>::data*>(pMemberUI->m_pUIBase)->m_bFolders;
     }
 
+    // How many cells a packed group draws on its one row (0: not a packed group)
+    inline int GroupCells(std::uint32_t GroupGUID) noexcept
+    {
+        if (GroupGUID == xproperty::settings::vector2_group::guid_v) return 2;
+        if (GroupGUID == xproperty::settings::vector3_group::guid_v) return 3;
+        if (GroupGUID == xproperty::settings::color3_group::guid_v) return 3;
+        if (GroupGUID == xproperty::settings::vector4_group::guid_v || GroupGUID == xproperty::settings::color4_group::guid_v) return 4;
+        return 0;
+    }
+
     struct group_render
     {
         static void RenderElement( inspector::entry& GroupEntry, int iElement, xproperty::ui::undo::cmd& Cmd, const xproperty::any& Value, const xproperty::type::members& Entry, xproperty::flags::type Flags, inspector& Inspector, inspector::entry& IEntry, const xproperty::type::object& Object, void* pInstance ) noexcept
@@ -1532,10 +1543,9 @@ namespace xproperty::ui::details
             // All vector 2 should have 2 elements in the following order...
             // [0] = X, [1] = Y
             //
-            if( GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v
-             || GroupEntry.m_GroupGUID == xproperty::settings::vector3_group::guid_v)
+            if( const int MaxElemens = GroupCells(GroupEntry.m_GroupGUID); MaxElemens > 1 )
             {
-                int         MaxElemens = GroupEntry.m_GroupGUID == xproperty::settings::vector2_group::guid_v ? 2 : 3;
+                const bool  bColor = GroupEntry.m_GroupGUID == xproperty::settings::color3_group::guid_v || GroupEntry.m_GroupGUID == xproperty::settings::color4_group::guid_v;
                 auto&       I = member_ui<float>::defaults::data_v;
                 ImGuiStyle* style = &ImGui::GetStyle();
                 // The width of one cell, worked out once (by the first axis, when the whole line is still free) so the three fill the line exactly:
@@ -1543,16 +1553,19 @@ namespace xproperty::ui::details
                 // CalcItemWidth() is the width of the row's value column, as the other value widgets see it; GetContentRegionAvail() would lose the indent
                 // of the scope the row is in (see DrawBackground's comment).
                 static float s_CellWidth = 0.0f;
+                static float s_RowRight  = 0.0f;                // where the row's value column ends: a colour's box sits against it, so every colour's box lines up
                 if (iElement == 0)
                 {
+                    s_RowRight = ImGui::GetCursorPosX() + ImGui::CalcItemWidth();
                     const float LabelWidth = ImGui::CalcTextSize("X:").x + style->ItemSpacing.x;
                     const float Gap        = Flags.m_bNoBoolText ? 10.0f : 2.0f;
-                    s_CellWidth = (ImGui::CalcItemWidth() - LabelWidth * MaxElemens - Gap * (MaxElemens - 1)) / MaxElemens;
+                    const float Swatch     = bColor ? ImGui::GetFrameHeight() + style->ItemSpacing.x : 0.0f;
+                    s_CellWidth = (ImGui::CalcItemWidth() - Swatch - LabelWidth * MaxElemens - Gap * (MaxElemens - 1)) / MaxElemens;
                 }
                 const float  Width = s_CellWidth;
                 const auto   Height = ImGui::GetFrameHeight();
                 ImVec2       pos;
-                static constexpr auto Colors = std::array<ImU32, 3>{ 0x440000ff, 0x4400ff00, 0x44ff0000 };
+                static constexpr auto Colors = std::array<ImU32, 4>{ 0x440000ff, 0x4400ff00, 0x44ff0000, 0x44ffffff };
 
                 if (iElement == 0) ImGui::PushItemWidth(Width);
                 else               ImGui::SameLine(0, Flags.m_bNoBoolText ? 10.0f : 2.0f);      // (boxes alone get some air before the next axis' label)
@@ -1588,6 +1601,52 @@ namespace xproperty::ui::details
                 const float TintWidth = Flags.m_bNoBoolText ? ImGui::GetItemRectSize().x : Width;
                 pos.x -= 3;
                 ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{pos.x, pos.y}, ImVec2(pos.x + 3/*TintWidth*/, pos.y + Height-1), Colors[iElement]);
+
+                // A colour: a box of it after the last cell (float channels are linear, uint8 ones sRGB; clamped only to be shown, never written back).
+                // Clicking the box opens the picker (ok_color_picker.h: Okhsv / Okhsl); a pick sets every channel in one edit (BeginEdit/CommitEdit: one undo step).
+                // The cells before the last were drawn this frame: their values and paths are kept as they go by.
+                static float                       s_Color[4] = { 0, 0, 0, 1 };
+                static std::array<std::string, 4>  s_Path;
+                static bool                        s_bByte = false, s_bPicking = false;
+                if (bColor)
+                {
+                    s_Path[iElement] = IEntry.m_Property.m_Path;
+                    s_bByte          = Value.is<std::uint8_t>();
+                    s_Color[iElement] = s_bByte ? Value.get<std::uint8_t>() / 255.0f : Value.is<float>() ? Value.get<float>() : 0.0f;
+                    if (MaxElemens == 3) s_Color[3] = 1.0f;
+                }
+                if (bColor && iElement == MaxElemens - 1)
+                {
+                    ImGui::SameLine();
+                    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), s_RowRight - Height));
+                    ImGui::PushID(GroupEntry.m_Property.m_Path.c_str());        // one box and one picker per colour row
+                    const bool bAlpha = MaxElemens == 4;
+                    const auto Show   = [&](float x) { x = std::clamp(x, 0.0f, 1.0f); return s_bByte ? x : xproperty::ui::ok_picker::ToSRGB(x); };     // float channels are linear
+                    const auto Shown  = ImVec4(Show(s_Color[0]), Show(s_Color[1]), Show(s_Color[2]), std::clamp(s_Color[3], 0.0f, 1.0f));
+                    if (ImGui::ColorButton("##ColorBox", Shown, (bAlpha ? ImGuiColorEditFlags_AlphaPreviewHalf : ImGuiColorEditFlags_NoAlpha) | ImGuiColorEditFlags_NoTooltip, ImVec2(Height, Height)) && !Flags.m_bShowReadOnly)
+                        ImGui::OpenPopup("##ColorPicker");
+                    ImGui::SetNextWindowPos(ImGui::GetItemRectMax(), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));      // under the box, growing to its left: over the inspector
+                    if (ImGui::BeginPopup("##ColorPicker"))
+                    {
+                        float      C[4]   = { s_Color[0], s_Color[1], s_Color[2], s_Color[3] };
+                        if (xproperty::ui::ok_picker::Picker(C, MaxElemens, s_bByte))
+                        {
+                            if (!s_bPicking) { Inspector.BeginEdit(Object, pInstance, "Color"); s_bPicking = true; }
+                            for (int i = 0; i < MaxElemens; ++i)
+                            {
+                                xproperty::any V;
+                                if (s_bByte) V.set<std::uint8_t>(static_cast<std::uint8_t>(std::clamp(C[i], 0.0f, 1.0f) * 255.0f + 0.5f));
+                                else         V.set<float>(C[i]);
+                                std::string Error;
+                                xproperty::sprop::setProperty(Error, pInstance, Object, xproperty::sprop::container::prop{ s_Path[i], V }, *Inspector.m_pContext);
+                            }
+                        }
+                        if (s_bPicking && !ImGui::IsAnyItemActive()) { Inspector.CommitEdit(*Inspector.m_pContext); s_bPicking = false; }
+                        ImGui::EndPopup();
+                    }
+                    else if (s_bPicking) { Inspector.CommitEdit(*Inspector.m_pContext); s_bPicking = false; }
+                    ImGui::PopID();
+                }
             }
         }
     };
@@ -1938,6 +1997,48 @@ void xproperty::inspector::RefreshAllProperties(component& C) noexcept
             );
         }, true
         , [this](const char* pListPath, std::size_t Count, const xproperty::type::members& Member) { return getListWalk(pListPath, Count, Member); });     // a folded list: not walked; a virtual one: what is on the screen
+
+    // A sprop_union_group row is labelled by its first member, the name (its last "/" section: a full path or a plain name both read well)
+    for (std::size_t i = 0; i + 1 < C.m_List.size(); ++i)
+    {
+        auto& H = *C.m_List[i];
+        auto& N = *C.m_List[i + 1];
+        if (H.m_GroupGUID != xproperty::settings::sprop_union_group::guid_v || !N.m_Property.m_Value.is<std::string>()) continue;
+        const std::string& Text  = N.m_Property.m_Value.get<std::string>();
+        const auto         Slash = Text.rfind('/');
+        H.m_Label = Slash == std::string::npos ? Text : Text.substr(Slash + 1);
+        H.m_pName = H.m_Label.c_str();
+    }
+}
+
+// A sprop_union_group row's value: the first shown entry after its name, through the union's view (a scope is looked into); a packed group's
+// header (its cells follow it), or a leaf. Null when it has none.
+template<typename T_LIST>
+static auto SpropValue( const T_LIST& List, std::size_t iHeader, int Span ) noexcept -> decltype(List[0].get())
+{
+    for( std::size_t i = iHeader + 2; i < iHeader + 1 + Span && i < List.size(); ++i )
+    {
+        auto* p = List[i].get();
+        if( p->m_Flags.m_bDontShow ) continue;
+        if( xproperty::ui::details::GroupCells(p->m_GroupGUID) > 1 ) return p;
+        if( p->m_bScope ) continue;
+        return p;
+    }
+    return nullptr;
+}
+
+// The entries under a row (its path, then "/"): what a sprop_union_group row covers
+template<typename T_LIST>
+static int SpropSpan( const T_LIST& List, std::size_t iHeader ) noexcept
+{
+    const std::string& P = List[iHeader]->m_Property.m_Path;
+    int n = 0;
+    for( std::size_t i = iHeader + 1; i < List.size(); ++i, ++n )
+    {
+        const std::string& Q = List[i]->m_Property.m_Path;
+        if( Q.size() <= P.size() || Q.compare(0, P.size(), P) != 0 || Q[P.size()] != '/' ) break;
+    }
+    return n;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -2631,9 +2732,12 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
 #ifdef XCORE_PROPERTIES_H
         // A resource reference, and a file of the project's assets (xproperty::ui::g_AssetFileWidget): both are a framed label as tall as the widget at its right, which is two lines.
-        const bool bCustomRender = E.m_Property.m_Value.m_pType
-            && (E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v
-                || (E.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<std::wstring>::guid_v && xproperty::ui::g_AssetFileWidget.m_Draw && E.m_pUserData && xproperty::ui::details::IsAssetFileProperty(*E.m_pUserData)));
+        // A sprop_union_group row looks like its value: a resource value makes it a resource row
+        const entry* pSpropValue = E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v ? SpropValue(C.m_List, iE, SpropSpan(C.m_List, iE)) : nullptr;
+        const entry& RowLook     = pSpropValue ? *pSpropValue : E;
+        const bool bCustomRender = RowLook.m_Property.m_Value.m_pType
+            && (RowLook.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<xresource::full_guid>::guid_v
+                || (RowLook.m_Property.m_Value.m_pType->m_GUID == xproperty::settings::var_type<std::wstring>::guid_v && xproperty::ui::g_AssetFileWidget.m_Draw && RowLook.m_pUserData && xproperty::ui::details::IsAssetFileProperty(*RowLook.m_pUserData)));
 
         if (bCustomRender)
         {
@@ -2710,8 +2814,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
         // Handle property groups
         if (E.m_GroupGUID != 0)
         {
-            if( E.m_GroupGUID == xproperty::settings::vector2_group::guid_v 
-             || E.m_GroupGUID == xproperty::settings::vector3_group::guid_v )
+            if( xproperty::ui::details::GroupCells(E.m_GroupGUID) > 1 || E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v )
             {
                 // This guy is not longer a scope...
                 E.m_bScope = false;
@@ -2731,11 +2834,51 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if (Tree[iDepth].m_isAtomicArray || (E.m_GroupGUID && E.m_Property.m_Path.back() == ']'))
             {
                 Tree[iDepth].m_iArray++;
+                if (E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v && !E.m_Label.empty())
+                {
+                    const auto L = std::strlen(Name.data());
+                    snprintf(Name.data() + L, Name.size() - L, "  %s", E.m_Label.c_str());
+                }
+                bool bElementOverridden = false;
+                if (E.m_GroupGUID != 0)
+                {
+                    const int Span = E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v ? SpropSpan(C.m_List, iE) : xproperty::ui::details::GroupCells(E.m_GroupGUID);
+                    for (int i = 0; i < Span && !bElementOverridden && static_cast<std::size_t>(iE) + 1 + i < C.m_List.size(); ++i)
+                    {
+                        auto& Sub = *C.m_List[iE + 1 + i];
+                        if (Sub.m_pOverrideCheck) Sub.m_pOverrideCheck(*this, *C.m_Base.first, C.m_Base.second, Sub.m_Property.m_Path, Sub.m_Property.m_Value, bElementOverridden);
+                        else                      m_OnOverrideCheck.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, Sub.m_Property.m_Path, Sub.m_Property.m_Value, bElementOverridden);
+                    }
+                }
+                // Overridden: the label in the override colour, and a ">" in the label's arrow slot (a leaf row keeps it empty), as tall as the row
+                // (a resource row is two lines). The ">" is drawn after the label (on top of its background) and takes no room: every label stays
+                // where the others are.
+                const ImVec2 RowStart = ImGui::GetCursorScreenPos();
+                if (bElementOverridden) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 170, 255, 255));
                 bool Open;
                 const auto flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-                if (bCustomRender) m_CurrentProperty.m_Flags = E.m_Flags;
+                if (bCustomRender) m_CurrentProperty.m_Flags = RowLook.m_Flags;
                 if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
                 else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID + Tree[iDepth].m_iArray)), flags, "%s", Name.data());
+                if (bElementOverridden)
+                {
+                    const auto&  Style  = ImGui::GetStyle();
+                    const float  Line   = ImGui::GetFrameHeight();
+                    const float  RowH   = bCustomRender ? ResourceRowHeight(RowLook.m_Flags.m_bSmallResource) : Line;
+                    const float  W      = ImGui::CalcTextSize(">").x + Style.FramePadding.x * 2.0f;
+                    const float  x      = RowStart.x + std::max(0.0f, (ImGui::GetTreeNodeToLabelSpacing() - W) * 0.5f);      // in the label's arrow slot (a leaf has no arrow)
+                    const ImRect BB(ImVec2(x, RowStart.y), ImVec2(x + W, RowStart.y + RowH));        // as tall as the row, as everywhere
+                    const ImGuiID Id = ImGui::GetID(E.m_Property.m_Path.c_str());
+                    if (ImGui::ItemAdd(BB, Id))
+                    {
+                        bool bHovered = false, bHeld = false;
+                        if (ImGui::ButtonBehavior(BB, Id, &bHovered, &bHeld)) m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                        ImGui::RenderFrame(BB.Min, BB.Max, ImGui::GetColorU32(bHeld ? ImGuiCol_ButtonActive : bHovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button), true, Style.FrameRounding);
+                        ImGui::RenderTextClipped(BB.Min, BB.Max, ">", nullptr, nullptr, ImVec2(0.5f, 0.5f));
+                        if (bHovered) ImGui::SetTooltip("This property has been overridden from its base value - click to revert");
+                    }
+                    ImGui::PopStyleColor();
+                }
             }
             else
             {
@@ -3329,7 +3472,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         // only when the icon cluster is actually showing (an ordinary custom-rendered row
                         // with no controls keeps its normal padding).
                         if (bShowArrayControls) ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, ImGui::GetStyle().FramePadding.y));
-                        m_CurrentProperty.m_Flags = E.m_Flags;
+                        m_CurrentProperty.m_Flags = RowLook.m_Flags;
                         m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, Name.data(), Open);
                         if (bShowArrayControls) ImGui::PopStyleVar();
                     }
@@ -3449,8 +3592,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // click below mirrors this same per-axis walk to know exactly which axes to reset.
             if (E.m_GroupGUID != 0)
             {
-                const int GroupN = (E.m_GroupGUID == xproperty::settings::vector2_group::guid_v) ? 2
-                                 : (E.m_GroupGUID == xproperty::settings::vector3_group::guid_v) ? 3 : 1;
+                const int GroupN = E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v ? SpropSpan(C.m_List, iE) : std::max(1, xproperty::ui::details::GroupCells(E.m_GroupGUID));
                 for (int i = 0; i < GroupN && bIsOverridden == false; ++i)
                 {
                     if (static_cast<std::size_t>(iE) + 1 + i >= C.m_List.size()) break;
@@ -3481,17 +3623,16 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     // exactly one thing to revert, so it stays a single click with no menu at all - the
                     // string literal ID below is already uniquely scoped per-row via E.m_LeftUIGUID's
                     // PushID further up, no extra ID plumbing needed.
-                    if (E.m_GroupGUID != 0) ImGui::OpenPopup("##RevertGroupMenu");
+                    if (E.m_GroupGUID != 0 && E.m_GroupGUID != xproperty::settings::sprop_union_group::guid_v) ImGui::OpenPopup("##RevertGroupMenu");
                     else
                     {
                         if (E.m_pOverrideReset) E.m_pOverrideReset( *this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path );
                         else                    m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
                     }
                 }
-                if (E.m_GroupGUID != 0 && BeginCustomPopup("##RevertGroupMenu"))
+                if (E.m_GroupGUID != 0 && E.m_GroupGUID != xproperty::settings::sprop_union_group::guid_v && BeginCustomPopup("##RevertGroupMenu"))
                 {
-                    const int GroupN = (E.m_GroupGUID == xproperty::settings::vector2_group::guid_v) ? 2
-                                     : (E.m_GroupGUID == xproperty::settings::vector3_group::guid_v) ? 3 : 1;
+                    const int GroupN = E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v ? SpropSpan(C.m_List, iE) : std::max(1, xproperty::ui::details::GroupCells(E.m_GroupGUID));
                     for (int i = 0; i < GroupN; ++i)
                     {
                         if (static_cast<std::size_t>(iE) + 1 + i >= C.m_List.size()) break;
@@ -3593,7 +3734,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
             if (!bReplacedRow)
             {
-                if (bCustomRender) m_CurrentProperty.m_Flags = E.m_Flags;
+                if (bCustomRender) m_CurrentProperty.m_Flags = RowLook.m_Flags;
                 if (bCustomRender) m_OnResourceLeftSize.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path, E.m_Property.m_Value, flags, pLeftLabel, Open);
                 else               ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<std::size_t>(E.m_GUID)), flags, "%s", pLeftLabel);
             }
@@ -3908,13 +4049,25 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             if (E.m_GroupGUID != 0)
             {
                 ++iE;
-                if (E.m_GroupGUID == xproperty::settings::vector2_group::guid_v)
+                n = std::max(1, xproperty::ui::details::GroupCells(E.m_GroupGUID));
+            }
+
+            // What the value column draws: the row's own cells, or for a sprop_union_group row its value: the first shown entry after the name, through
+            // the union's view (a scope is looked into), drawn with its own widget - a packed group (colour, vector) as its cells. n is all the row
+            // covers: every entry under it is skipped.
+            entry*      pValueE = &E;
+            std::size_t iCell   = iE;
+            int         nCells  = n;
+            if (E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v)
+            {
+                n = std::max(1, SpropSpan(C.m_List, iE - 1));
+                nCells = 0;
+                if (auto* pV = SpropValue(C.m_List, iE - 1, n))
                 {
-                    n = 2;
-                }
-                else if (E.m_GroupGUID == xproperty::settings::vector3_group::guid_v)
-                {
-                    n = 3;
+                    pValueE = pV;
+                    for (std::size_t i = iE; i < C.m_List.size(); ++i) if (C.m_List[i].get() == pV) { iCell = i; break; }
+                    if (const int Cells = xproperty::ui::details::GroupCells(pV->m_GroupGUID); Cells > 1) { iCell += 1; nCells = Cells; }
+                    else nCells = 1;
                 }
             }
 
@@ -3949,17 +4102,17 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 ImGui::PushStyleColor( ImGuiCol_Text, CC2f );
 
                 xproperty::ui::undo::cmd Cmd;
-                if (E.m_GroupGUID != 0)
+                if (pValueE->m_GroupGUID != 0 && nCells > 0)
                 {
-                    for (int i = 0; i < n; ++i)
+                    for (int i = 0; i < nCells; ++i)
                     {
-                        auto& Entry = *C.m_List[iE + i];
-                        xproperty::ui::details::group_render::RenderElement(E, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry, *C.m_Base.first, C.m_Base.second);
+                        auto& Entry = *C.m_List[iCell + i];
+                        xproperty::ui::details::group_render::RenderElement(*pValueE, i, Cmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry, *C.m_Base.first, C.m_Base.second);
                     }
                 }
-                else
+                else if (nCells > 0)
                 {
-                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(E.m_RightUIGUID, Cmd, E.m_Property.m_Value, *E.m_pUserData, E.m_Flags);
+                    xproperty::ui::details::onRender<xproperty::settings::member_ui_t>(pValueE->m_RightUIGUID, Cmd, pValueE->m_Property.m_Value, *pValueE->m_pUserData, E.m_Flags);
                     assert(Cmd.m_isChange == false);
                     assert(Cmd.m_isEditing == false);
                 }
@@ -3968,7 +4121,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             }
             else
             {
-                for(int i=0; i<n; ++i) [&]( entry& Entry ) // Determine if we are dealing with the same entry we are editing
+                for(int i=0; i<nCells; ++i) [&]( entry& Entry ) // Determine if we are dealing with the same entry we are editing
                 {
                     if (std::holds_alternative<ui::undo::cmd>(m_CmdCurrentEdit))
                     {
@@ -3980,9 +4133,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                             auto& UndoCmd = CmdVariant;
                             if ((UndoCmd.m_isEditing || UndoCmd.m_isChange) && std::strcmp(UndoCmd.m_Name.c_str(), Entry.m_Property.m_Path.c_str()) == 0)
                             {
-                                if (E.m_GroupGUID)
+                                if (pValueE->m_GroupGUID)
                                 {
-                                    xproperty::ui::details::group_render::RenderElement(E, i, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry, *C.m_Base.first, C.m_Base.second);
+                                    xproperty::ui::details::group_render::RenderElement(*pValueE, i, UndoCmd, Entry.m_Property.m_Value, *Entry.m_pUserData, Entry.m_Flags, *this, Entry, *C.m_Base.first, C.m_Base.second);
                                 }
                                 else
                                 {
@@ -4013,9 +4166,9 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
 
                     }
 
-                    HandleElement(Entry, E, i, true);
+                    HandleElement(Entry, *pValueE, i, true);
 
-                }( *C.m_List[iE + i] );
+                }( *C.m_List[iCell + i] );
             } } // !bReplacedValue
 
             // Level 1 custom-rendering hook - fired once per entry regardless of which of the three

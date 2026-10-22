@@ -379,6 +379,12 @@ namespace xproperty::settings
 {
     using vector3_group = obj_group<"Vector3">;
     using vector2_group = obj_group<"Vector2">;
+    using vector4_group = obj_group<"Vector4">;     // four floats on one row, like vector3_group
+    using color3_group  = obj_group<"Color3">;      // R, G, B on one row and a box of the color that opens a picker: float members as stored, uint8 members 0..255 (sRGB)
+    using color4_group  = obj_group<"Color4">;      // the same with A
+    // A struct whose first member is a name (a string: the row's label is its last "/" section) and whose second is the value (any type, a union view included):
+    // drawn as one row, the label and the value's own widget (xproperty::sprop::container::prop is the standard one; any struct can use it)
+    using sprop_union_group = obj_group<"SpropUnion">;
 }
 
 //
