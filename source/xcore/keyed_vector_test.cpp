@@ -79,6 +79,22 @@ int main()
         xproperty::sprop::collector(H, C, [&](const char* pName, xproperty::any&&, const xproperty::type::members&, bool, const void*) noexcept { if (std::string_view(pName).ends_with("/V")) Paths.push_back(pName); });
         assert(Paths.size() == 4 && Paths[0] == "holder/List[G:30]/V" && Paths[1] == "holder/List[G:10]/V" && Paths[3] == "holder/List[G:99]/V");
 
+        // a file of the old form, by place: the element's own Key property rekeys it, its other properties still reach it
+        {
+            holder O;
+            xproperty::settings::context C2{};
+            std::string Error;
+            const auto SetAny = [&](const char* pPath, xproperty::any A) { xproperty::sprop::setProperty(Error, &O, *xproperty::getObject(O), xproperty::sprop::container::prop{ pPath, A }, C2); };
+            xproperty::any K; K.set<std::uint64_t>(777);
+            xproperty::any V; V.set<float>(7.0f);
+            SetAny("holder/List[G:0]/Key", K);
+            SetAny("holder/List[G:0]/V",   V);
+            K.set<std::uint64_t>(888); V.set<float>(8.0f);
+            SetAny("holder/List[G:1]/Key", K);
+            SetAny("holder/List[G:1]/V",   V);
+            assert(O.m_List.size() == 2 && O.m_List[0].m_Key == 777 && O.m_List[0].m_V == 7 && O.m_List[1].m_Key == 888 && O.m_List[1].m_V == 8);
+        }
+
         // the order changes, the address does not
         std::swap(H.m_List[0], H.m_List[2]);
         assert(Set(H, 30, 33) && H.m_List[2].m_Key == 30 && H.m_List[2].m_V == 33);

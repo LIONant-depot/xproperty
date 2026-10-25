@@ -469,6 +469,11 @@ namespace xproperty
     {
         using key_t = std::remove_cvref_t<decltype(std::declval<T&>().*T_KEY_MEMBER_V)>;
 
+        using std::vector<T>::vector;                                                       // (a vector's constructors: a list, a count, ...)
+        keyed_vector() = default;
+        keyed_vector( std::vector<T> V ) noexcept : std::vector<T>(std::move(V)) {}
+        keyed_vector& operator = ( std::vector<T> V ) noexcept { std::vector<T>::operator=(std::move(V)); m_Hint = 0; return *this; }
+
         T* find( const key_t& Key ) noexcept
         {
             const std::size_t n = this->size();
@@ -476,6 +481,9 @@ namespace xproperty
                 if( (*this)[i].*T_KEY_MEMBER_V == Key ) { m_Hint = i; return &(*this)[i]; }
             for( std::size_t i = 0; i < n; ++i )
                 if( (*this)[i].*T_KEY_MEMBER_V == Key ) { m_Hint = i; ++m_nSearches; return &(*this)[i]; }
+            // the last one added keeps answering to the key it was added by, until the next is added: an element whose key member one of
+            // its own properties writes (a file of the old form, by place: "List[G:0]/ID = 77", then "List[G:0]/V") stays one element
+            if( m_bAdded && m_AddedKey == Key && m_AddedAt < n ) { m_Hint = m_AddedAt; return &(*this)[m_AddedAt]; }
             return nullptr;
         }
         const T* find( const key_t& Key ) const noexcept { return const_cast<keyed_vector*>(this)->find(Key); }
@@ -485,13 +493,19 @@ namespace xproperty
             if( auto* p = find(Key) ) return *p;
             auto& E = this->emplace_back();
             E.*T_KEY_MEMBER_V = Key;
-            m_Hint = this->size() - 1;
+            m_Hint     = this->size() - 1;
+            m_bAdded   = true;
+            m_AddedKey = Key;
+            m_AddedAt  = m_Hint;
             if( m_pOnAdd ) m_pOnAdd(E, m_pOnAddUser);
             return E;
         }
 
         std::size_t m_Hint      = 0;            // the last one found: where the next find looks first (it, then the one after it)
         std::size_t m_nSearches = 0;            // finds that missed the hint (measurement)
+        bool        m_bAdded    = false;        // the last one findOrAdd added, and the key it was added by
+        key_t       m_AddedKey  = {};
+        std::size_t m_AddedAt   = 0;
         void      (*m_pOnAdd)(T&, void*) = nullptr;     // the owner's: an element a path adds (its key set) made ready - what it needs that the key does not say
         void*       m_pOnAddUser         = nullptr;
     };
