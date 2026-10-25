@@ -454,6 +454,64 @@ namespace xproperty::settings
 }
 
 //
+// A LIST ADDRESSED BY KEYS (a "hash map that lies"): a std::vector in the order it was made, each element found by a key it carries
+// (T_KEY_MEMBER_V), so a path names an element by what it is ("Params[G:7257830919075590942]/X"), not by where it is: a list whose order
+// changes (a material's parameters) or whose elements come and go (sparse overrides) keeps every recorded path pointing at the same element.
+// The key is the owner's choice: a stable id where there is one, a hash of the name where there is not.
+// Saving walks it in order. Finding (a load, a set by path) tries the hint first - the last one found, then the one after it: a load sets
+// each element's properties one after another and goes in order, so that is O(1) - and searches linearly only when it misses. A key not
+// there is appended (as std::map's var_type does).
+//
+namespace xproperty
+{
+    template< typename T, auto T_KEY_MEMBER_V >
+    struct keyed_vector : std::vector<T>
+    {
+        using key_t = std::remove_cvref_t<decltype(std::declval<T&>().*T_KEY_MEMBER_V)>;
+
+        T* find( const key_t& Key ) noexcept
+        {
+            const std::size_t n = this->size();
+            for( std::size_t i = m_Hint; i < n && i <= m_Hint + 1; ++i )
+                if( (*this)[i].*T_KEY_MEMBER_V == Key ) { m_Hint = i; return &(*this)[i]; }
+            for( std::size_t i = 0; i < n; ++i )
+                if( (*this)[i].*T_KEY_MEMBER_V == Key ) { m_Hint = i; ++m_nSearches; return &(*this)[i]; }
+            return nullptr;
+        }
+        const T* find( const key_t& Key ) const noexcept { return const_cast<keyed_vector*>(this)->find(Key); }
+
+        T& findOrAdd( const key_t& Key ) noexcept
+        {
+            if( auto* p = find(Key) ) return *p;
+            auto& E = this->emplace_back();
+            E.*T_KEY_MEMBER_V = Key;
+            m_Hint = this->size() - 1;
+            return E;
+        }
+
+        std::size_t m_Hint      = 0;            // the last one found: where the next find looks first (it, then the one after it)
+        std::size_t m_nSearches = 0;            // finds that missed the hint (measurement)
+    };
+}
+
+namespace xproperty::settings
+{
+    template< typename T, auto T_KEY_MEMBER_V >
+    struct var_type<xproperty::keyed_vector<T, T_KEY_MEMBER_V>>
+        : var_list_defaults< "kvector", xproperty::keyed_vector<T, T_KEY_MEMBER_V>, T, typename std::vector<T>::iterator, typename xproperty::keyed_vector<T, T_KEY_MEMBER_V>::key_t >
+    {
+        using base              = var_list_defaults< "kvector", xproperty::keyed_vector<T, T_KEY_MEMBER_V>, T, typename std::vector<T>::iterator, typename xproperty::keyed_vector<T, T_KEY_MEMBER_V>::key_t >;
+        using type              = typename base::type;
+        using specializing_t    = typename base::specializing_t;
+        using begin_iterator    = typename base::begin_iterator;
+        using atomic_key        = typename base::atomic_key;
+
+        constexpr static void            IteratorToKey(const type&, any& Key, const begin_iterator& I, context&) noexcept { Key.set<atomic_key>((*I).*T_KEY_MEMBER_V); }
+        constexpr static specializing_t* getObject(type& MemberVar, const any& Key, context&) noexcept { return &MemberVar.findOrAdd(Key.get<atomic_key>()); }
+    };
+}
+
+//
 // SUPPORTING C LISTS TYPES
 //
 namespace xproperty::settings
