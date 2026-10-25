@@ -192,6 +192,33 @@ namespace xproperty::settings
         callback* m_pCallback;
     };
 
+    // A property that knows its own override state and how to revert it, through one level or more: a Mesh's material parameter is
+    // overridden over its material instance, and inside a prefab instance over its prefab too. pBase is the same object in the base
+    // the inspector's m_OnBaseInstance names (a prefab's copy of the component), null when there is none. The callback says whether
+    // the row is overridden and, when pChoices is not null, what a revert can do: each choice a property path with its value now and
+    // the value to set. One choice is applied at the click on the marker, several make a menu. The inspector applies it as an ordinary
+    // edit of that one property (m_OnChangeEvent with Before/After), so it is undoable and recorded like any other edit. Takes
+    // precedence over member_override_check/member_override_reset and the m_OnOverrideCheck/m_OnOverrideReset delegates.
+    struct member_override_state_t : xproperty::member_user_data<"Override State">
+    {
+        struct revert
+        {
+            std::string     m_Label;            // the menu's item ("Revert to prefab", "Revert to material instance")
+            std::string     m_Path;             // the property set (full path)
+            xproperty::any  m_Before;           // its value now
+            xproperty::any  m_After;            // the value it is set to
+        };
+        using callback = void
+        ( const xproperty::type::object&
+        , void*                             // pInstance
+        , void*                             // pBase (null: no base)
+        , std::string_view                  // Path of the row
+        , bool&                             // bOverridden
+        , std::vector<revert>*              // pChoices (null: only the state)
+        ) noexcept;
+        callback* m_pCallback;
+    };
+
     // Same rationale again, for on_override_check/on_override_reset - a property declares directly
     // (via a comparison against whatever it considers its own base value) that it can be "overridden",
     // instead of a shared delegate Path-matching it. Kept as two separate tags, matching the delegate
@@ -351,6 +378,13 @@ namespace xproperty
     {
         constexpr member_override_reset() noexcept
             : settings::member_override_reset_t{ .m_pCallback = T_CALLBACK_V } {}
+    };
+
+    template< auto T_CALLBACK_V >
+    struct member_override_state : settings::member_override_state_t
+    {
+        constexpr member_override_state() noexcept
+            : settings::member_override_state_t{ .m_pCallback = T_CALLBACK_V } {}
     };
 
     // Static width - see settings::member_item_width_t's own comment for the PushItemWidth semantics.

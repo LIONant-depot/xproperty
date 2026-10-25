@@ -307,6 +307,26 @@ namespace xproperty::ui::undo
     }
 }
 
+const xproperty::settings::member_override_state_t* xproperty::inspector::OverrideStateOf(const entry& E) const noexcept
+{
+    return E.m_pUserData ? E.m_pUserData->getUserData<xproperty::settings::member_override_state_t>() : nullptr;
+}
+
+void xproperty::inspector::ApplyRevert(component& C, const xproperty::settings::member_override_state_t::revert& R) noexcept
+{
+    std::string                  Error;
+    xproperty::settings::context Context;
+    xproperty::sprop::setProperty(Error, C.m_Base.second, *C.m_Base.first, xproperty::sprop::container::prop{ R.m_Path, R.m_After }, Context);
+    xproperty::ui::undo::cmd Cmd;
+    Cmd.m_Name         = R.m_Path;
+    Cmd.m_pPropObject  = C.m_Base.first;
+    Cmd.m_pClassObject = C.m_Base.second;
+    Cmd.m_Original     = R.m_Before;
+    Cmd.m_NewValue     = R.m_After;
+    Cmd.m_bHasChanged  = true;
+    m_OnChangeEvent.NotifyAll(*this, Cmd);
+}
+
 void xproperty::inspector::BeginEdit(const xproperty::type::object& Obj, void* pInstance, std::string_view Name) noexcept
 {
     xproperty::ui::undo::cmd Cmd;
@@ -2840,7 +2860,14 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     snprintf(Name.data() + L, Name.size() - L, "  %s", E.m_Label.c_str());
                 }
                 bool bElementOverridden = false;
-                if (E.m_GroupGUID != 0)
+                const auto* pElementState = OverrideStateOf(E);         // an element that keeps its own override state (member_override_state of its array)
+                void*       pElementBase  = nullptr;
+                if (pElementState)
+                {
+                    m_OnBaseInstance.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, pElementBase);
+                    pElementState->m_pCallback(*C.m_Base.first, C.m_Base.second, pElementBase, E.m_Property.m_Path, bElementOverridden, nullptr);
+                }
+                else if (E.m_GroupGUID != 0)
                 {
                     const int Span = E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v ? SpropSpan(C.m_List, iE) : xproperty::ui::details::GroupCells(E.m_GroupGUID);
                     for (int i = 0; i < Span && !bElementOverridden && static_cast<std::size_t>(iE) + 1 + i < C.m_List.size(); ++i)
@@ -2872,10 +2899,29 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                     if (ImGui::ItemAdd(BB, Id))
                     {
                         bool bHovered = false, bHeld = false;
-                        if (ImGui::ButtonBehavior(BB, Id, &bHovered, &bHeld)) m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                        if (ImGui::ButtonBehavior(BB, Id, &bHovered, &bHeld))
+                        {
+                            if (pElementState)
+                            {
+                                std::vector<xproperty::settings::member_override_state_t::revert> Choices;
+                                bool bDummy = false;
+                                pElementState->m_pCallback(*C.m_Base.first, C.m_Base.second, pElementBase, E.m_Property.m_Path, bDummy, &Choices);
+                                if (Choices.size() == 1)     ApplyRevert(C, Choices[0]);
+                                else if (Choices.size() > 1) ImGui::OpenPopup("##RevertChoices");
+                            }
+                            else m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
+                        }
                         ImGui::RenderFrame(BB.Min, BB.Max, ImGui::GetColorU32(bHeld ? ImGuiCol_ButtonActive : bHovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button), true, Style.FrameRounding);
                         ImGui::RenderTextClipped(BB.Min, BB.Max, ">", nullptr, nullptr, ImVec2(0.5f, 0.5f));
                         if (bHovered) ImGui::SetTooltip("This property has been overridden from its base value - click to revert");
+                    }
+                    if (pElementState && BeginCustomPopup("##RevertChoices"))
+                    {
+                        std::vector<xproperty::settings::member_override_state_t::revert> Choices;
+                        bool bDummy = false;
+                        pElementState->m_pCallback(*C.m_Base.first, C.m_Base.second, pElementBase, E.m_Property.m_Path, bDummy, &Choices);
+                        for (const auto& R : Choices) if (ImGui::MenuItem(R.m_Label.c_str())) ApplyRevert(C, R);
+                        ImGui::EndPopup();
                     }
                     ImGui::PopStyleColor();
                 }
@@ -3590,7 +3636,14 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
             // reads as overridden if ANY axis differs (OR across the group), not by asking about the
             // header's own path (which would never match anything a consumer recorded). The revert
             // click below mirrors this same per-axis walk to know exactly which axes to reset.
-            if (E.m_GroupGUID != 0)
+            const auto* pOverrideState = OverrideStateOf(E);
+            void*       pOverrideBase  = nullptr;
+            if (pOverrideState)
+            {
+                m_OnBaseInstance.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, pOverrideBase);
+                pOverrideState->m_pCallback(*C.m_Base.first, C.m_Base.second, pOverrideBase, E.m_Property.m_Path, bIsOverridden, nullptr);
+            }
+            else if (E.m_GroupGUID != 0)
             {
                 const int GroupN = E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v ? SpropSpan(C.m_List, iE) : std::max(1, xproperty::ui::details::GroupCells(E.m_GroupGUID));
                 for (int i = 0; i < GroupN && bIsOverridden == false; ++i)
@@ -3615,7 +3668,27 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                 // Tint stays pushed through the label draw below too (matches E20's own convention -
                 // the whole row's left-column text recolors, not just the button), popped right after.
                 ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(170, 170, 255, 255));
-                if (ImGui::Button(">"))
+                if (pOverrideState)
+                {
+                    // the property's own reverts: one is the click, several a menu (ApplyRevert: an ordinary undoable edit)
+                    if (ImGui::Button(">"))
+                    {
+                        std::vector<xproperty::settings::member_override_state_t::revert> Choices;
+                        bool bDummy = false;
+                        pOverrideState->m_pCallback(*C.m_Base.first, C.m_Base.second, pOverrideBase, E.m_Property.m_Path, bDummy, &Choices);
+                        if (Choices.size() == 1)     ApplyRevert(C, Choices[0]);
+                        else if (Choices.size() > 1) ImGui::OpenPopup("##RevertChoices");
+                    }
+                    if (BeginCustomPopup("##RevertChoices"))
+                    {
+                        std::vector<xproperty::settings::member_override_state_t::revert> Choices;
+                        bool bDummy = false;
+                        pOverrideState->m_pCallback(*C.m_Base.first, C.m_Base.second, pOverrideBase, E.m_Property.m_Path, bDummy, &Choices);
+                        for (const auto& R : Choices) if (ImGui::MenuItem(R.m_Label.c_str())) ApplyRevert(C, R);
+                        ImGui::EndPopup();
+                    }
+                }
+                else if (ImGui::Button(">"))
                 {
                     // A group (vector2/vector3) offers a CHOICE instead of always reverting every axis
                     // at once - "Revert X"/"Revert Y"/"Revert Z" plus "Revert All", an extensible menu
@@ -3630,7 +3703,7 @@ void xproperty::inspector::Render( component& C, int& GlobalIndex ) noexcept
                         else                    m_OnOverrideReset.NotifyAll(*this, *C.m_Base.first, C.m_Base.second, E.m_Property.m_Path);
                     }
                 }
-                if (E.m_GroupGUID != 0 && E.m_GroupGUID != xproperty::settings::sprop_union_group::guid_v && BeginCustomPopup("##RevertGroupMenu"))
+                if (!pOverrideState && E.m_GroupGUID != 0 && E.m_GroupGUID != xproperty::settings::sprop_union_group::guid_v && BeginCustomPopup("##RevertGroupMenu"))
                 {
                     const int GroupN = E.m_GroupGUID == xproperty::settings::sprop_union_group::guid_v ? SpropSpan(C.m_List, iE) : std::max(1, xproperty::ui::details::GroupCells(E.m_GroupGUID));
                     for (int i = 0; i < GroupN; ++i)

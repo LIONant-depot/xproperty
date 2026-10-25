@@ -649,6 +649,9 @@ public:
 #endif
     on_resource_leftside        m_OnResourceLeftSize;       // Gets the height of the
 
+    // The base copy of an object (instance) for member_override_state: a prefab instance's component -> the prefab's. Null (the default): none
+    using on_base_instance = xdelegate::thread_unsafe<inspector&, const xproperty::type::object&, void*, void*&>;
+    on_base_instance            m_OnBaseInstance;
     on_override_check           m_OnOverrideCheck;          // Registered by a consumer that has some notion of "base value" for its own properties (a prefab/template/material-instance source) - called per row; if it reports true, the row renders with an override indicator and a revert button
     on_override_reset           m_OnOverrideReset;          // Fired when the revert button (above) is clicked - consumer's job to actually remove/reset the override however that's meaningful for their own data model
 
@@ -757,6 +760,9 @@ protected:
     // the cursor instead of sitting still once opened. OpenPopup itself is unchanged (plain
     // ImGui::OpenPopup(pID)) - only the BeginPopup half needs the custom placement.
     bool        BeginCustomPopup                    ( const char* pID )                     const   noexcept;
+    // member_override_state: the tag of an entry (or null), and one of its reverts applied as an ordinary one-property edit
+    const xproperty::settings::member_override_state_t* OverrideStateOf( const entry& E ) const noexcept;
+    void        ApplyRevert                         ( component& C, const xproperty::settings::member_override_state_t::revert& R ) noexcept;
 
 protected:
 
