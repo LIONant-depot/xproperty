@@ -486,11 +486,14 @@ namespace xproperty
             auto& E = this->emplace_back();
             E.*T_KEY_MEMBER_V = Key;
             m_Hint = this->size() - 1;
+            if( m_pOnAdd ) m_pOnAdd(E, m_pOnAddUser);
             return E;
         }
 
         std::size_t m_Hint      = 0;            // the last one found: where the next find looks first (it, then the one after it)
         std::size_t m_nSearches = 0;            // finds that missed the hint (measurement)
+        void      (*m_pOnAdd)(T&, void*) = nullptr;     // the owner's: an element a path adds (its key set) made ready - what it needs that the key does not say
+        void*       m_pOnAddUser         = nullptr;
     };
 }
 
