@@ -1324,13 +1324,13 @@ namespace xproperty::ui::details
         {
 
             Cmd.m_isChange = false;
-            if (ImGui::BeginCombo("##combo", AnyValue.m_pType->m_RegisteredEnumSpan[current_item].m_pName)) // The second parameter is the label previewed before opening the combo.
+            if (ImGui::BeginCombo("##combo", AnyValue.m_pType->m_RegisteredEnumSpan[current_item].getDisplayName())) // The second parameter is the label previewed before opening the combo.
             {
                 for (std::size_t n = 0; n < AnyValue.m_pType->m_RegisteredEnumSpan.size(); n++)
                 {
                     bool is_selected = (current_item == n); // You can store your selection however you want, outside or inside your objects
 
-                    if (ImGui::Selectable(AnyValue.m_pType->m_RegisteredEnumSpan[n].m_pName, is_selected))
+                    if (ImGui::Selectable(AnyValue.m_pType->m_RegisteredEnumSpan[n].getDisplayName(), is_selected))
                     {
                         if (Cmd.m_isEditing == false) Cmd.m_Original = AnyValue;
 

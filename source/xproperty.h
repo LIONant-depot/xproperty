@@ -630,11 +630,24 @@ namespace xproperty
         //--------------------------------------------------------------------------------------------
         struct enum_item
         {
-            const char*                 m_pName;
+            const char*                 m_pName;                // what is saved and read back (never change it once files exist)
             const char*                 m_pHelp;
             std::uint32_t               m_Value;
+            const char*                 m_pDisplay  = nullptr;  // what an editor shows, when it differs from the saved name (e.g. "Color + Cutout")
+
+            constexpr const char* getDisplayName( void ) const noexcept { return m_pDisplay ? m_pDisplay : m_pName; }
 
             enum_item() = default;
+
+            template<typename T>
+            constexpr enum_item(const char* pName, T Val, const char* pHelp, const char* pDisplay ) noexcept
+                : m_pName{ pName }
+                , m_pHelp{ pHelp }
+                , m_Value{ static_cast<std::uint32_t>(Val) }
+                , m_pDisplay{ pDisplay }
+            {
+                static_assert(std::is_enum_v<T>);
+            }
 
             template<typename T>
             constexpr enum_item( const char* pName, T Val ) noexcept
