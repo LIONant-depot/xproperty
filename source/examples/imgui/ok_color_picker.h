@@ -8,6 +8,7 @@
 //
 // What the channels hold: float channels are linear (as xLION stores colours), uint8 channels are sRGB. Nothing is clamped: a float colour brighter
 // than 1 is picked as its colour (its brightest channel brought to 1) times an Intensity, which is a number of its own.
+#include <charconv>
 #include "ok_color.h"
 #include <algorithm>
 #include <cmath>
@@ -239,9 +240,11 @@ namespace xproperty::ui::ok_picker
             else        std::snprintf(Hex, sizeof(Hex), "#%02X%02X%02X", H(Now.r), H(Now.g), H(Now.b));
             if (ImGui::InputText("Hex (sRGB)", Hex, sizeof(Hex), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsUppercase))
             {
-                unsigned R = 0, G = 0, B = 0, A = 255;
+                unsigned V[4] = { 0, 0, 0, 255 };
                 const char* p = Hex[0] == '#' ? Hex + 1 : Hex;
-                const int n = std::sscanf(p, "%02x%02x%02x%02x", &R, &G, &B, &A);
+                int n = 0;      // (two hex digits a channel, std::from_chars: sscanf is MSVC's C4996)
+                for (; n < 4 && p[2 * n] && p[2 * n + 1]; ++n) { const auto r = std::from_chars(p + 2 * n, p + 2 * n + 2, V[n], 16); if (r.ec != std::errc() || r.ptr != p + 2 * n + 2) break; }
+                const unsigned R = V[0], G = V[1], B = V[2], A = V[3];
                 if (n >= 3)
                 {
                     RGBToStored(C, { R / 255.0f, G / 255.0f, B / 255.0f }, bByte, St.m_Intensity);
