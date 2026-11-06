@@ -990,7 +990,7 @@ namespace xproperty
             using void_construct    = void(settings::data_memory&);
             using destruct          = void(settings::data_memory&);
             using move_construct    = void(settings::data_memory&,       settings::data_memory&&);
-            using copy_construct    = void(settings::data_memory&, const settings::data_memory&);
+            using copy_construct    = void(settings::data_memory&, const void*);     // (the source: a T, aligned for T only - not a data_memory, which is aligned more)
 
             const char*                 m_pName;
             std::uint32_t               m_GUID;
@@ -1069,7 +1069,7 @@ namespace xproperty
             , .m_pVoidConstruct = var_t<T>::VoidConstruct
             , .m_pDestruct      = var_t<T>::Destruct
             , .m_pMoveConstruct = +[](settings::data_memory& D,       settings::data_memory&& S) constexpr { settings::var_type<T>::MoveConstruct( D, std::forward<T&&>(reinterpret_cast<T&&>(S)) );      }
-            , .m_pCopyConstruct = +[](settings::data_memory& D, const settings::data_memory& S)  constexpr { settings::var_type<T>::CopyConstruct( D, reinterpret_cast<const T&>(S));  }
+            , .m_pCopyConstruct = +[](settings::data_memory& D, const void* S)  constexpr { settings::var_type<T>::CopyConstruct( D, *static_cast<const T*>(S));  }
             };
         }();
 
@@ -1315,7 +1315,7 @@ namespace xproperty
             constexpr void copyValueFrom(const any& Source)
             {
                 m_pType = Source.m_pType;
-                if (m_pType) m_pType->m_pCopyConstruct(m_Data, Source.m_Data);
+                if (m_pType) m_pType->m_pCopyConstruct(m_Data, &Source.m_Data);
             }
 
             // Used for REPLACING an existing value (operator=(const any&)). Constructs the incoming
@@ -1334,7 +1334,7 @@ namespace xproperty
                 }
 
                 settings::data_memory Temp;
-                Source.m_pType->m_pCopyConstruct(Temp, Source.m_Data);   // may throw - *this still intact
+                Source.m_pType->m_pCopyConstruct(Temp, &Source.m_Data);   // may throw - *this still intact
 
                 destroyValue();
                 m_pType = Source.m_pType;
@@ -1534,7 +1534,7 @@ namespace xproperty
             constexpr any(const T& Data)
             {
                 m_pType = &atomic_v<T>;
-                m_pType->m_pCopyConstruct(m_Data, reinterpret_cast<const settings::data_memory&>(Data) );
+                m_pType->m_pCopyConstruct(m_Data, &Data );     // (a T is not a data_memory: read as one, the copy assumed its 16-byte alignment - a crash where a T sat at 8)
             }
 
             template< typename T >
