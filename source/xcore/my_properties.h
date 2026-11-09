@@ -20,6 +20,9 @@
 // ------------------------------------------------------------------------------
 #pragma once
 #include<string>
+#include <charconv>
+#include <cstdlib>
+#include <cstring>
 #include<string_view>
 #include<vector>
 #include<map>
@@ -803,27 +806,40 @@ namespace xproperty::settings
         return xresource::full_guid{ {a}, {b} };
     }
 
+    // A value from its text: false (Value untouched) when the text is not one of the type (a number with letters, a full guid without its
+    // comma) or the type is not known - a console command's bad value is refused, not set (std::stol threw through noexcept: abort, C26 2026-11-09)
     inline bool StringToAny( xproperty::any& Value, std::uint32_t TypeGUID, const std::span<char> String) noexcept
     {
+        const std::string_view S = [&] { std::string_view v(String.data(), strnlen(String.data(), String.size())); const auto b = v.find_first_not_of(" \t"); if (b == std::string_view::npos) return std::string_view{}; return v.substr(b, v.find_last_not_of(" \t") - b + 1); }();
+        const auto Int = [&]<class T>(T& Out) -> bool { if (S.empty()) return false; const char* p = S.data(); if (*p == '+') ++p; const auto R = std::from_chars(p, S.data() + S.size(), Out); return R.ec == std::errc{} && R.ptr == S.data() + S.size(); };
+        const auto Real = [&](double& Out) -> bool { if (S.empty()) return false; std::string Z(S); char* pEnd = nullptr; Out = std::strtod(Z.c_str(), &pEnd); return pEnd == Z.c_str() + Z.size(); };
         switch (TypeGUID)
         {
-        case ::xproperty::settings::var_type<std::int32_t>::guid_v:           Value.set<std::int32_t>    (static_cast<std::int32_t>(std::stol(String.data())));       return true;
-        case ::xproperty::settings::var_type<std::uint32_t>::guid_v:          Value.set<std::uint32_t>   (static_cast<std::uint32_t>(std::stoul(String.data())));     return true;
-        case ::xproperty::settings::var_type<std::int16_t>::guid_v:           Value.set<std::int16_t>    (static_cast<std::int16_t>(std::atoi(String.data())));       return true;
-        case ::xproperty::settings::var_type<std::uint16_t>::guid_v:          Value.set<std::uint16_t>   (static_cast<std::uint16_t>(std::atoi(String.data())));      return true;
-        case ::xproperty::settings::var_type<std::int8_t>::guid_v:            Value.set<std::int8_t>     (static_cast<std::int8_t>(std::atoi(String.data())));        return true;
-        case ::xproperty::settings::var_type<std::uint8_t>::guid_v:           Value.set<std::uint8_t>    (static_cast<std::uint8_t>(std::atoi(String.data())));       return true;
-        case ::xproperty::settings::var_type<float>::guid_v:                  Value.set<float>           (static_cast<float>(std::stof(String.data())));              return true;
-        case ::xproperty::settings::var_type<double>::guid_v:                 Value.set<double>          (static_cast<float>(std::stof(String.data())));              return true;
-        case ::xproperty::settings::var_type<std::string>::guid_v:            Value.set<std::string>     (std::string(String.data(), String.size()));                 return true;
-        case ::xproperty::settings::var_type<std::wstring>::guid_v:           Value.set<std::wstring>    (convert_span_to_wstring(String));                           return true;
-        case ::xproperty::settings::var_type<std::uint64_t>::guid_v:          Value.set<std::uint64_t>   (static_cast<std::uint64_t>(std::stoull(String.data())));    return true;
-        case ::xproperty::settings::var_type<std::int64_t>::guid_v:           Value.set<std::int64_t>    (static_cast<std::int64_t>(std::stoll(String.data())));      return true;
-        case ::xproperty::settings::var_type<bool>::guid_v:                   Value.set<bool>            ((String[0]=='t' || String[0]=='1' || String[0]=='T')?true:false);  return true;
-        case ::xproperty::settings::var_type<xresource::full_guid>::guid_v:   Value.set<xresource::full_guid>(convert_span_to_full_guid(String));                     return true;
-        default: assert(false); break;
+        case ::xproperty::settings::var_type<std::int32_t>::guid_v:   { std::int32_t  v; if (!Int(v)) return false; Value.set<std::int32_t>(v);  return true; }
+        case ::xproperty::settings::var_type<std::uint32_t>::guid_v:  { std::uint32_t v; if (!Int(v)) return false; Value.set<std::uint32_t>(v); return true; }
+        case ::xproperty::settings::var_type<std::int16_t>::guid_v:   { std::int16_t  v; if (!Int(v)) return false; Value.set<std::int16_t>(v);  return true; }
+        case ::xproperty::settings::var_type<std::uint16_t>::guid_v:  { std::uint16_t v; if (!Int(v)) return false; Value.set<std::uint16_t>(v); return true; }
+        case ::xproperty::settings::var_type<std::int8_t>::guid_v:    { int v; if (!Int(v) || v < -128 || v > 127) return false; Value.set<std::int8_t>(static_cast<std::int8_t>(v)); return true; }
+        case ::xproperty::settings::var_type<std::uint8_t>::guid_v:   { int v; if (!Int(v) || v < 0 || v > 255) return false; Value.set<std::uint8_t>(static_cast<std::uint8_t>(v)); return true; }
+        case ::xproperty::settings::var_type<float>::guid_v:          { double v; if (!Real(v)) return false; Value.set<float>(static_cast<float>(v)); return true; }
+        case ::xproperty::settings::var_type<double>::guid_v:         { double v; if (!Real(v)) return false; Value.set<double>(static_cast<float>(v)); return true; }      // (as before: through a float)
+        case ::xproperty::settings::var_type<std::string>::guid_v:    Value.set<std::string>(std::string(String.data(), String.size()));   return true;
+        case ::xproperty::settings::var_type<std::wstring>::guid_v:   Value.set<std::wstring>(convert_span_to_wstring(String));             return true;
+        case ::xproperty::settings::var_type<std::uint64_t>::guid_v:  { std::uint64_t v; if (!Int(v)) return false; Value.set<std::uint64_t>(v); return true; }
+        case ::xproperty::settings::var_type<std::int64_t>::guid_v:   { std::int64_t  v; if (!Int(v)) return false; Value.set<std::int64_t>(v);  return true; }
+        case ::xproperty::settings::var_type<bool>::guid_v:           Value.set<bool>((String[0]=='t' || String[0]=='1' || String[0]=='T')?true:false);  return true;
+        case ::xproperty::settings::var_type<xresource::full_guid>::guid_v:
+        {
+            const auto c = S.find(',');
+            if (c == std::string_view::npos) return false;
+            const auto Hex = [](std::string_view v) { const auto b = v.find_first_not_of(" \t"); if (b == std::string_view::npos) return false; v = v.substr(b, v.find_last_not_of(" \t") - b + 1); std::uint64_t x; const auto R = std::from_chars(v.data(), v.data() + v.size(), x, 16); return R.ec == std::errc{} && R.ptr == v.data() + v.size(); };
+            if (!Hex(S.substr(0, c)) || !Hex(S.substr(c + 1))) return false;
+            Value.set<xresource::full_guid>(convert_span_to_full_guid(String));
+            return true;
         }
-        return false; 
+        default: break;     // (a type this does not read: refused)
+        }
+        return false;
     }
 
     //
