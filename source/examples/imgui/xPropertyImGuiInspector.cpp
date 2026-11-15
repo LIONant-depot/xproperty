@@ -271,7 +271,12 @@ namespace xproperty::ui::undo
                     return;
 
                 std::array<char, 256> Buffer;
-                const int Len = xproperty::settings::AnyToString(Buffer, Value);
+                // floats and doubles exactly (shortest round trip): AnyToString's "%f" keeps 6 decimals, an undo through a snapshot then
+                // restored rounded values (a quaternion key, a weight: xLION C58)
+                const auto G = Value.getTypeGuid();
+                const int Len = G == xproperty::settings::var_type<float>::guid_v  ? int(std::to_chars(Buffer.data(), Buffer.data() + Buffer.size(), Value.get<float>()).ptr - Buffer.data())
+                              : G == xproperty::settings::var_type<double>::guid_v ? int(std::to_chars(Buffer.data(), Buffer.data() + Buffer.size(), Value.get<double>()).ptr - Buffer.data())
+                              : xproperty::settings::AnyToString(Buffer, Value);
 
                 // Format assumes no Path or value text embeds a tab/newline - true for every case
                 // this is used against today (scalar/std::string leaves with short display text);
@@ -314,7 +319,15 @@ namespace xproperty::ui::undo
             Buffer[CopyLen] = '\0';
 
             xproperty::any Value;
-            if (!xproperty::settings::StringToAny(Value, TypeGUID, { Buffer.data(), static_cast<std::uint32_t>(CopyLen) }))
+            if (TypeGUID == xproperty::settings::var_type<float>::guid_v || TypeGUID == xproperty::settings::var_type<double>::guid_v)
+            {
+                // exactly what SnapshotToString wrote (StringToAny reads a double through a float)
+                double D = 0;
+                if (std::from_chars(Buffer.data(), Buffer.data() + CopyLen, D).ec != std::errc()) continue;
+                if (TypeGUID == xproperty::settings::var_type<float>::guid_v) { float F = 0; if (std::from_chars(Buffer.data(), Buffer.data() + CopyLen, F).ec != std::errc()) continue; Value.set<float>(F); }
+                else Value.set<double>(D);
+            }
+            else if (!xproperty::settings::StringToAny(Value, TypeGUID, { Buffer.data(), static_cast<std::uint32_t>(CopyLen) }))
                 continue;
 
             std::string Error;
