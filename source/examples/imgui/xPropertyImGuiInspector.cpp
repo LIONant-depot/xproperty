@@ -248,9 +248,25 @@ namespace xproperty::ui::undo
                         return; // per-dimension index marker, not a settable value
                 }
 
-                // Not one of AnyToString/StringToAny's known atomic types (an enum-backed property,
-                // a reflected member function's own "value", etc.) - see bIsSnapshotableType's own
-                // comment for why this is skipped rather than passed through.
+                // An enum is recorded by the name of its item, as a string: setProperty takes a string for
+                // an enum property as the item's name (what the console's SetProperty does). Without
+                // this an undo of a whole object (an array insert or delete) reset its enums (C57).
+                if (Value.isEnum())
+                {
+                    const char* pItem = Value.getEnumString();
+                    if (!pItem) return;     // an enum with no item table: nothing that would set it back by name
+                    Snapshot += pPropertyName;
+                    Snapshot += '\t';
+                    Snapshot += std::to_string(xproperty::settings::var_type<std::string>::guid_v);
+                    Snapshot += '\t';
+                    Snapshot += pItem;
+                    Snapshot += '\n';
+                    return;
+                }
+
+                // Not one of AnyToString/StringToAny's known atomic types (a reflected member
+                // function's own "value", etc.) - see bIsSnapshotableType's own comment for why this
+                // is skipped rather than passed through.
                 if (!bIsSnapshotableType(Value.getTypeGuid()))
                     return;
 
