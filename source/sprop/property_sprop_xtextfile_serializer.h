@@ -194,7 +194,10 @@ namespace xproperty::sprop::serializer
     // Stream
     //----------------------------------------------------------------------------
     template< typename T_TUPLE_TYPES = xproperty::settings::atomic_types_tuple >
-    xerr Stream(xtextfile::stream& Stream, void* pObject, const xproperty::type::object& PropertyObj, xproperty::settings::context& Context) noexcept
+    // pUnresolved (optional): reading, the saved values the object could not take (a field it does not declare any more, a type it cannot
+    // convert) are added to it instead of being lost; writing, they are written back after the object's own. A reader that keeps them and
+    // gives them to the next write loses nothing it did not understand.
+    xerr Stream(xtextfile::stream& Stream, void* pObject, const xproperty::type::object& PropertyObj, xproperty::settings::context& Context, std::vector<xproperty::sprop::container::prop>* pUnresolved = nullptr) noexcept
     {
         xproperty::sprop::container  Container;
 
@@ -208,11 +211,7 @@ namespace xproperty::sprop::serializer
             {
                 std::string Error;
                 xproperty::sprop::setProperty(Error, pObject, PropertyObj, E, Context);
-                if( Err )
-                {
-                    // May be here should be a warning... fail to set property but should not be a failure?
-                    assert(false);
-                }
+                if( !Error.empty() && pUnresolved ) pUnresolved->push_back(E);     // (it tested Err, never Error: a value the object did not take was dropped silently)
             }
 
             return Err;
@@ -321,6 +320,7 @@ namespace xproperty::sprop::serializer
 
         }, true);
 
+        if( pUnresolved ) for( const auto& E : *pUnresolved ) Container.m_Properties.push_back(E);
         return details::IO<T_TUPLE_TYPES>(Stream, Container.m_Properties );
     }
 
